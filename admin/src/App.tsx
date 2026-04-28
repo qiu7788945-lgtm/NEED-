@@ -1,10 +1,12 @@
 import { useState } from 'react';
+import { HomeManagementPage } from './pages/HomeManagementPage';
 import { MediaLibraryPage } from './pages/MediaLibraryPage';
 
+const homeMenu = '\u9996\u9875\u7ba1\u7406';
 const mediaMenu = '\u5a92\u4f53\u5e93';
 
 const menuItems = [
-  '\u9996\u9875\u7ba1\u7406',
+  homeMenu,
   '\u9875\u9762\u7f16\u8f91\u5668',
   '\u6848\u4f8b\u7ba1\u7406',
   'Word \u6848\u4f8b\u5bfc\u5165',
@@ -17,7 +19,7 @@ const menuItems = [
 ];
 
 export default function App() {
-  const [activeMenu, setActiveMenu] = useState(mediaMenu);
+  const [activeMenu, setActiveMenu] = useState(homeMenu);
 
   return (
     <main className="admin-shell">
@@ -41,7 +43,9 @@ export default function App() {
       </aside>
 
       <section className="admin-content">
-        {activeMenu === mediaMenu ? (
+        {activeMenu === homeMenu ? (
+          <HomeManagementPage />
+        ) : activeMenu === mediaMenu ? (
           <MediaLibraryPage />
         ) : (
           <div className="admin-panel">

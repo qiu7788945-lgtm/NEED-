@@ -6,6 +6,7 @@ Current round scope:
 
 - Static admin shell
 - Placeholder left navigation
+- Homepage 12 interactive image slot management
 - Media library placeholder page
 - Local image upload through the server API
 - Uploaded image preview and returned URL display
@@ -37,4 +38,18 @@ The preview URL points to:
 
 ```text
 http://localhost:4000/uploads/images/:filename
+```
+
+Homepage management test:
+
+1. Start `npm.cmd run dev:server`.
+2. Start `npm.cmd run dev:admin`.
+3. Open the admin URL shown by Vite.
+4. Click the Home Management menu item.
+5. Edit the 12 image slots, choose uploaded images from the media list, and save.
+
+The saved config is stored in:
+
+```text
+server/data/home-interactive-images.json
 ```

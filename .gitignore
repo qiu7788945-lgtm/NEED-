@@ -16,7 +16,8 @@ releases/*
 published-site/*
 !published-site/.gitkeep
 
-server/uploads/
+server/uploads/images/*
+!server/uploads/images/.gitkeep
 server/logs/
 
 .DS_Store

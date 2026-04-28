@@ -16,6 +16,7 @@ Current round scope:
 - Local image upload endpoint
 - Local image listing endpoint
 - Static image access under `/uploads/images`
+- Local homepage interactive image slot config
 - Audit service placeholder
 - No database connection
 - No migration execution
@@ -84,6 +85,32 @@ Uploaded images are stored in:
 
 ```text
 server/uploads/images/
+```
+
+Homepage interactive image slots:
+
+```text
+GET http://localhost:4000/api/home/interactive-images
+PUT http://localhost:4000/api/home/interactive-images
+```
+
+The config is stored in:
+
+```text
+server/data/home-interactive-images.json
+```
+
+The payload must always contain exactly 12 slots:
+
+```json
+{
+  "slotNo": 1,
+  "mediaUrl": "/uploads/images/example.png",
+  "mediaFileName": "example.png",
+  "alt": "NEED homepage image",
+  "sortOrder": 1,
+  "enabled": true
+}
 ```
 
 Validation:

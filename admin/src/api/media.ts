@@ -28,7 +28,7 @@ async function readJson<TData>(response: Response): Promise<TData> {
   const body = await response.json() as ApiResponse<TData>;
 
   if (!response.ok || !body.ok || !body.data) {
-    throw new Error(body.message || '请求失败');
+    throw new Error(body.message || 'Request failed');
   }
 
   return body.data;
