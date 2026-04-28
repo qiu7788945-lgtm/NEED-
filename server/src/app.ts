@@ -1,15 +1,20 @@
 import 'dotenv/config';
 import express from 'express';
-import { healthRouter } from './routes/health.routes.js';
+import { env } from './config/env.js';
+import { errorMiddleware } from './middlewares/error.middleware.js';
+import { notFoundMiddleware } from './middlewares/not-found.middleware.js';
+import { apiRouter } from './routes/index.js';
+import { logger } from './utils/logger.js';
 
 const app = express();
-const port = Number(process.env.PORT ?? 4000);
 
 app.use(express.json());
-app.use('/api/health', healthRouter);
+app.use(apiRouter);
+app.use(notFoundMiddleware);
+app.use(errorMiddleware);
 
-app.listen(port, () => {
-  console.log(`need-api listening on http://localhost:${port}`);
+app.listen(env.port, () => {
+  logger.info(`need-api listening on http://localhost:${env.port}`);
 });
 
 export { app };
