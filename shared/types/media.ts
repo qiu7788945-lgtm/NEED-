@@ -1,6 +1,15 @@
-import type { MediaStatus } from '../constants/status';
+import type { MediaStatus } from '../constants/status.js';
 
 export type MediaFileType = 'image' | 'video' | 'document';
+export type MediaCategory =
+  | 'home_interactive'
+  | 'case_image'
+  | 'article_cover'
+  | 'solution_image'
+  | 'page_editor'
+  | 'word_import'
+  | 'temporary'
+  | 'qrcode';
 
 export interface MediaFile {
   id?: number;
@@ -13,6 +22,6 @@ export interface MediaFile {
   thumbnailUrl?: string;
   alt?: string;
   description?: string;
-  category?: string;
+  category?: MediaCategory;
   status: MediaStatus;
 }

@@ -18,6 +18,7 @@ published-site/*
 
 server/uploads/images/*
 !server/uploads/images/.gitkeep
+server/data/media-library.json
 server/logs/
 
 .DS_Store

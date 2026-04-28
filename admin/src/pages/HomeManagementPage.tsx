@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { HomeInteractiveImageSlot } from '../../../shared/types/home';
 import { getHomeInteractiveImages, saveHomeInteractiveImages } from '../api/home';
-import { listImages, type AdminMediaFile } from '../api/media';
+import type { AdminMediaFile } from '../api/media';
+import { MediaPicker } from '../components/MediaPicker';
 
 function toAbsoluteUrl(url: string) {
   if (!url) {
@@ -17,15 +18,13 @@ function toAbsoluteUrl(url: string) {
 
 export function HomeManagementPage() {
   const [slots, setSlots] = useState<HomeInteractiveImageSlot[]>([]);
-  const [images, setImages] = useState<AdminMediaFile[]>([]);
   const [status, setStatus] = useState('\u6b63\u5728\u52a0\u8f7d\u9996\u9875\u914d\u7f6e...');
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
-    Promise.all([getHomeInteractiveImages(), listImages()])
-      .then(([nextSlots, nextImages]) => {
+    getHomeInteractiveImages()
+      .then((nextSlots) => {
         setSlots(nextSlots);
-        setImages(nextImages);
         setStatus('\u5df2\u52a0\u8f7d 12 \u4e2a\u56fe\u7247\u69fd\u4f4d\u3002');
       })
       .catch((error: Error) => {
@@ -39,17 +38,7 @@ export function HomeManagementPage() {
     )));
   }
 
-  function bindImage(slotNo: number, fileName: string) {
-    const image = images.find((item) => item.fileName === fileName);
-
-    if (!image) {
-      updateSlot(slotNo, {
-        mediaUrl: '',
-        mediaFileName: '',
-      });
-      return;
-    }
-
+  function bindImage(slotNo: number, image: AdminMediaFile) {
     updateSlot(slotNo, {
       mediaUrl: image.url.replace('http://localhost:4000', ''),
       mediaFileName: image.fileName,
@@ -110,20 +99,25 @@ export function HomeManagementPage() {
                 </label>
               </div>
 
-              <label>
-                <span>{'\u4ece\u5a92\u4f53\u5e93\u9009\u62e9'}</span>
-                <select
-                  value={slot.mediaFileName}
-                  onChange={(event) => bindImage(slot.slotNo, event.target.value)}
-                >
-                  <option value="">{'\u6682\u4e0d\u7ed1\u5b9a\u56fe\u7247'}</option>
-                  {images.map((image) => (
-                    <option key={image.fileName} value={image.fileName}>
-                      {image.fileName}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="home-slot-picker-row">
+                <MediaPicker
+                  defaultCategory="home_interactive"
+                  onSelect={(image) => bindImage(slot.slotNo, image)}
+                />
+                {slot.mediaFileName ? (
+                  <button
+                    className="media-picker-clear"
+                    type="button"
+                    onClick={() => updateSlot(slot.slotNo, { mediaUrl: '', mediaFileName: '' })}
+                  >
+                    {'\u6e05\u9664'}
+                  </button>
+                ) : null}
+              </div>
+
+              {slot.mediaFileName ? (
+                <p className="home-slot-file-name">{slot.mediaFileName}</p>
+              ) : null}
 
               <label>
                 <span>Alt</span>

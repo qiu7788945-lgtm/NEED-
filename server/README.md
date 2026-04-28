@@ -55,6 +55,7 @@ Media upload:
 ```text
 POST http://localhost:4000/api/media/upload
 form-data field: file
+optional form-data field: category
 allowed: jpg, jpeg, png, webp
 limit: 10MB
 ```
@@ -71,6 +72,9 @@ Expected response shape:
     "url": "/uploads/images/image-0000000000000-abcd1234.jpg",
     "size": 12345,
     "mimeType": "image/jpeg"
+    "category": "temporary",
+    "alt": "",
+    "description": ""
   }
 }
 ```
@@ -79,12 +83,33 @@ Media list:
 
 ```text
 GET http://localhost:4000/api/media/list
+GET http://localhost:4000/api/media/list?category=home_interactive
+GET http://localhost:4000/api/media/list?keyword=logo
 ```
+
+Supported categories:
+
+- `home_interactive`
+- `case_image`
+- `article_cover`
+- `solution_image`
+- `page_editor`
+- `word_import`
+- `temporary`
+- `qrcode`
+
+If no category is provided on upload, the file is stored as `temporary`.
 
 Uploaded images are stored in:
 
 ```text
 server/uploads/images/
+```
+
+Local media metadata is stored in:
+
+```text
+server/data/media-library.json
 ```
 
 Homepage interactive image slots:

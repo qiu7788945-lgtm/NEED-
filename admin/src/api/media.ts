@@ -6,6 +6,9 @@ export interface AdminMediaFile {
   url: string;
   size: number;
   mimeType: string;
+  category: string;
+  alt: string;
+  description: string;
   createdAt?: string;
 }
 
@@ -34,9 +37,10 @@ async function readJson<TData>(response: Response): Promise<TData> {
   return body.data;
 }
 
-export async function uploadImage(file: File) {
+export async function uploadImage(file: File, category = 'temporary') {
   const formData = new FormData();
   formData.append('file', file);
+  formData.append('category', category);
 
   const data = await readJson<AdminMediaFile>(await fetch(`${apiBaseUrl}/api/media/upload`, {
     method: 'POST',
@@ -49,8 +53,24 @@ export async function uploadImage(file: File) {
   };
 }
 
-export async function listImages() {
-  const data = await readJson<AdminMediaFile[]>(await fetch(`${apiBaseUrl}/api/media/list`));
+export interface MediaListParams {
+  category?: string;
+  keyword?: string;
+}
+
+export async function listImages(params: MediaListParams = {}) {
+  const searchParams = new URLSearchParams();
+
+  if (params.category) {
+    searchParams.set('category', params.category);
+  }
+
+  if (params.keyword) {
+    searchParams.set('keyword', params.keyword);
+  }
+
+  const query = searchParams.toString();
+  const data = await readJson<AdminMediaFile[]>(await fetch(`${apiBaseUrl}/api/media/list${query ? `?${query}` : ''}`));
 
   return data.map((item) => ({
     ...item,
