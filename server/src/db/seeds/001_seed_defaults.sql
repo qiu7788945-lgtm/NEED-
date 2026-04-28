@@ -1,0 +1,25 @@
+-- NEED default seed draft for MySQL 8.
+-- This file is documentation for now. Do not execute until the real database layer is introduced.
+
+-- Home interactive image slots are intentionally fixed at 12 for the first admin version.
+-- INSERT INTO home_interactive_images (slot_number, sort_order, is_enabled, alt_text)
+-- VALUES
+--   (1, 1, 1, 'NEED homepage interactive image slot 1'),
+--   (2, 2, 1, 'NEED homepage interactive image slot 2'),
+--   (3, 3, 1, 'NEED homepage interactive image slot 3'),
+--   (4, 4, 1, 'NEED homepage interactive image slot 4'),
+--   (5, 5, 1, 'NEED homepage interactive image slot 5'),
+--   (6, 6, 1, 'NEED homepage interactive image slot 6'),
+--   (7, 7, 1, 'NEED homepage interactive image slot 7'),
+--   (8, 8, 1, 'NEED homepage interactive image slot 8'),
+--   (9, 9, 1, 'NEED homepage interactive image slot 9'),
+--   (10, 10, 1, 'NEED homepage interactive image slot 10'),
+--   (11, 11, 1, 'NEED homepage interactive image slot 11'),
+--   (12, 12, 1, 'NEED homepage interactive image slot 12');
+
+-- Suggested initial site settings:
+-- INSERT INTO site_settings (setting_key, setting_value_json, group_name)
+-- VALUES
+--   ('site_name', JSON_OBJECT('value', 'NEED 尼德公关'), 'basic'),
+--   ('contact_email', JSON_OBJECT('value', ''), 'contact'),
+--   ('icp_number', JSON_OBJECT('value', ''), 'legal');

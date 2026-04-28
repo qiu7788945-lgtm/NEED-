@@ -5,6 +5,13 @@ export const env = {
   isProduction: nodeEnv === 'production',
   port: Number(process.env.PORT ?? 4000),
   databaseUrl: process.env.DATABASE_URL,
+  database: {
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT ?? 3306),
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    name: process.env.DB_NAME,
+  },
   cos: {
     secretId: process.env.COS_SECRET_ID,
     secretKey: process.env.COS_SECRET_KEY,

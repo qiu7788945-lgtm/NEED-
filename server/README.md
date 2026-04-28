@@ -10,8 +10,12 @@ Current round scope:
 - Unified 404 and error middleware
 - Environment config placeholder
 - Database client placeholder
+- Database config placeholder
+- MySQL 8 schema draft
+- Migration runner placeholder
 - Audit service placeholder
 - No database connection
+- No migration execution
 - No media upload
 - No publishing system
 
@@ -49,4 +53,25 @@ npm.cmd run lint
 
 Database note:
 
-This round intentionally does not connect to MySQL or create real tables. The `server/src/db/client.ts` file is only a placeholder. Database schema and migrations should be introduced in round 7.
+This server still does not connect to MySQL or create real tables.
+
+Round 7 added draft-only database files:
+
+- `server/src/db/migrations/001_initial_schema.sql`
+- `server/src/db/schema/schema-v1.md`
+- `server/src/db/seeds/001_seed_defaults.sql`
+- `server/src/db/migrate.ts`
+
+The migration runner is intentionally a placeholder. It only prints a message and a safe database config preview:
+
+```bash
+npx tsx server/src/db/migrate.ts
+```
+
+Expected output includes:
+
+```text
+database migration runner placeholder
+```
+
+Real database connection, migration execution, and migration history tracking should be added in the next database implementation round.
