@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
+    "dev:server": "tsx server/src/app.ts",
+    "dev:admin": "vite --config admin/vite.config.ts --port=3001 --host=0.0.0.0",
     "build": "vite build",
+    "build:admin": "vite build --config admin/vite.config.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "typecheck:server": "tsc -p server/tsconfig.json --noEmit"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
