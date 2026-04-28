@@ -9,6 +9,7 @@ export interface MediaFile {
   fileType: MediaFileType;
   mimeType: string;
   url: string;
+  size?: number;
   thumbnailUrl?: string;
   alt?: string;
   description?: string;

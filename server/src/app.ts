@@ -1,4 +1,7 @@
 import 'dotenv/config';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import cors from 'cors';
 import express from 'express';
 import { env } from './config/env.js';
 import { errorMiddleware } from './middlewares/error.middleware.js';
@@ -7,8 +10,11 @@ import { apiRouter } from './routes/index.js';
 import { logger } from './utils/logger.js';
 
 const app = express();
+const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
+app.use(cors());
 app.use(express.json());
+app.use('/uploads/images', express.static(path.join(serverRoot, 'uploads', 'images')));
 app.use(apiRouter);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

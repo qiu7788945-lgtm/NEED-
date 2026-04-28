@@ -13,10 +13,15 @@ Current round scope:
 - Database config placeholder
 - MySQL 8 schema draft
 - Migration runner placeholder
+- Local image upload endpoint
+- Local image listing endpoint
+- Static image access under `/uploads/images`
 - Audit service placeholder
 - No database connection
 - No migration execution
-- No media upload
+- No database-backed media library
+- No video upload
+- No COS integration
 - No publishing system
 
 Development command:
@@ -42,6 +47,43 @@ Expected response shape:
     "time": "2026-04-28T00:00:00.000Z"
   }
 }
+```
+
+Media upload:
+
+```text
+POST http://localhost:4000/api/media/upload
+form-data field: file
+allowed: jpg, jpeg, png, webp
+limit: 10MB
+```
+
+Expected response shape:
+
+```json
+{
+  "ok": true,
+  "message": "OK",
+  "data": {
+    "fileName": "image-0000000000000-abcd1234.jpg",
+    "originalName": "example.jpg",
+    "url": "/uploads/images/image-0000000000000-abcd1234.jpg",
+    "size": 12345,
+    "mimeType": "image/jpeg"
+  }
+}
+```
+
+Media list:
+
+```text
+GET http://localhost:4000/api/media/list
+```
+
+Uploaded images are stored in:
+
+```text
+server/uploads/images/
 ```
 
 Validation:
