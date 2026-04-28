@@ -187,6 +187,18 @@ button {
   gap: 10px;
 }
 
+.media-field {
+  display: grid;
+  gap: 6px;
+}
+
+.media-field span,
+.media-inline-check span {
+  color: #52525b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .media-file-label {
   display: inline-flex;
   margin-bottom: 10px;
@@ -229,6 +241,7 @@ button {
 .media-filter-panel select,
 .media-picker-filters input,
 .media-picker-filters select,
+.media-upload-fields input,
 .media-upload-fields select {
   width: 100%;
   border: 1px solid #d4d4d8;

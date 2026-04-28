@@ -56,6 +56,7 @@ Media upload:
 POST http://localhost:4000/api/media/upload
 form-data field: file
 optional form-data field: category
+optional form-data fields: alt, description, ownerType, ownerId, ownerSlug, groupKey, slotNo, caption, enabled, sortOrder
 allowed: jpg, jpeg, png, webp
 limit: 10MB
 ```
@@ -74,7 +75,15 @@ Expected response shape:
     "mimeType": "image/jpeg"
     "category": "temporary",
     "alt": "",
-    "description": ""
+    "description": "",
+    "ownerType": "",
+    "ownerId": null,
+    "ownerSlug": "",
+    "groupKey": "",
+    "slotNo": null,
+    "caption": "",
+    "enabled": true,
+    "sortOrder": 0
   }
 }
 ```
@@ -84,19 +93,23 @@ Media list:
 ```text
 GET http://localhost:4000/api/media/list
 GET http://localhost:4000/api/media/list?category=home_interactive
+GET http://localhost:4000/api/media/list?ownerType=solution&ownerSlug=family-day&groupKey=hyundai-family-day-2025
+GET http://localhost:4000/api/media/list?enabled=true
 GET http://localhost:4000/api/media/list?keyword=logo
 ```
 
 Supported categories:
 
 - `home_interactive`
+- `home_video`
 - `case_image`
 - `article_cover`
 - `solution_image`
+- `solution_video`
 - `page_editor`
 - `word_import`
-- `temporary`
 - `qrcode`
+- `temporary`
 
 If no category is provided on upload, the file is stored as `temporary`.
 
@@ -111,6 +124,16 @@ Local media metadata is stored in:
 ```text
 server/data/media-library.json
 ```
+
+Business ownership fields:
+
+- `ownerType`: `home`, `case`, `article`, `solution`, `page`, `word_import`, `system`, `temporary`
+- `ownerId`: future database ID
+- `ownerSlug`: stable business slug, for example `family-day`
+- `groupKey`: image group key, for example `hyundai-family-day-2025`
+- `slotNo`: position inside a group
+- `sortOrder`: display order
+- `enabled`: future frontend rendering should ignore disabled media
 
 Homepage interactive image slots:
 

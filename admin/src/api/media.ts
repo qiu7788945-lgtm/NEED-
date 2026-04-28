@@ -9,6 +9,14 @@ export interface AdminMediaFile {
   category: string;
   alt: string;
   description: string;
+  ownerType: string;
+  ownerId: number | null;
+  ownerSlug: string;
+  groupKey: string;
+  slotNo: number | null;
+  caption: string;
+  enabled: boolean;
+  sortOrder: number;
   createdAt?: string;
 }
 
@@ -37,10 +45,29 @@ async function readJson<TData>(response: Response): Promise<TData> {
   return body.data;
 }
 
-export async function uploadImage(file: File, category = 'temporary') {
+export interface MediaUploadMetadata {
+  category?: string;
+  alt?: string;
+  description?: string;
+  ownerType?: string;
+  ownerId?: string;
+  ownerSlug?: string;
+  groupKey?: string;
+  slotNo?: string;
+  caption?: string;
+  enabled?: boolean;
+  sortOrder?: string;
+}
+
+export async function uploadImage(file: File, metadata: MediaUploadMetadata = {}) {
   const formData = new FormData();
   formData.append('file', file);
-  formData.append('category', category);
+
+  Object.entries(metadata).forEach(([key, value]) => {
+    if (value !== undefined && value !== '') {
+      formData.append(key, String(value));
+    }
+  });
 
   const data = await readJson<AdminMediaFile>(await fetch(`${apiBaseUrl}/api/media/upload`, {
     method: 'POST',
@@ -56,6 +83,12 @@ export async function uploadImage(file: File, category = 'temporary') {
 export interface MediaListParams {
   category?: string;
   keyword?: string;
+  ownerType?: string;
+  ownerId?: string;
+  ownerSlug?: string;
+  groupKey?: string;
+  slotNo?: string;
+  enabled?: string;
 }
 
 export async function listImages(params: MediaListParams = {}) {
@@ -68,6 +101,13 @@ export async function listImages(params: MediaListParams = {}) {
   if (params.keyword) {
     searchParams.set('keyword', params.keyword);
   }
+
+  ['ownerType', 'ownerId', 'ownerSlug', 'groupKey', 'slotNo', 'enabled'].forEach((key) => {
+    const value = params[key as keyof MediaListParams];
+    if (value) {
+      searchParams.set(key, value);
+    }
+  });
 
   const query = searchParams.toString();
   const data = await readJson<AdminMediaFile[]>(await fetch(`${apiBaseUrl}/api/media/list${query ? `?${query}` : ''}`));
