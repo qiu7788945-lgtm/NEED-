@@ -176,14 +176,31 @@ button {
 }
 
 .media-upload-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.media-upload-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 18px;
 }
 
+.media-upload-header h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.media-upload-header p {
+  margin: 8px 0 0;
+  color: #52525b;
+  line-height: 1.6;
+}
+
 .media-upload-fields {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 
@@ -193,10 +210,17 @@ button {
 }
 
 .media-field span,
-.media-inline-check span {
+.media-inline-check span,
+.media-filter-panel label span {
   color: #52525b;
   font-size: 12px;
   font-weight: 900;
+}
+
+.media-field small {
+  color: #71717a;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .media-file-label {
@@ -206,13 +230,20 @@ button {
   font-weight: 900;
 }
 
+.media-file-label,
+.media-selected-file,
+.media-inline-check {
+  grid-column: 1 / -1;
+}
+
 .media-selected-file,
 .media-status {
   margin: 12px 0 0;
   color: #52525b;
 }
 
-.media-upload-panel button {
+.media-upload-panel button,
+.media-secondary-button {
   border: 0;
   border-radius: 999px;
   padding: 12px 24px;
@@ -225,16 +256,42 @@ button {
   opacity: 0.6;
 }
 
+.media-advanced-panel {
+  display: grid;
+  gap: 14px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 16px;
+}
+
+.media-advanced-panel > button {
+  justify-self: start;
+}
+
+.media-upload-advanced {
+  padding: 16px;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
 .media-filter-panel,
 .media-picker-filters {
   display: grid;
-  grid-template-columns: minmax(180px, 240px) 1fr auto;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
   gap: 12px;
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 14px;
   padding: 16px;
   box-shadow: 0 16px 50px rgba(15, 23, 42, 0.05);
+}
+
+.media-filter-panel label {
+  display: grid;
+  gap: 6px;
+}
+
+.media-filter-search {
+  grid-column: span 2;
 }
 
 .media-filter-panel input,
@@ -261,6 +318,10 @@ button {
   background: #090909;
   color: #fff;
   font-weight: 900;
+}
+
+.media-filter-panel > button {
+  align-self: end;
 }
 
 .media-latest {
@@ -298,7 +359,7 @@ button {
 
 .media-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
 }
 
@@ -309,10 +370,10 @@ button {
   border-radius: 12px;
 }
 
-.media-card div {
+.media-card-body {
   display: grid;
-  gap: 6px;
-  padding: 12px;
+  gap: 12px;
+  padding: 14px;
 }
 
 .media-card strong,
@@ -321,12 +382,46 @@ button {
 }
 
 .media-card strong {
-  font-size: 13px;
+  font-size: 16px;
+  line-height: 1.35;
 }
 
 .media-card span {
   color: #71717a;
   font-size: 12px;
+}
+
+.media-card-core,
+.media-card-summary,
+.media-card-details {
+  display: grid;
+  gap: 7px;
+}
+
+.media-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.media-card-tags span {
+  border-radius: 999px;
+  padding: 5px 8px;
+  background: #f4f4f5;
+  color: #3f3f46;
+  font-weight: 900;
+}
+
+.media-card-summary {
+  border-top: 1px solid #f1f5f9;
+  border-bottom: 1px solid #f1f5f9;
+  padding: 10px 0;
+}
+
+.media-card-details {
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fafc;
 }
 
 .media-card .media-warning {
@@ -347,13 +442,14 @@ button {
 }
 
 .media-card-actions {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   padding: 0;
 }
 
 .media-card-actions button {
-  width: 100%;
+  flex: 1 1 112px;
   border: 0;
   border-radius: 999px;
   padding: 9px 12px;
@@ -364,6 +460,12 @@ button {
 
 .media-card-actions button.is-danger {
   background: #b91c1c;
+}
+
+.media-card-actions .media-secondary-button,
+.media-secondary-button {
+  background: #e5e7eb;
+  color: #111;
 }
 
 .home-toolbar {
@@ -594,6 +696,18 @@ button {
   .media-filter-panel,
   .media-picker-filters {
     grid-template-columns: 1fr;
+  }
+
+  .media-upload-header {
+    display: grid;
+  }
+
+  .media-upload-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .media-filter-search {
+    grid-column: auto;
   }
 
   .home-toolbar {

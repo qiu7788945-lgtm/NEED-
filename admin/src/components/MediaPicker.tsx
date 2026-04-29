@@ -21,6 +21,10 @@ interface MediaPickerProps {
   onSelect: (image: AdminMediaFile) => void;
 }
 
+function getMediaTitle(image: AdminMediaFile) {
+  return image.displayName || image.originalName || image.fileName;
+}
+
 export function MediaPicker({
   defaultCategory = '',
   defaultOwnerType = '',
@@ -113,7 +117,7 @@ export function MediaPicker({
                     void refreshImages();
                   }
                 }}
-                placeholder="\u641c\u7d22\u6587\u4ef6\u540d/\u8bf4\u660e"
+                placeholder="\u641c\u7d22\u7d20\u6750\u540d\u79f0\u3001\u6587\u4ef6\u540d\u3001\u56fe\u7247\u8bf4\u660e"
               />
               <button type="button" onClick={refreshImages}>
                 {'\u641c\u7d22'}
@@ -125,8 +129,8 @@ export function MediaPicker({
             <div className="media-picker-grid">
               {images.map((image) => (
                 <button type="button" className="media-picker-card" key={image.fileName} onClick={() => handleSelect(image)}>
-                  <img src={image.url} alt={image.alt || image.originalName || image.fileName} />
-                  <strong>{image.displayName || image.originalName || image.fileName}</strong>
+                  <img src={image.url} alt={image.alt || getMediaTitle(image)} />
+                  <strong>{getMediaTitle(image)}</strong>
                   <span>{getMediaCategoryLabel(image.category)}</span>
                   <span>{image.ownerSlug || '-'}</span>
                   <span>{image.groupKey || '-'}</span>

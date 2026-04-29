@@ -31,6 +31,12 @@ interface ApiResponse<TData> {
   code?: string;
 }
 
+const friendlyErrorMessages: Record<string, string> = {
+  MEDIA_NOT_ARCHIVED: '请先归档素材，再执行永久删除。',
+  MEDIA_USED_BY_HOME: '这张图片正在首页使用，请先解除引用。',
+  NOT_FOUND: '没找到这张素材，可能已被删除。',
+};
+
 function toAbsoluteUrl(url: string) {
   if (url.startsWith('http')) {
     return url;
@@ -43,7 +49,7 @@ async function readJson<TData>(response: Response): Promise<TData> {
   const body = await response.json() as ApiResponse<TData>;
 
   if (!response.ok || !body.ok || !body.data) {
-    throw new Error(body.message || 'Request failed');
+    throw new Error((body.code ? friendlyErrorMessages[body.code] : '') || body.message || '操作失败，请稍后再试。');
   }
 
   return body.data;

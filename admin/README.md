@@ -1,22 +1,17 @@
 # NEED Admin
 
-This is the future graphical management interface for the NEED website.
+This is the graphical management interface for the NEED website.
 
 Current round scope:
 
 - Static admin shell
-- Placeholder left navigation
 - Homepage 12 interactive image slot management
-- Media library placeholder page
 - Local image upload through the server API
-- Media category filter and keyword search
-- Media ownership filters: ownerType, ownerSlug, groupKey, enabled
-- Media status filter: active, archived, all
-- Media archive and restore actions
+- Media category, ownership, enabled-state, status, and keyword filters
+- Media archive, restore, and permanent delete actions
 - Reusable MediaPicker modal for image selection
-- Uploaded image preview and returned URL display
-- Upload fields for display name and optional safe storage name
-- Media card display for original name, display name, storage filename, dimensions, size, upload time, ownership, caption, alt/GEO, and status
+- Simplified media library UI with normal upload fields and folded advanced settings
+- Layered media cards with core information, common information, and folded details
 - Missing alt/GEO reminder
 - Temporary-media categorization reminder
 - No page editor implementation
@@ -26,6 +21,40 @@ Development command:
 ```bash
 npm.cmd run dev:admin
 ```
+
+Media library upload fields:
+
+The normal upload area is for daily use and shows:
+
+1. Choose image
+2. Asset name
+3. Asset category
+4. Display order
+5. Image alt/GEO description
+6. Image caption
+7. Upload button
+
+Use advanced settings only when the media needs precise storage or ownership metadata:
+
+- `storageName`: optional safe storage basename. Leave it empty to let the system generate a filename. Only letters, numbers, hyphens, and underscores are allowed.
+- `ownerType`: usually unnecessary for manual uploads.
+- `ownerSlug`: used for solution-scene ownership.
+- `groupKey`: used to distinguish projects or image groups under the same scene.
+- `slotNo`: the position in a group, such as image 1 or image 2. A group can contain fewer than 7 images.
+- `description`: internal note for the admin team.
+- `enabled`: enabled by default.
+
+Archive, restore, and permanent delete:
+
+- Archive is a soft delete. The media `status` becomes `archived`; the real image file remains under `server/uploads/images/`.
+- Restore moves an archived media item back to normal active media.
+- Permanent delete is only available after archive. It removes both the index record and the real file.
+
+Filename fields:
+
+- `displayName` is the human-readable asset name shown first in the admin UI. Use it to hide old mojibake filenames.
+- `originalName` is the original uploaded filename for source tracking.
+- `fileName` is the safe storage filename under the upload directory.
 
 Media library test:
 
@@ -41,23 +70,15 @@ npm.cmd run dev:server
 npm.cmd run dev:admin
 ```
 
-3. Open the admin URL shown by Vite, click the Media Library menu item, choose a jpg/jpeg/png/webp image under 10MB, and upload it.
-4. Fill an optional asset name. This is `displayName`, the human-readable media name.
-5. Fill an optional storage filename. This is `storageName`; only letters, numbers, hyphens, and underscores are allowed, and the server keeps the extension.
-6. Choose an upload category and optional ownership fields, then filter or search the list.
-7. Keyword search checks file name, original name, display name, alt, description, and caption.
+3. Open the admin URL shown by Vite and click the Media Library menu item.
+4. Choose a jpg/jpeg/png/webp image under 10MB.
+5. Fill the normal upload fields and upload it.
+6. Expand advanced settings only when testing storage name, ownership, group position, internal note, or enabled state.
+7. Use filters and keyword search. Keyword search checks file name, original name, display name, alt, description, and caption.
 8. Click Archive on a media card, confirm the dialog, then switch the status filter to Archived to view it.
 9. Click Restore on an archived media card to return it to normal media.
 10. Click Permanently Delete on an archived card, confirm the warning, and the server will remove both the index record and real file.
-
-Archive is a soft delete in this first version. The admin UI updates the media `status` to `archived`; the image file remains under `server/uploads/images/`.
-
-Permanent delete is only available after archive. Active media cannot be permanently deleted.
-
-Chinese filename note:
-
-- New uploads try to display Chinese `originalName` correctly.
-- Old mojibake names do not need automatic migration; use `displayName` to provide a clean visible name.
+11. Click View Details on a media card to see original filename, storage filename, URL, ownership fields, internal note, and enabled state.
 
 Media quality reminders:
 

@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { mediaCategories, mediaOwnerTypes, getMediaCategoryLabel } from '../constants/mediaCategories';
 import { archiveImage, deleteImage, listImages, restoreImage, type AdminMediaFile, uploadImage } from '../api/media';
+import { getMediaCategoryLabel, mediaCategories, mediaOwnerTypes } from '../constants/mediaCategories';
 
 const ownerSlugOptions = [
-  { value: '', label: '不指定' },
+  { value: '', label: '不指定场景' },
   { value: 'family-day', label: '企业家庭日/开放日 family-day' },
   { value: 'salon', label: '客户答谢&精品沙龙 salon' },
   { value: 'annual', label: '年会活动与企业文化 annual' },
@@ -48,6 +48,14 @@ function formatDimensions(width: number | null, height: number | null) {
   return `${width} x ${height}`;
 }
 
+function getMediaTitle(image: AdminMediaFile) {
+  return image.displayName || image.originalName || image.fileName;
+}
+
+function getOwnerTypeLabel(value: string) {
+  return mediaOwnerTypes.find((item) => item.value === value)?.label ?? value;
+}
+
 export function MediaLibraryPage() {
   const [images, setImages] = useState<AdminMediaFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -63,6 +71,8 @@ export function MediaLibraryPage() {
   const [uploadCaption, setUploadCaption] = useState('');
   const [uploadEnabled, setUploadEnabled] = useState(true);
   const [uploadSortOrder, setUploadSortOrder] = useState('');
+  const [showAdvancedUpload, setShowAdvancedUpload] = useState(false);
+  const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
   const [filterCategory, setFilterCategory] = useState('');
   const [filterOwnerType, setFilterOwnerType] = useState('');
   const [filterOwnerSlug, setFilterOwnerSlug] = useState('');
@@ -91,10 +101,10 @@ export function MediaLibraryPage() {
     refreshImages().catch((error: Error) => {
       setStatus(error.message);
     });
-  }, [filterCategory, filterOwnerType, filterEnabled, filterStatus]);
+  }, [filterCategory, filterOwnerType, filterOwnerSlug, filterGroupKey, filterEnabled, filterStatus]);
 
   async function handleArchive(fileName: string) {
-    const confirmed = window.confirm('确认归档这张图片吗？归档后默认不会出现在媒体选择器里，但文件不会被物理删除。');
+    const confirmed = window.confirm('确认归档这张素材吗？归档后它默认不会出现在媒体选择器里，但文件不会被永久删除。');
     if (!confirmed) {
       return;
     }
@@ -104,7 +114,7 @@ export function MediaLibraryPage() {
       setStatus('归档成功。');
       await refreshImages();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '归档失败。');
+      setStatus(error instanceof Error ? error.message : '归档失败，请稍后再试。');
     }
   }
 
@@ -114,22 +124,22 @@ export function MediaLibraryPage() {
       setStatus('恢复成功。');
       await refreshImages();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '恢复失败。');
+      setStatus(error instanceof Error ? error.message : '恢复失败，请稍后再试。');
     }
   }
 
   async function handleDelete(fileName: string) {
-    const confirmed = window.confirm('永久删除后无法恢复，并会删除服务器上的真实文件。确认永久删除这张图片吗？');
+    const confirmed = window.confirm('永久删除后无法恢复，并会删除服务器上的真实文件。确认永久删除这张素材吗？');
     if (!confirmed) {
       return;
     }
 
     try {
       const result = await deleteImage(fileName);
-      setStatus(result.fileMissing ? '删除成功：索引已清理，真实文件此前已不存在。' : '永久删除成功。');
+      setStatus(result.fileMissing ? '删除成功：素材记录已清理，真实文件此前已不存在。' : '永久删除成功。');
       await refreshImages();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '永久删除失败。');
+      setStatus(error instanceof Error ? error.message : '永久删除失败，请稍后再试。');
     }
   }
 
@@ -162,12 +172,37 @@ export function MediaLibraryPage() {
       setSelectedFile(null);
       setUploadDisplayName('');
       setUploadStorageName('');
+      setUploadAlt('');
+      setUploadDescription('');
+      setUploadOwnerType('');
+      setUploadOwnerSlug('');
+      setUploadGroupKey('');
+      setUploadSlotNo('');
+      setUploadCaption('');
+      setUploadEnabled(true);
+      setUploadSortOrder('');
       await refreshImages();
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '上传失败。');
+      setStatus(error instanceof Error ? error.message : '上传失败，请检查图片格式和大小。');
     } finally {
       setIsUploading(false);
     }
+  }
+
+  async function handleCopyLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      setStatus('图片链接已复制。');
+    } catch {
+      setStatus('复制失败，请手动复制详细信息里的图片 URL。');
+    }
+  }
+
+  function toggleDetails(fileName: string) {
+    setExpandedDetails((current) => ({
+      ...current,
+      [fileName]: !current[fileName],
+    }));
   }
 
   return (
@@ -175,10 +210,20 @@ export function MediaLibraryPage() {
       <div className="admin-section-heading">
         <p className="admin-eyebrow">Media Library</p>
         <h1>媒体库</h1>
-        <p>支持本地图片上传、分层归属、搜索、归档与已归档素材永久删除。</p>
+        <p>统一管理图片素材，支持上传、分类、搜索、归档、恢复与已归档素材永久删除。</p>
       </div>
 
       <div className="media-upload-panel">
+        <div className="media-upload-header">
+          <div>
+            <h2>上传图片</h2>
+            <p>默认只填写团队日常最常用的信息；归属和存储细节放在高级设置里。</p>
+          </div>
+          <button type="button" onClick={handleUpload} disabled={isUploading}>
+            {isUploading ? '上传中' : '上传'}
+          </button>
+        </div>
+
         <div className="media-upload-fields">
           <label className="media-file-label" htmlFor="media-file">
             选择图片
@@ -194,15 +239,7 @@ export function MediaLibraryPage() {
             <input
               value={uploadDisplayName}
               onChange={(event) => setUploadDisplayName(event.target.value)}
-              placeholder="给自己看的名字，例如：家庭日主视觉打卡区"
-            />
-          </label>
-          <label className="media-field">
-            <span>存储文件名</span>
-            <input
-              value={uploadStorageName}
-              onChange={(event) => setUploadStorageName(event.target.value)}
-              placeholder="可选，例如 family-day-main-visual-01；不填则系统自动生成"
+              placeholder="后台里给自己看的名字，例如：家庭日主视觉打卡区"
             />
           </label>
           <label className="media-field">
@@ -216,107 +253,146 @@ export function MediaLibraryPage() {
             </select>
           </label>
           <label className="media-field">
-            <span>归属类型</span>
-            <select value={uploadOwnerType} onChange={(event) => setUploadOwnerType(event.target.value)}>
-              {mediaOwnerTypes.map((item) => (
-                <option key={item.value || 'all'} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="media-field">
-            <span>所属场景</span>
-            <select value={uploadOwnerSlug} onChange={(event) => setUploadOwnerSlug(event.target.value)}>
-              {ownerSlugOptions.map((item) => (
-                <option key={item.value || 'none'} value={item.value}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="media-field">
-            <span>所属项目/图组</span>
-            <input value={uploadGroupKey} onChange={(event) => setUploadGroupKey(event.target.value)} placeholder="例如 hyundai-family-day-2025" />
-          </label>
-          <label className="media-field">
-            <span>图组位置</span>
-            <input value={uploadSlotNo} onChange={(event) => setUploadSlotNo(event.target.value)} placeholder="1-7" type="number" />
-          </label>
-          <label className="media-field">
             <span>展示排序</span>
             <input value={uploadSortOrder} onChange={(event) => setUploadSortOrder(event.target.value)} placeholder="数字越小越靠前" type="number" />
           </label>
           <label className="media-field">
-            <span>图片替代文字/GEO 描述</span>
+            <span>图片替代文字/GEO描述</span>
             <input value={uploadAlt} onChange={(event) => setUploadAlt(event.target.value)} placeholder="给搜索引擎看的图片说明" />
           </label>
           <label className="media-field">
             <span>图片说明</span>
-            <input value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)} placeholder="前台可展示的图片说明" />
-          </label>
-          <label className="media-field">
-            <span>内部备注</span>
-            <input value={uploadDescription} onChange={(event) => setUploadDescription(event.target.value)} placeholder="仅后台内部备注" />
-          </label>
-          <label className="media-inline-check">
-            <input type="checkbox" checked={uploadEnabled} onChange={(event) => setUploadEnabled(event.target.checked)} />
-            <span>是否启用</span>
+            <input value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)} placeholder="前台或团队可读的图片说明" />
           </label>
           {selectedFile ? (
             <p className="media-selected-file">
-              {selectedFile.name} - {formatFileSize(selectedFile.size)}
+              已选择：{selectedFile.name}，{formatFileSize(selectedFile.size)}
             </p>
           ) : null}
         </div>
-        <button type="button" onClick={handleUpload} disabled={isUploading}>
-          {isUploading ? '上传中' : '上传'}
-        </button>
+
+        <div className="media-advanced-panel">
+          <button className="media-secondary-button" type="button" onClick={() => setShowAdvancedUpload((value) => !value)}>
+            {showAdvancedUpload ? '收起高级设置' : '展开高级设置'}
+          </button>
+
+          {showAdvancedUpload ? (
+            <div className="media-upload-fields media-upload-advanced">
+              <label className="media-field">
+                <span>存储文件名</span>
+                <input
+                  value={uploadStorageName}
+                  onChange={(event) => setUploadStorageName(event.target.value)}
+                  placeholder="可选，不填则系统自动生成；只允许英文、数字、短横线、下划线"
+                />
+              </label>
+              <label className="media-field">
+                <span>归属类型</span>
+                <select value={uploadOwnerType} onChange={(event) => setUploadOwnerType(event.target.value)}>
+                  {mediaOwnerTypes.map((item) => (
+                    <option key={item.value || 'all'} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <small>一般无需手动填写。</small>
+              </label>
+              <label className="media-field">
+                <span>所属场景</span>
+                <select value={uploadOwnerSlug} onChange={(event) => setUploadOwnerSlug(event.target.value)}>
+                  {ownerSlugOptions.map((item) => (
+                    <option key={item.value || 'none'} value={item.value}>
+                      {item.label}
+                    </option>
+                  ))}
+                </select>
+                <small>用于场景解决方案素材归属。</small>
+              </label>
+              <label className="media-field">
+                <span>所属项目/图组</span>
+                <input value={uploadGroupKey} onChange={(event) => setUploadGroupKey(event.target.value)} placeholder="用于区分同一场景下不同项目图片" />
+              </label>
+              <label className="media-field">
+                <span>图组位置</span>
+                <input value={uploadSlotNo} onChange={(event) => setUploadSlotNo(event.target.value)} placeholder="例如某组图中的第 1 张、第 2 张；可少于 7 张" type="number" />
+              </label>
+              <label className="media-field">
+                <span>内部备注 / description</span>
+                <input value={uploadDescription} onChange={(event) => setUploadDescription(event.target.value)} placeholder="仅后台内部备注" />
+              </label>
+              <label className="media-inline-check">
+                <input type="checkbox" checked={uploadEnabled} onChange={(event) => setUploadEnabled(event.target.checked)} />
+                <span>是否启用，默认启用</span>
+              </label>
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <div className="media-filter-panel">
-        <select value={filterCategory} onChange={(event) => setFilterCategory(event.target.value)}>
-          {mediaCategories.map((item) => (
-            <option key={item.value || 'all'} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-        <select value={filterOwnerType} onChange={(event) => setFilterOwnerType(event.target.value)}>
-          {mediaOwnerTypes.map((item) => (
-            <option key={item.value || 'all'} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-        <select value={filterOwnerSlug} onChange={(event) => setFilterOwnerSlug(event.target.value)}>
-          {ownerSlugOptions.map((item) => (
-            <option key={item.value || 'none'} value={item.value}>
-              {item.label}
-            </option>
-          ))}
-        </select>
-        <input value={filterGroupKey} onChange={(event) => setFilterGroupKey(event.target.value)} placeholder="所属项目/图组" />
-        <select value={filterEnabled} onChange={(event) => setFilterEnabled(event.target.value)}>
-          <option value="">启用状态</option>
-          <option value="true">已启用</option>
-          <option value="false">已禁用</option>
-        </select>
-        <select value={filterStatus} onChange={(event) => setFilterStatus(event.target.value as 'active' | 'archived' | 'all')}>
-          <option value="active">正常素材</option>
-          <option value="archived">已归档</option>
-          <option value="all">全部素材</option>
-        </select>
-        <input
-          value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') {
-              void refreshImages();
-            }
-          }}
-          placeholder="搜索素材名/文件名/说明"
-        />
+        <label>
+          <span>分类</span>
+          <select value={filterCategory} onChange={(event) => setFilterCategory(event.target.value)}>
+            {mediaCategories.map((item) => (
+              <option key={item.value || 'all'} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>归属类型</span>
+          <select value={filterOwnerType} onChange={(event) => setFilterOwnerType(event.target.value)}>
+            {mediaOwnerTypes.map((item) => (
+              <option key={item.value || 'all'} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>所属场景</span>
+          <select value={filterOwnerSlug} onChange={(event) => setFilterOwnerSlug(event.target.value)}>
+            {ownerSlugOptions.map((item) => (
+              <option key={item.value || 'none'} value={item.value}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>所属项目/图组</span>
+          <input value={filterGroupKey} onChange={(event) => setFilterGroupKey(event.target.value)} placeholder="项目或图组 key" />
+        </label>
+        <label>
+          <span>启用状态</span>
+          <select value={filterEnabled} onChange={(event) => setFilterEnabled(event.target.value)}>
+            <option value="">全部启用状态</option>
+            <option value="true">已启用</option>
+            <option value="false">已停用</option>
+          </select>
+        </label>
+        <label>
+          <span>素材状态</span>
+          <select value={filterStatus} onChange={(event) => setFilterStatus(event.target.value as 'active' | 'archived' | 'all')}>
+            <option value="active">正常素材</option>
+            <option value="archived">已归档</option>
+            <option value="all">全部素材</option>
+          </select>
+        </label>
+        <label className="media-filter-search">
+          <span>搜索</span>
+          <input
+            value={keyword}
+            onChange={(event) => setKeyword(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                void refreshImages();
+              }
+            }}
+            placeholder="搜索素材名称、文件名、图片说明"
+          />
+        </label>
         <button type="button" onClick={refreshImages}>
           搜索
         </button>
@@ -326,57 +402,80 @@ export function MediaLibraryPage() {
 
       {latestImage ? (
         <div className="media-latest">
-          <img src={latestImage.url} alt={latestImage.originalName ?? latestImage.fileName} />
+          <img src={latestImage.url} alt={latestImage.alt || getMediaTitle(latestImage)} />
           <div>
             <h2>最新上传</h2>
-            <p>{latestImage.displayName || latestImage.originalName || latestImage.fileName}</p>
+            <p>{getMediaTitle(latestImage)}</p>
             <input readOnly value={latestImage.url} aria-label="image URL" />
           </div>
         </div>
       ) : null}
 
       <div className="media-grid">
-        {images.map((image) => (
-          <article className="media-card" key={image.fileName}>
-            <img src={image.url} alt={image.alt || image.originalName || image.fileName} />
-            <div>
-              <strong>{image.displayName || image.originalName || image.fileName}</strong>
-              {!image.alt ? <span className="media-warning">缺少 GEO 图片描述</span> : null}
-              {image.category === 'temporary' ? <span className="media-warning">临时素材，建议归类</span> : null}
-              <span>素材名称：{image.displayName || '-'}</span>
-              <span>原始文件名：{image.originalName || '-'}</span>
-              <span>存储文件名：{image.fileName}</span>
-              <span>图片尺寸：{formatDimensions(image.width, image.height)}</span>
-              <span>文件大小：{formatFileSize(image.size)}</span>
-              <span>上传时间：{formatDateTime(image.createdAt)}</span>
-              <span>分类：{getMediaCategoryLabel(image.category)}</span>
-              <span>所属场景：{image.ownerSlug || '-'}</span>
-              <span>项目/图组：{image.groupKey || '-'}</span>
-              <span>图组位置：{image.slotNo ?? '-'}</span>
-              <span>图片说明：{image.caption || '-'}</span>
-              <span>alt/GEO 描述：{image.alt || '-'}</span>
-              <span>是否启用：{image.enabled ? '是' : '否'}</span>
-              <span>状态：{image.status === 'archived' ? '已归档' : '正常'}</span>
-              <input readOnly value={image.url} aria-label="image URL" />
-              <div className="media-card-actions">
-                {image.status === 'archived' ? (
-                  <>
-                    <button type="button" onClick={() => void handleRestore(image.fileName)}>
-                      恢复
+        {images.map((image) => {
+          const isExpanded = Boolean(expandedDetails[image.fileName]);
+
+          return (
+            <article className="media-card" key={image.fileName}>
+              <img src={image.url} alt={image.alt || getMediaTitle(image)} />
+              <div className="media-card-body">
+                <div className="media-card-core">
+                  <strong>{getMediaTitle(image)}</strong>
+                  <div className="media-card-tags">
+                    <span>{getMediaCategoryLabel(image.category)}</span>
+                    <span>{image.status === 'archived' ? '已归档' : '正常'}</span>
+                  </div>
+                  {!image.alt ? <span className="media-warning">缺少 GEO 图片描述</span> : null}
+                  {image.category === 'temporary' ? <span className="media-warning">临时素材，建议归类</span> : null}
+                </div>
+
+                <div className="media-card-summary">
+                  <span>尺寸：{formatDimensions(image.width, image.height)}</span>
+                  <span>大小：{formatFileSize(image.size)}</span>
+                  <span>上传：{formatDateTime(image.createdAt)}</span>
+                  <span>说明：{image.caption || '-'}</span>
+                </div>
+
+                {isExpanded ? (
+                  <div className="media-card-details">
+                    <span>原始文件名：{image.originalName || '-'}</span>
+                    <span>存储文件名：{image.fileName}</span>
+                    <span>图片 URL：{image.url}</span>
+                    <span>归属类型：{image.ownerType ? getOwnerTypeLabel(image.ownerType) : '-'}</span>
+                    <span>所属场景：{image.ownerSlug || '-'}</span>
+                    <span>所属项目/图组：{image.groupKey || '-'}</span>
+                    <span>图组位置：{image.slotNo ?? '-'}</span>
+                    <span>内部备注 / description：{image.description || '-'}</span>
+                    <span>enabled 状态：{image.enabled ? '已启用' : '已停用'}</span>
+                  </div>
+                ) : null}
+
+                <div className="media-card-actions">
+                  {image.status === 'archived' ? (
+                    <>
+                      <button type="button" onClick={() => void handleRestore(image.fileName)}>
+                        恢复
+                      </button>
+                      <button className="is-danger" type="button" onClick={() => void handleDelete(image.fileName)}>
+                        永久删除
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => void handleArchive(image.fileName)}>
+                      归档
                     </button>
-                    <button className="is-danger" type="button" onClick={() => void handleDelete(image.fileName)}>
-                      永久删除
-                    </button>
-                  </>
-                ) : (
-                  <button type="button" onClick={() => void handleArchive(image.fileName)}>
-                    归档
+                  )}
+                  <button type="button" onClick={() => void handleCopyLink(image.url)}>
+                    复制链接
                   </button>
-                )}
+                  <button className="media-secondary-button" type="button" onClick={() => toggleDetails(image.fileName)}>
+                    {isExpanded ? '收起详细信息' : '查看详细信息'}
+                  </button>
+                </div>
               </div>
-            </div>
-          </article>
-        ))}
+            </article>
+          );
+        })}
       </div>
     </div>
   );
