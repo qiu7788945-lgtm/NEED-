@@ -3,14 +3,14 @@ import { mediaCategories, mediaOwnerTypes, getMediaCategoryLabel } from '../cons
 import { listImages, type AdminMediaFile } from '../api/media';
 
 const ownerSlugOptions = [
-  { value: '', label: '\u4e0d\u6307\u5b9a\u573a\u666f' },
-  { value: 'family-day', label: '\u4f01\u4e1a\u5bb6\u5ead\u65e5/\u5f00\u653e\u65e5 family-day' },
-  { value: 'salon', label: '\u5ba2\u6237\u7b54\u8c22&\u7cbe\u54c1\u6c99\u9f99 salon' },
-  { value: 'annual', label: '\u5e74\u4f1a\u6d3b\u52a8\u4e0e\u4f01\u4e1a\u6587\u5316 annual' },
-  { value: 'exhibition', label: '\u5546\u4e1a\u7f8e\u9648\u4e0e\u5c55\u89c8 exhibition' },
-  { value: 'video', label: '\u89c6\u9891\u4e0e\u6570\u5b57\u8d44\u4ea7 video' },
-  { value: 'forum', label: '\u5b66\u672f\u4e0e\u4e13\u4e1a\u8bba\u575b forum' },
-  { value: 'other', label: '\u5176\u4ed6 other' },
+  { value: '', label: '不指定场景' },
+  { value: 'family-day', label: '企业家庭日/开放日 family-day' },
+  { value: 'salon', label: '客户答谢&精品沙龙 salon' },
+  { value: 'annual', label: '年会活动与企业文化 annual' },
+  { value: 'exhibition', label: '商业美陈与展览 exhibition' },
+  { value: 'video', label: '视频与数字资产 video' },
+  { value: 'forum', label: '学术与专业论坛 forum' },
+  { value: 'other', label: '其他 other' },
 ];
 
 interface MediaPickerProps {
@@ -18,6 +18,7 @@ interface MediaPickerProps {
   defaultOwnerType?: string;
   defaultOwnerSlug?: string;
   defaultGroupKey?: string;
+  allowVideo?: boolean;
   onSelect: (image: AdminMediaFile) => void;
 }
 
@@ -30,6 +31,7 @@ export function MediaPicker({
   defaultOwnerType = '',
   defaultOwnerSlug = '',
   defaultGroupKey = '',
+  allowVideo = false,
   onSelect,
 }: MediaPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -42,13 +44,13 @@ export function MediaPicker({
   const [status, setStatus] = useState('');
 
   async function refreshImages() {
-    setStatus('\u6b63\u5728\u52a0\u8f7d\u5a92\u4f53...');
+    setStatus('正在加载媒体...');
     try {
-      const nextImages = await listImages({ category, ownerType, ownerSlug, groupKey, keyword, status: 'active' });
+      const nextImages = await listImages({ category, ownerType, ownerSlug, groupKey, keyword, status: 'active', fileType: allowVideo ? undefined : 'image' });
       setImages(nextImages);
-      setStatus(nextImages.length ? '' : '\u6ca1\u6709\u627e\u5230\u5339\u914d\u56fe\u7247\u3002');
+      setStatus(nextImages.length ? '' : '没有找到匹配图片。');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '\u52a0\u8f7d\u5931\u8d25\u3002');
+      setStatus(error instanceof Error ? error.message : '加载失败。');
     }
   }
 
@@ -66,7 +68,7 @@ export function MediaPicker({
   return (
     <>
       <button className="media-picker-trigger" type="button" onClick={() => setIsOpen(true)}>
-        {'\u9009\u62e9\u56fe\u7247'}
+        选择图片
       </button>
 
       {isOpen ? (
@@ -75,29 +77,29 @@ export function MediaPicker({
             <div className="media-picker-header">
               <div>
                 <p className="admin-eyebrow">Media Picker</p>
-                <h2>{'\u9009\u62e9\u56fe\u7247'}</h2>
+                <h2>选择图片</h2>
               </div>
               <button type="button" onClick={() => setIsOpen(false)}>
-                {'\u5173\u95ed'}
+                关闭
               </button>
             </div>
 
             <div className="media-picker-filters">
-              <select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="\u7d20\u6750\u5206\u7c7b">
+              <select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="素材分类">
                 {mediaCategories.map((item) => (
                   <option key={item.value || 'all'} value={item.value}>
                     {item.label}
                   </option>
                 ))}
               </select>
-              <select value={ownerType} onChange={(event) => setOwnerType(event.target.value)} aria-label="\u5f52\u5c5e\u7c7b\u578b">
+              <select value={ownerType} onChange={(event) => setOwnerType(event.target.value)} aria-label="归属类型">
                 {mediaOwnerTypes.map((item) => (
                   <option key={item.value || 'all'} value={item.value}>
                     {item.label}
                   </option>
                 ))}
               </select>
-              <select value={ownerSlug} onChange={(event) => setOwnerSlug(event.target.value)} aria-label="\u6240\u5c5e\u573a\u666f">
+              <select value={ownerSlug} onChange={(event) => setOwnerSlug(event.target.value)} aria-label="所属场景">
                 {ownerSlugOptions.map((item) => (
                   <option key={item.value || 'none'} value={item.value}>
                     {item.label}
@@ -107,7 +109,7 @@ export function MediaPicker({
               <input
                 value={groupKey}
                 onChange={(event) => setGroupKey(event.target.value)}
-                placeholder="\u6240\u5c5e\u9879\u76ee/\u56fe\u7ec4"
+                placeholder="所属项目/图组"
               />
               <input
                 value={keyword}
@@ -117,10 +119,10 @@ export function MediaPicker({
                     void refreshImages();
                   }
                 }}
-                placeholder="\u641c\u7d22\u7d20\u6750\u540d\u79f0\u3001\u6587\u4ef6\u540d\u3001\u56fe\u7247\u8bf4\u660e"
+                placeholder="搜索素材名称、文件名、图片说明"
               />
               <button type="button" onClick={refreshImages}>
-                {'\u641c\u7d22'}
+                搜索
               </button>
             </div>
 
@@ -129,7 +131,11 @@ export function MediaPicker({
             <div className="media-picker-grid">
               {images.map((image) => (
                 <button type="button" className="media-picker-card" key={image.fileName} onClick={() => handleSelect(image)}>
-                  <img src={image.url} alt={image.alt || getMediaTitle(image)} />
+                  {image.fileType === 'video' ? (
+                    <video src={image.url} preload="metadata" />
+                  ) : (
+                    <img src={image.url} alt={image.alt || getMediaTitle(image)} />
+                  )}
                   <strong>{getMediaTitle(image)}</strong>
                   <span>{getMediaCategoryLabel(image.category)}</span>
                   <span>{image.ownerSlug || '-'}</span>

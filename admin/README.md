@@ -10,6 +10,10 @@ Current round scope:
 - Media category, ownership, enabled-state, status, and keyword filters
 - Media metadata editing for uploaded assets
 - Media usage display for homepage 12 interactive image slots
+- Rule-based upload category suggestions
+- Duplicate upload warnings
+- Large image and cleanup reminders
+- Minimal video upload support in the media library
 - Media archive, restore, and permanent delete actions
 - Batch media selection, archive, restore, and permanent delete actions
 - Reusable MediaPicker modal for image selection
@@ -37,6 +41,8 @@ The normal upload area is for daily use and shows:
 6. Image caption
 7. Upload button
 
+The file picker accepts jpg/jpeg/png/webp images and mp4/webm videos. Images default to a 10MB limit. Videos default to a 500MB limit.
+
 Use advanced settings only when the media needs precise storage or ownership metadata:
 
 - `storageName`: optional safe storage basename. Leave it empty to let the system generate a filename. Only letters, numbers, hyphens, and underscores are allowed.
@@ -46,6 +52,13 @@ Use advanced settings only when the media needs precise storage or ownership met
 - `slotNo`: the position in a group, such as image 1 or image 2. A group can contain fewer than 7 images.
 - `description`: internal note for the admin team.
 - `enabled`: enabled by default.
+
+Upload automation:
+
+- Category suggestion is simple rule matching against filename, asset name, alt, caption, scene, and group fields. It is not AI classification.
+- User-selected categories are not overwritten. If the file remains `temporary`, the upload result can show a suggested category.
+- Duplicate warnings do not block upload. They warn about possible same original name, same asset name, same size, original name plus size, or storage-name auto-renaming.
+- If a requested storage filename already exists, the server appends a suffix to avoid overwriting the existing file.
 
 Archive, restore, and permanent delete:
 
@@ -73,6 +86,19 @@ Usage display:
 
 Media cards show either "使用中：X 处" or "未被使用". Expanding details shows the known usage positions. Round 9.6 only tracks homepage 12 interactive images from `server/data/home-interactive-images.json`; cases, articles, scenes, and page editor usage are planned for later rounds.
 
+Image optimization reminders:
+
+- Images over 2MB show "图片较大，建议压缩后用于正式页面".
+- Images wider or taller than 2500px show "尺寸较大，正式上线前建议压缩".
+- Round 9.7 does not compress original images or generate thumbnails. Cards still use the uploaded URL for preview.
+
+Cleanup reminders:
+
+- `temporary` media shows "临时素材，建议归类".
+- `temporary` media older than 30 days shows "临时素材已超过 30 天，建议归档或删除".
+- `archived` media older than 30 days shows "已归档超过 30 天，可考虑永久删除".
+- The cleanup filter only filters and reminds. It never deletes files automatically.
+
 Media library test:
 
 1. Start the API server:
@@ -88,7 +114,7 @@ npm.cmd run dev:admin
 ```
 
 3. Open the admin URL shown by Vite and click the Media Library menu item.
-4. Choose a jpg/jpeg/png/webp image under 10MB.
+4. Choose a jpg/jpeg/png/webp image under 10MB, or an mp4/webm video under 500MB.
 5. Fill the normal upload fields and upload it.
 6. Expand advanced settings only when testing storage name, ownership, group position, internal note, or enabled state.
 7. Use filters and keyword search. Keyword search checks file name, original name, display name, alt, description, and caption.
@@ -103,11 +129,13 @@ Media quality reminders:
 
 - If alt/GEO is empty, the card shows "缺少 GEO 图片描述".
 - If category is `temporary`, the card shows "临时素材，建议归类".
+- Large images and older temporary/archived media show review reminders.
 
 The preview URL points to:
 
 ```text
 http://localhost:4000/uploads/images/:filename
+http://localhost:4000/uploads/videos/:filename
 ```
 
 Homepage management test:
@@ -120,7 +148,7 @@ Homepage management test:
 
 The MediaPicker opens with `home_interactive` as the default category for homepage slots.
 
-MediaPicker only requests `active` media, so archived images do not appear in the selector by default.
+MediaPicker only requests `active` image media by default, so archived media and videos do not appear in homepage image selectors. A future caller can opt into video selection with an explicit `allowVideo` prop.
 
 Future solution pages can reuse MediaPicker with:
 
@@ -137,4 +165,4 @@ The saved config is stored in:
 server/data/home-interactive-images.json
 ```
 
-Future database-backed media management should extend usage tracking to cases, articles, scenes, and page editor content before broadening safe physical cleanup.
+Future database-backed media management should extend usage tracking to cases, articles, scenes, and page editor content before broadening safe physical cleanup. Production video storage should use Tencent Cloud COS or a video service instead of long-term local disk.

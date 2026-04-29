@@ -13,7 +13,7 @@ export const errorMiddleware: ErrorRequestHandler = (error, _req, res, _next) =>
       ? error.statusCode
       : 500;
   const message = isMulterSizeError
-    ? 'Image size must be 10MB or less'
+    ? '文件太大。图片默认最大 10MB，视频默认最大 500MB。'
     : statusCode >= 500
       ? 'Internal Server Error'
       : error.message;

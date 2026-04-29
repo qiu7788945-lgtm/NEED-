@@ -28,6 +28,18 @@ export interface MediaUsage {
   detail: string;
 }
 
+export interface MediaDuplicateWarning {
+  type:
+    | 'same_original_name'
+    | 'same_display_name'
+    | 'same_file_name'
+    | 'same_size'
+    | 'same_original_name_and_size'
+    | 'storage_name_renamed';
+  message: string;
+  fileName?: string;
+}
+
 export interface MediaFile {
   id?: number;
   fileName: string;
@@ -39,6 +51,7 @@ export interface MediaFile {
   size?: number;
   width?: number | null;
   height?: number | null;
+  duration?: number | null;
   thumbnailUrl?: string;
   alt?: string;
   description?: string;
@@ -54,4 +67,9 @@ export interface MediaFile {
   status: MediaStatus;
   usageCount?: number;
   usages?: MediaUsage[];
+  suggestedCategory?: MediaCategory;
+  categoryWarning?: string;
+  duplicateWarnings?: MediaDuplicateWarning[];
+  isLargeFile?: boolean;
+  isLargeDimension?: boolean;
 }

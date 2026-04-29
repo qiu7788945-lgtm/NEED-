@@ -65,6 +65,8 @@ Media ownership logic:
 - `displayName` is the human-readable admin asset name and can be used to hide old mojibake filenames.
 - `fileName` is the safe storage filename under the upload directory; optional upload `storageName` can choose its basename with letters, numbers, hyphens, and underscores only.
 - `width` and `height` store image dimensions when they can be detected.
+- `fileType` distinguishes `image` and `video`.
+- `duration` is reserved for video duration and can be `null` in the local implementation.
 - `status=active` is normal media; `status=archived` is soft-deleted media hidden from default lists and MediaPicker.
 - Permanent delete is only allowed after archive and should remove both the metadata row and real file.
 - Empty alt/GEO descriptions should be surfaced as an admin reminder.
@@ -81,6 +83,19 @@ Round 9.6 local media maintenance rules:
 - Batch permanent delete applies only to archived media and skips active media.
 - Batch permanent delete skips media referenced by the homepage 12-image config.
 - Future usage tracking should add cases, articles, scene solution pages, and page editor blocks before broader cleanup automation.
+
+Round 9.7 local media optimization rules:
+
+- Upload category suggestions are rule-based hints only. They are not AI classification and do not overwrite a manually selected category.
+- Duplicate warnings do not block upload. They flag same original name, same asset name, same size, original name plus size, or storage-name auto-renaming.
+- Storage-name conflicts should be resolved by appending a suffix rather than overwriting an existing file.
+- Large-image handling is advisory only. The local server does not compress original images, generate thumbnails, or require optimization before upload.
+- Images default to a 10MB limit through `MEDIA_MAX_IMAGE_SIZE_MB`.
+- Videos default to a 500MB limit through `MEDIA_MAX_VIDEO_SIZE_MB`.
+- Local videos are stored under `server/uploads/videos/`, and video duration/thumbnail extraction is intentionally deferred.
+- Cleanup reminders for temporary and archived media are advisory only and never auto-delete files.
+- MediaPicker defaults to active images only so videos do not enter image slots.
+- Production video storage should move to Tencent Cloud COS or a video service rather than relying on local disk.
 
 Solution media rule:
 

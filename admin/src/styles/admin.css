@@ -386,14 +386,17 @@ button {
 }
 
 .media-latest img,
-.media-card img {
+.media-latest video,
+.media-card img,
+.media-card video {
   width: 100%;
   aspect-ratio: 4 / 3;
   object-fit: cover;
   background: #f4f4f5;
 }
 
-.media-latest img {
+.media-latest img,
+.media-latest video {
   border-radius: 12px;
 }
 
@@ -754,7 +757,8 @@ button {
   text-align: left;
 }
 
-.media-picker-card img {
+.media-picker-card img,
+.media-picker-card video {
   width: 100%;
   aspect-ratio: 4 / 3;
   object-fit: cover;

@@ -15,6 +15,7 @@ const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 app.use(cors());
 app.use(express.json());
 app.use('/uploads/images', express.static(path.join(serverRoot, 'uploads', 'images')));
+app.use('/uploads/videos', express.static(path.join(serverRoot, 'uploads', 'videos')));
 app.use(apiRouter);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

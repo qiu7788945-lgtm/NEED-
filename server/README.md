@@ -20,15 +20,18 @@ Current round scope:
 - Local media archive/restore endpoints
 - Local archived-media permanent delete endpoint
 - Local media batch archive/restore/permanent delete endpoints
+- Local image and video upload endpoint
 - Static image access under `/uploads/images`
+- Static video access under `/uploads/videos`
 - Local homepage interactive image slot config
 - Audit service placeholder
 - No database connection
 - No migration execution
 - No database-backed media library
 - No physical deletion when media is only archived
-- No video upload
 - No COS integration
+- No image compression or thumbnail generation
+- No video duration extraction or video thumbnail generation
 - No publishing system
 
 Development command:
@@ -63,16 +66,19 @@ POST http://localhost:4000/api/media/upload
 form-data field: file
 optional form-data field: category
 optional form-data fields: displayName, storageName, alt, description, ownerType, ownerId, ownerSlug, groupKey, slotNo, caption, enabled, sortOrder
-allowed: jpg, jpeg, png, webp
-limit: 10MB
+allowed images: jpg, jpeg, png, webp
+allowed videos: mp4, webm
+image limit: MEDIA_MAX_IMAGE_SIZE_MB, default 10MB
+video limit: MEDIA_MAX_VIDEO_SIZE_MB, default 500MB
 ```
 
 Media file names:
 
 - `originalName`: original upload filename, used for source tracking. New uploads try to decode Chinese names correctly.
 - `displayName`: admin-facing asset name. If omitted, it falls back to `originalName`; use it to fix old mojibake display names.
-- `fileName`: safe storage filename under `server/uploads/images/`.
+- `fileName`: safe storage filename under `server/uploads/images/` or `server/uploads/videos/`.
 - `storageName`: optional upload field for choosing the storage basename, for example `family-day-main-visual-01`. Only letters, numbers, hyphens, and underscores are allowed. The server keeps the original extension automatically.
+- If the requested `storageName` already exists, the upload middleware automatically appends a suffix such as `-2` to avoid overwriting the existing file and returns a duplicate warning.
 
 Expected response shape:
 
@@ -84,11 +90,13 @@ Expected response shape:
     "fileName": "image-0000000000000-abcd1234.jpg",
     "originalName": "example.jpg",
     "displayName": "family day main visual",
+    "fileType": "image",
     "url": "/uploads/images/image-0000000000000-abcd1234.jpg",
     "size": 12345,
     "mimeType": "image/jpeg",
     "width": 1200,
     "height": 800,
+    "duration": null,
     "category": "temporary",
     "alt": "",
     "description": "",
@@ -102,7 +110,12 @@ Expected response shape:
     "sortOrder": 0,
     "status": "active",
     "usageCount": 0,
-    "usages": []
+    "usages": [],
+    "suggestedCategory": "solution_image",
+    "categoryWarning": "这张素材仍是临时素材，建议归类。",
+    "duplicateWarnings": [],
+    "isLargeFile": false,
+    "isLargeDimension": false
   }
 }
 ```
@@ -117,6 +130,11 @@ GET http://localhost:4000/api/media/list?enabled=true
 GET http://localhost:4000/api/media/list?keyword=logo
 GET http://localhost:4000/api/media/list?status=archived
 GET http://localhost:4000/api/media/list?status=all
+GET http://localhost:4000/api/media/list?fileType=image
+GET http://localhost:4000/api/media/list?fileType=video
+GET http://localhost:4000/api/media/list?cleanup=temporary
+GET http://localhost:4000/api/media/list?cleanup=old_temporary
+GET http://localhost:4000/api/media/list?cleanup=old_archived
 ```
 
 `status` supports:
@@ -126,6 +144,18 @@ GET http://localhost:4000/api/media/list?status=all
 - `all`: active and archived media
 
 Old media index entries without `status` are treated as `active`.
+
+Old media index entries without `fileType` are treated as `image` unless the mime type or extension clearly indicates video. Missing `duration` is returned as `null`.
+
+Round 9.7 adds lightweight automation fields:
+
+- `suggestedCategory`: rule-based category suggestion. It is not AI classification and does not override a user-selected category.
+- `categoryWarning`: currently used to remind admins when a file remains `temporary`.
+- `duplicateWarnings`: possible duplicate signals, such as same original name, same display name, same size, same original name plus size, or storage-name auto-renaming.
+- `isLargeFile`: true for images larger than 2MB.
+- `isLargeDimension`: true for images wider or taller than 2500px.
+
+Duplicate warnings never block upload. The only hard upload failures are unsupported type, invalid storage name, missing file, or size limit violations.
 
 `GET /api/media/list` also returns first-pass usage tracking fields:
 
@@ -174,9 +204,9 @@ PATCH http://localhost:4000/api/media/:fileName/restore
 DELETE http://localhost:4000/api/media/:fileName
 ```
 
-Archive/restore only updates `server/data/media-library.json`; it does not physically delete files from `server/uploads/images/`.
+Archive/restore only updates `server/data/media-library.json`; it does not physically delete files from `server/uploads/images/` or `server/uploads/videos/`.
 
-Permanent delete is different: it is only allowed for `archived` media, removes the media index entry, and deletes the real file from `server/uploads/images/`. Active media returns `MEDIA_NOT_ARCHIVED`.
+Permanent delete is different: it is only allowed for `archived` media, removes the media index entry, and deletes the real file from the matching upload directory. Active media returns `MEDIA_NOT_ARCHIVED`.
 
 `fileName` is validated to reject path traversal. If an image is referenced by the local homepage 12-image config, archive and permanent delete return `MEDIA_USED_BY_HOME` so the homepage reference can be removed first.
 
@@ -246,6 +276,12 @@ Uploaded images are stored in:
 server/uploads/images/
 ```
 
+Uploaded videos are stored in:
+
+```text
+server/uploads/videos/
+```
+
 Local media metadata is stored in:
 
 ```text
@@ -263,12 +299,23 @@ Business ownership fields:
 - `enabled`: future frontend rendering should ignore disabled media
 - `status`: `active` or `archived`; archived media is hidden from default media lists and pickers
 - `width` / `height`: image dimensions read during upload or list fallback
+- `duration`: reserved for videos; currently returned as `null`
 - `displayName`: admin-facing asset name
 
 Admin reminder fields:
 
 - Empty `alt` should be treated as "missing GEO image description".
 - `category=temporary` should be treated as unclassified media and should be categorized later.
+- Temporary media older than 30 days should be reviewed for archive or delete.
+- Archived media older than 30 days can be reviewed for permanent delete.
+
+Image optimization note:
+
+Round 9.7 does not compress images, generate thumbnails, or modify original files. It only returns large-file and large-dimension hints so admins can prepare assets before formal publishing. Future production media storage should add a deliberate image optimization and thumbnail pipeline.
+
+Video storage note:
+
+Round 9.7 only adds minimal local video upload for media-library readiness. For production, videos should move to Tencent Cloud COS or a video platform instead of long-term local server disk.
 
 Homepage interactive image slots:
 

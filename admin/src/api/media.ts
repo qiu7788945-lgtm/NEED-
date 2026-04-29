@@ -6,15 +6,23 @@ export interface AdminMediaUsage {
   detail: string;
 }
 
+export interface AdminDuplicateWarning {
+  type: string;
+  message: string;
+  fileName?: string;
+}
+
 export interface AdminMediaFile {
   fileName: string;
   originalName?: string;
   displayName: string;
+  fileType: 'image' | 'video';
   url: string;
   size: number;
   mimeType: string;
   width: number | null;
   height: number | null;
+  duration: number | null;
   category: string;
   alt: string;
   description: string;
@@ -30,6 +38,11 @@ export interface AdminMediaFile {
   createdAt?: string;
   usageCount: number;
   usages: AdminMediaUsage[];
+  suggestedCategory?: string;
+  categoryWarning?: string;
+  duplicateWarnings: AdminDuplicateWarning[];
+  isLargeFile: boolean;
+  isLargeDimension: boolean;
 }
 
 interface ApiResponse<TData> {
@@ -41,10 +54,16 @@ interface ApiResponse<TData> {
 
 const friendlyErrorMessages: Record<string, string> = {
   FILE_NAMES_REQUIRED: '请选择要操作的素材。',
+  IMAGE_TOO_LARGE: '图片文件太大，默认最大 10MB。',
+  INVALID_IMAGE_TYPE: '不支持的图片类型。',
   INVALID_MEDIA_FILE_NAME: '素材文件名不合法。',
+  INVALID_MEDIA_TYPE: '不支持的文件类型，请上传图片或 mp4/webm 视频。',
+  INVALID_STORAGE_NAME: '存储文件名只能包含英文、数字、短横线和下划线。',
+  LIMIT_FILE_SIZE: '文件太大。图片默认最大 10MB，视频默认最大 500MB。',
   MEDIA_FILE_NOT_FOUND: '没有找到这张素材，可能已经被删除。',
   MEDIA_NOT_ARCHIVED: '请先归档素材，再执行永久删除。',
   MEDIA_USED_BY_HOME: '这张图片正在首页使用，请先解除引用。',
+  STORAGE_NAME_EXISTS: '存储文件名已存在，系统会尝试自动追加后缀。',
   NOT_FOUND: '没有找到这张素材，可能已经被删除。',
 };
 
@@ -69,9 +88,14 @@ async function readJson<TData>(response: Response): Promise<TData> {
 function normalizeMediaFile(data: AdminMediaFile) {
   return {
     ...data,
+    fileType: data.fileType ?? 'image',
     url: toAbsoluteUrl(data.url),
+    duration: data.duration ?? null,
     usageCount: data.usageCount ?? 0,
     usages: data.usages ?? [],
+    duplicateWarnings: data.duplicateWarnings ?? [],
+    isLargeFile: Boolean(data.isLargeFile),
+    isLargeDimension: Boolean(data.isLargeDimension),
   };
 }
 
@@ -120,6 +144,8 @@ export interface MediaListParams {
   slotNo?: string;
   enabled?: string;
   status?: 'active' | 'archived' | 'all';
+  fileType?: 'image' | 'video';
+  cleanup?: 'temporary' | 'old_temporary' | 'old_archived' | '';
 }
 
 export async function listImages(params: MediaListParams = {}) {
@@ -133,7 +159,7 @@ export async function listImages(params: MediaListParams = {}) {
     searchParams.set('keyword', params.keyword);
   }
 
-  ['ownerType', 'ownerId', 'ownerSlug', 'groupKey', 'slotNo', 'enabled', 'status'].forEach((key) => {
+  ['ownerType', 'ownerId', 'ownerSlug', 'groupKey', 'slotNo', 'enabled', 'status', 'fileType', 'cleanup'].forEach((key) => {
     const value = params[key as keyof MediaListParams];
     if (value) {
       searchParams.set(key, value);

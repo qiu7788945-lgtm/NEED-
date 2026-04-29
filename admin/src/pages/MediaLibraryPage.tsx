@@ -35,6 +35,8 @@ const reasonLabels: Record<string, string> = {
   MEDIA_USED_BY_HOME: '正在被首页使用',
 };
 
+const cleanupAgeMs = 30 * 24 * 60 * 60 * 1000;
+
 interface EditFormState {
   displayName: string;
   category: string;
@@ -83,6 +85,31 @@ function formatDimensions(width: number | null, height: number | null) {
   }
 
   return `${width} x ${height}`;
+}
+
+function isOlderThanThirtyDays(value?: string) {
+  if (!value) {
+    return false;
+  }
+
+  const time = new Date(value).getTime();
+  return Number.isFinite(time) && Date.now() - time > cleanupAgeMs;
+}
+
+function getUploadSuccessMessage(image: AdminMediaFile) {
+  const messages = ['上传成功。'];
+  if (image.categoryWarning) {
+    messages.push(image.categoryWarning);
+  }
+  if (image.suggestedCategory) {
+    messages.push(`系统建议分类为：${getMediaCategoryLabel(image.suggestedCategory)}，可在编辑信息中调整。`);
+  }
+  if (image.duplicateWarnings.length > 0) {
+    messages.push('发现可能重复的素材，请确认是否需要保留。');
+    messages.push(image.duplicateWarnings.map((warning) => warning.message).join('；'));
+  }
+
+  return messages.join(' ');
 }
 
 function getMediaTitle(image: AdminMediaFile) {
@@ -163,9 +190,11 @@ export function MediaLibraryPage() {
   const [filterGroupKey, setFilterGroupKey] = useState('');
   const [filterEnabled, setFilterEnabled] = useState('');
   const [filterStatus, setFilterStatus] = useState<'active' | 'archived' | 'all'>('active');
+  const [filterFileType, setFilterFileType] = useState<'image' | 'video' | ''>('');
+  const [filterCleanup, setFilterCleanup] = useState<'temporary' | 'old_temporary' | 'old_archived' | ''>('');
   const [keyword, setKeyword] = useState('');
   const [latestImage, setLatestImage] = useState<AdminMediaFile | null>(null);
-  const [status, setStatus] = useState('请选择一张 jpg、jpeg、png 或 webp 图片。');
+  const [status, setStatus] = useState('请选择图片或视频素材。图片支持 jpg、jpeg、png、webp；视频支持 mp4、webm。');
   const [isUploading, setIsUploading] = useState(false);
 
   const selectedImages = useMemo(
@@ -182,6 +211,8 @@ export function MediaLibraryPage() {
       groupKey: filterGroupKey,
       enabled: filterEnabled,
       status: filterStatus,
+      fileType: filterFileType || undefined,
+      cleanup: filterCleanup,
       keyword,
     });
     setImages(nextImages);
@@ -192,7 +223,7 @@ export function MediaLibraryPage() {
     refreshImages().catch((error: Error) => {
       setStatus(error.message);
     });
-  }, [filterCategory, filterOwnerType, filterOwnerSlug, filterGroupKey, filterEnabled, filterStatus]);
+  }, [filterCategory, filterOwnerType, filterOwnerSlug, filterGroupKey, filterEnabled, filterStatus, filterFileType, filterCleanup]);
 
   async function handleArchive(fileName: string) {
     const confirmed = window.confirm('确认归档这张素材吗？归档后它默认不会出现在媒体选择器里，但文件不会被永久删除。');
@@ -241,7 +272,7 @@ export function MediaLibraryPage() {
 
   async function handleUpload() {
     if (!selectedFile) {
-      setStatus('请先选择图片。');
+      setStatus('请先选择图片或视频素材。');
       return;
     }
 
@@ -264,7 +295,7 @@ export function MediaLibraryPage() {
         sortOrder: uploadSortOrder,
       });
       setLatestImage(uploaded);
-      setStatus('上传成功。');
+      setStatus(getUploadSuccessMessage(uploaded));
       setSelectedFile(null);
       setUploadDisplayName('');
       setUploadStorageName('');
@@ -375,8 +406,8 @@ export function MediaLibraryPage() {
       <div className="media-upload-panel">
         <div className="media-upload-header">
           <div>
-            <h2>上传图片</h2>
-            <p>日常只填写素材名称、分类、排序和图片说明；归属和存储细节放在高级设置里。</p>
+            <h2>上传素材</h2>
+            <p>日常只填写素材名称、分类、排序和媒体说明；归属和存储细节放在高级设置里。</p>
           </div>
           <button type="button" onClick={handleUpload} disabled={isUploading}>
             {isUploading ? '上传中' : '上传'}
@@ -385,12 +416,12 @@ export function MediaLibraryPage() {
 
         <div className="media-upload-fields">
           <label className="media-file-label" htmlFor="media-file">
-            选择图片
+            选择图片或视频
           </label>
           <input
             id="media-file"
             type="file"
-            accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+            accept=".jpg,.jpeg,.png,.webp,.mp4,.webm,image/jpeg,image/png,image/webp,video/mp4,video/webm"
             onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
           />
           <label className="media-field">
@@ -416,12 +447,12 @@ export function MediaLibraryPage() {
             <input value={uploadSortOrder} onChange={(event) => setUploadSortOrder(event.target.value)} placeholder="数字越小越靠前" type="number" />
           </label>
           <label className="media-field">
-            <span>图片替代文字/GEO描述</span>
-            <input value={uploadAlt} onChange={(event) => setUploadAlt(event.target.value)} placeholder="给搜索引擎看的图片说明" />
+            <span>媒体替代文字/GEO描述</span>
+            <input value={uploadAlt} onChange={(event) => setUploadAlt(event.target.value)} placeholder="给搜索引擎看的媒体说明" />
           </label>
           <label className="media-field">
-            <span>图片说明</span>
-            <input value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)} placeholder="前台或团队可读的图片说明" />
+            <span>媒体说明</span>
+            <input value={uploadCaption} onChange={(event) => setUploadCaption(event.target.value)} placeholder="前台或团队可读的媒体说明" />
           </label>
           {selectedFile ? (
             <p className="media-selected-file">
@@ -537,6 +568,23 @@ export function MediaLibraryPage() {
             <option value="all">全部素材</option>
           </select>
         </label>
+        <label>
+          <span>媒体类型</span>
+          <select value={filterFileType} onChange={(event) => setFilterFileType(event.target.value as 'image' | 'video' | '')}>
+            <option value="">全部类型</option>
+            <option value="image">图片</option>
+            <option value="video">视频</option>
+          </select>
+        </label>
+        <label>
+          <span>清理建议</span>
+          <select value={filterCleanup} onChange={(event) => setFilterCleanup(event.target.value as 'temporary' | 'old_temporary' | 'old_archived' | '')}>
+            <option value="">全部</option>
+            <option value="temporary">临时素材</option>
+            <option value="old_temporary">超过 30 天临时素材</option>
+            <option value="old_archived">超过 30 天已归档素材</option>
+          </select>
+        </label>
         <label className="media-filter-search">
           <span>搜索</span>
           <input
@@ -580,11 +628,15 @@ export function MediaLibraryPage() {
 
       {latestImage ? (
         <div className="media-latest">
-          <img src={latestImage.url} alt={latestImage.alt || getMediaTitle(latestImage)} />
+          {latestImage.fileType === 'video' ? (
+            <video src={latestImage.url} controls preload="metadata" />
+          ) : (
+            <img src={latestImage.url} alt={latestImage.alt || getMediaTitle(latestImage)} />
+          )}
           <div>
             <h2>最新上传</h2>
             <p>{getMediaTitle(latestImage)}</p>
-            <input readOnly value={latestImage.url} aria-label="image URL" />
+            <input readOnly value={latestImage.url} aria-label="media URL" />
           </div>
         </div>
       ) : null}
@@ -604,22 +656,36 @@ export function MediaLibraryPage() {
                 />
                 <span>选择</span>
               </label>
-              <img src={image.url} alt={image.alt || getMediaTitle(image)} />
+              {image.fileType === 'video' ? (
+                <video src={image.url} controls preload="metadata" />
+              ) : (
+                <img src={image.url} alt={image.alt || getMediaTitle(image)} />
+              )}
               <div className="media-card-body">
                 <div className="media-card-core">
                   <strong>{getMediaTitle(image)}</strong>
                   <div className="media-card-tags">
+                    <span>{image.fileType === 'video' ? '视频' : '图片'}</span>
                     <span>{getMediaCategoryLabel(image.category)}</span>
                     <span>{image.status === 'archived' ? '已归档' : '正常'}</span>
                     <span>{image.enabled ? '已启用' : '已停用'}</span>
                   </div>
                   {!image.alt ? <span className="media-warning">缺少 GEO 图片描述</span> : null}
                   {image.category === 'temporary' ? <span className="media-warning">临时素材，建议归类</span> : null}
+                  {image.category === 'temporary' && isOlderThanThirtyDays(image.createdAt) ? <span className="media-warning">临时素材已超过 30 天，建议归档或删除</span> : null}
+                  {image.status === 'archived' && isOlderThanThirtyDays(image.createdAt) ? <span className="media-warning">已归档超过 30 天，可考虑永久删除</span> : null}
+                  {image.isLargeFile ? <span className="media-warning">图片较大，建议压缩后用于正式页面</span> : null}
+                  {image.isLargeDimension ? <span className="media-warning">尺寸较大，正式上线前建议压缩</span> : null}
+                  {image.suggestedCategory && image.category === 'temporary' ? (
+                    <span className="media-warning">系统建议分类为：{getMediaCategoryLabel(image.suggestedCategory)}</span>
+                  ) : null}
+                  {image.duplicateWarnings.length > 0 ? <span className="media-warning">疑似重复素材，请确认是否保留</span> : null}
                 </div>
 
                 <div className="media-card-summary">
                   <span>尺寸：{formatDimensions(image.width, image.height)}</span>
                   <span>大小：{formatFileSize(image.size)}</span>
+                  <span>类型：{image.fileType === 'video' ? '视频' : '图片'}</span>
                   <span>上传：{formatDateTime(image.createdAt)}</span>
                   <span>说明：{image.caption || '-'}</span>
                   <span className={image.usageCount > 0 ? 'media-usage-active' : undefined}>
@@ -631,13 +697,22 @@ export function MediaLibraryPage() {
                   <div className="media-card-details">
                     <span>原始文件名：{image.originalName || '-'}</span>
                     <span>存储文件名：{image.fileName}</span>
-                    <span>图片 URL：{image.url}</span>
+                    <span>素材 URL：{image.url}</span>
+                    <span>媒体类型：{image.fileType === 'video' ? '视频' : '图片'}</span>
                     <span>归属类型：{image.ownerType ? getOwnerTypeLabel(image.ownerType) : '-'}</span>
                     <span>所属场景：{image.ownerSlug || '-'}</span>
                     <span>所属项目/图组：{image.groupKey || '-'}</span>
                     <span>图组位置：{image.slotNo ?? '-'}</span>
                     <span>内部备注：{image.description || '-'}</span>
                     <span>展示排序：{image.sortOrder}</span>
+                    {image.duplicateWarnings.length > 0 ? (
+                      <div className="media-usage-list">
+                        <strong>重复提醒</strong>
+                        {image.duplicateWarnings.map((warning, index) => (
+                          <span key={`${warning.type}-${warning.fileName ?? index}`}>{warning.message}{warning.fileName ? `：${warning.fileName}` : ''}</span>
+                        ))}
+                      </div>
+                    ) : null}
                     {image.usages.length > 0 ? (
                       <div className="media-usage-list">
                         <strong>使用位置</strong>
@@ -668,11 +743,11 @@ export function MediaLibraryPage() {
                       </select>
                     </label>
                     <label className="media-field">
-                      <span>图片替代文字/GEO描述</span>
+                      <span>媒体替代文字/GEO描述</span>
                       <input value={editForm.alt} onChange={(event) => updateEditForm({ alt: event.target.value })} />
                     </label>
                     <label className="media-field">
-                      <span>图片说明</span>
+                      <span>媒体说明</span>
                       <input value={editForm.caption} onChange={(event) => updateEditForm({ caption: event.target.value })} />
                     </label>
                     <label className="media-field">

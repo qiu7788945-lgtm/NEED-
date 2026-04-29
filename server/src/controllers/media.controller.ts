@@ -47,6 +47,8 @@ export const listMedia: RequestHandler = async (_req, res) => {
     slotNo: typeof _req.query.slotNo === 'string' ? _req.query.slotNo : undefined,
     enabled: typeof _req.query.enabled === 'string' ? _req.query.enabled : undefined,
     status: typeof _req.query.status === 'string' ? _req.query.status : undefined,
+    fileType: typeof _req.query.fileType === 'string' ? _req.query.fileType : undefined,
+    cleanup: typeof _req.query.cleanup === 'string' ? _req.query.cleanup : undefined,
   });
 
   res.json(success(images));

@@ -2,8 +2,9 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Express } from 'express';
-import type { MediaCategory, MediaOwnerType, MediaStatus } from '../../../../shared/types/media.js';
-import { imageUploadDir, normalizeOriginalFileName } from '../../middlewares/upload.middleware.js';
+import type { MediaCategory, MediaFileType, MediaOwnerType, MediaStatus } from '../../../../shared/types/media.js';
+import { env } from '../../config/env.js';
+import { imageUploadDir, normalizeOriginalFileName, videoUploadDir } from '../../middlewares/upload.middleware.js';
 import { readHomeInteractiveImages } from '../home/home-interactive-images.service.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -15,7 +16,18 @@ const mimeTypeByExt: Record<string, string> = {
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
   '.webp': 'image/webp',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
 };
+
+const imageMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const videoMimeTypes = new Set(['video/mp4', 'video/webm']);
+const imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+const videoExtensions = new Set(['.mp4', '.webm']);
+const maxImageSize = env.media.maxImageSizeMb * 1024 * 1024;
+const largeFileThreshold = 2 * 1024 * 1024;
+const largeDimensionThreshold = 2500;
+const cleanupAgeMs = 30 * 24 * 60 * 60 * 1000;
 
 const allowedCategories = new Set<MediaCategory>([
   'home_interactive',
@@ -47,11 +59,13 @@ export interface LocalImageFile {
   fileName: string;
   originalName: string;
   displayName: string;
+  fileType: MediaFileType;
   url: string;
   size: number;
   mimeType: string;
   width: number | null;
   height: number | null;
+  duration: number | null;
   category: MediaCategory;
   alt: string;
   description: string;
@@ -67,6 +81,11 @@ export interface LocalImageFile {
   createdAt?: string;
   usageCount: number;
   usages: MediaUsage[];
+  suggestedCategory?: MediaCategory;
+  categoryWarning?: string;
+  duplicateWarnings: DuplicateWarning[];
+  isLargeFile: boolean;
+  isLargeDimension: boolean;
 }
 
 export interface MediaListFilters {
@@ -79,6 +98,8 @@ export interface MediaListFilters {
   slotNo?: string;
   enabled?: string;
   status?: string;
+  fileType?: string;
+  cleanup?: string;
 }
 
 export interface MediaUploadMetadata {
@@ -118,6 +139,12 @@ export interface MediaUsage {
   detail: string;
 }
 
+export interface DuplicateWarning {
+  type: 'same_original_name' | 'same_display_name' | 'same_file_name' | 'same_size' | 'same_original_name_and_size' | 'storage_name_renamed';
+  message: string;
+  fileName?: string;
+}
+
 export interface BatchMediaResultItem {
   fileName: string;
   status: 'success' | 'skipped' | 'failed';
@@ -144,10 +171,16 @@ type MediaIndexEntry = {
   groupKey?: string;
   slotNo?: number | null;
   caption?: string;
+  size?: number;
   enabled?: boolean;
   sortOrder?: number;
   width?: number | null;
   height?: number | null;
+  duration?: number | null;
+  fileType?: MediaFileType;
+  suggestedCategory?: MediaCategory;
+  categoryWarning?: string;
+  duplicateWarnings?: DuplicateWarning[];
   status?: MediaStatus;
   createdAt?: string;
 };
@@ -156,6 +189,27 @@ type MediaIndex = Record<string, MediaIndexEntry>;
 
 function toImageUrl(fileName: string) {
   return `/uploads/images/${encodeURIComponent(fileName)}`;
+}
+
+function toMediaUrl(fileName: string, fileType: MediaFileType) {
+  const basePath = fileType === 'video' ? '/uploads/videos' : '/uploads/images';
+  return `${basePath}/${encodeURIComponent(fileName)}`;
+}
+
+function getFileTypeFromMimeType(mimeType?: string): MediaFileType {
+  if (mimeType && videoMimeTypes.has(mimeType)) {
+    return 'video';
+  }
+
+  return 'image';
+}
+
+function getFileTypeFromFileName(fileName: string): MediaFileType {
+  return videoExtensions.has(path.extname(fileName).toLowerCase()) ? 'video' : 'image';
+}
+
+function getMediaUploadDir(fileType: MediaFileType) {
+  return fileType === 'video' ? videoUploadDir : imageUploadDir;
 }
 
 function normalizeCategory(category?: string): MediaCategory {
@@ -285,44 +339,14 @@ function normalizeStorageBaseName(storageName?: string) {
   }
 
   if (!/^[A-Za-z0-9_-]+$/.test(nextStorageName)) {
-    throw createMediaError('Storage file name can only contain letters, numbers, hyphens, and underscores', 400, 'INVALID_STORAGE_NAME');
+    throw createMediaError('存储文件名只能包含英文、数字、短横线和下划线。', 400, 'INVALID_STORAGE_NAME');
   }
 
   return nextStorageName;
 }
 
 async function applyCustomStorageName(file: Express.Multer.File, storageName?: string) {
-  const baseName = normalizeStorageBaseName(storageName);
-  if (!baseName) {
-    return file;
-  }
-
-  const ext = path.extname(file.filename).toLowerCase();
-  const nextFileName = `${baseName}${ext}`;
-  validateSafeFileName(nextFileName);
-
-  if (file.filename === nextFileName) {
-    return file;
-  }
-
-  const nextPath = path.join(imageUploadDir, nextFileName);
-  const targetExists = await fs.access(nextPath).then(() => true).catch(() => false);
-  if (targetExists) {
-    throw createMediaError('Storage file name already exists', 400, 'STORAGE_NAME_EXISTS');
-  }
-
-  try {
-    await fs.rename(file.path, nextPath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'EEXIST') {
-      throw createMediaError('Storage file name already exists', 400, 'STORAGE_NAME_EXISTS');
-    }
-
-    throw error;
-  }
-
-  file.filename = nextFileName;
-  file.path = nextPath;
+  normalizeStorageBaseName(storageName);
   return file;
 }
 
@@ -447,34 +471,58 @@ function normalizeEntry(fileName: string, entry: MediaIndexEntry, file: {
   mimeType: string;
   width?: number | null;
   height?: number | null;
+  duration?: number | null;
+  fileType?: MediaFileType;
   createdAt?: string;
 }): LocalImageFile {
   const originalName = entry.originalName ?? file.originalName ?? fileName;
+  const fileType = entry.fileType ?? file.fileType ?? getFileTypeFromMimeType(file.mimeType);
+  const width = fileType === 'image' ? (entry.width ?? file.width ?? null) : null;
+  const height = fileType === 'image' ? (entry.height ?? file.height ?? null) : null;
+  const size = file.size;
+  const displayName = normalizeDisplayName(entry.displayName, originalName);
+  const category = normalizeCategory(entry.category);
+  const alt = entry.alt ?? '';
+  const caption = entry.caption ?? '';
+  const ownerSlug = entry.ownerSlug ?? '';
+  const groupKey = entry.groupKey ?? '';
+  const suggestedCategory = entry.suggestedCategory ?? (
+    category === 'temporary'
+      ? suggestCategory({ fileType, fileName, originalName, displayName, alt, caption, ownerSlug, groupKey })
+      : undefined
+  );
 
   return {
     fileName,
     originalName,
-    displayName: normalizeDisplayName(entry.displayName, originalName),
-    url: toImageUrl(fileName),
-    size: file.size,
+    displayName,
+    fileType,
+    url: toMediaUrl(fileName, fileType),
+    size,
     mimeType: file.mimeType,
-    width: entry.width ?? file.width ?? null,
-    height: entry.height ?? file.height ?? null,
-    category: normalizeCategory(entry.category),
-    alt: entry.alt ?? '',
+    width,
+    height,
+    duration: entry.duration ?? file.duration ?? null,
+    category,
+    alt,
     description: entry.description ?? '',
     ownerType: normalizeOwnerType(entry.ownerType),
     ownerId: entry.ownerId ?? null,
-    ownerSlug: entry.ownerSlug ?? '',
-    groupKey: entry.groupKey ?? '',
+    ownerSlug,
+    groupKey,
     slotNo: entry.slotNo ?? null,
-    caption: entry.caption ?? '',
+    caption,
     enabled: entry.enabled ?? true,
     sortOrder: entry.sortOrder ?? entry.slotNo ?? 0,
     status: normalizeStatus(entry.status),
     createdAt: entry.createdAt ?? file.createdAt,
     usageCount: 0,
     usages: [],
+    suggestedCategory,
+    categoryWarning: entry.categoryWarning ?? (category === 'temporary' ? '这张素材仍是临时素材，建议归类。' : undefined),
+    duplicateWarnings: entry.duplicateWarnings ?? [],
+    isLargeFile: fileType === 'image' && size > largeFileThreshold,
+    isLargeDimension: fileType === 'image' && Boolean((width && width > largeDimensionThreshold) || (height && height > largeDimensionThreshold)),
   };
 }
 
@@ -525,18 +573,131 @@ export async function getMediaUsagesByFileName(): Promise<Record<string, MediaUs
   return usageMap;
 }
 
+function suggestCategory(input: {
+  fileType: MediaFileType;
+  fileName: string;
+  originalName: string;
+  displayName: string;
+  alt: string;
+  caption: string;
+  ownerSlug: string;
+  groupKey: string;
+}): MediaCategory | undefined {
+  const text = [
+    input.fileName,
+    input.originalName,
+    input.displayName,
+    input.alt,
+    input.caption,
+    input.ownerSlug,
+    input.groupKey,
+  ].join(' ').toLowerCase();
+
+  if (/(qrcode|qr|二维码)/i.test(text)) {
+    return 'qrcode';
+  }
+  if (/(home|hero|首页|交互)/i.test(text)) {
+    return input.fileType === 'video' ? 'home_video' : 'home_interactive';
+  }
+  if (/(solution|场景|家庭日|年会|沙龙|论坛|展览|family|annual|salon|forum|exhibition)/i.test(text)) {
+    return input.fileType === 'video' ? 'solution_video' : 'solution_image';
+  }
+  if (/(article|文章|封面)/i.test(text)) {
+    return 'article_cover';
+  }
+  if (/(case|案例|项目)/i.test(text)) {
+    return 'case_image';
+  }
+
+  return input.fileType === 'video' ? 'temporary' : undefined;
+}
+
+function getDuplicateWarnings(index: MediaIndex, fileName: string, entry: MediaIndexEntry, size: number): DuplicateWarning[] {
+  const warnings: DuplicateWarning[] = [];
+  const originalName = entry.originalName ?? '';
+  const displayName = entry.displayName ?? '';
+
+  Object.entries(index).forEach(([existingFileName, existingEntry]) => {
+    if (existingFileName === fileName) {
+      return;
+    }
+
+    if (existingFileName === fileName) {
+      warnings.push({ type: 'same_file_name', message: '已有相同存储文件名', fileName: existingFileName });
+    }
+    if (originalName && existingEntry.originalName === originalName) {
+      warnings.push({ type: 'same_original_name', message: '已有同名原始文件', fileName: existingFileName });
+    }
+    if (displayName && existingEntry.displayName === displayName) {
+      warnings.push({ type: 'same_display_name', message: '已有同名素材名称', fileName: existingFileName });
+    }
+    if (typeof existingEntry.size === 'number' && existingEntry.size === size) {
+      warnings.push({ type: 'same_size', message: '已有大小相同的素材', fileName: existingFileName });
+    }
+    if (originalName && existingEntry.originalName === originalName && existingEntry.size === size) {
+      warnings.push({ type: 'same_original_name_and_size', message: '原始文件名和大小相同，高度疑似重复', fileName: existingFileName });
+    }
+  });
+
+  return warnings;
+}
+
+function wasStorageNameRenamed(storageName: string | undefined, fileName: string) {
+  const baseName = normalizeStorageBaseName(storageName);
+  if (!baseName) {
+    return false;
+  }
+
+  return path.basename(fileName, path.extname(fileName)) !== baseName;
+}
+
+function isOlderThanThirtyDays(createdAt?: string) {
+  if (!createdAt) {
+    return false;
+  }
+
+  const time = new Date(createdAt).getTime();
+  return Number.isFinite(time) && Date.now() - time > cleanupAgeMs;
+}
+
 export async function toUploadedImage(file: Express.Multer.File, metadata: MediaUploadMetadata): Promise<LocalImageFile> {
   const storedFile = await applyCustomStorageName(file, metadata.storageName);
+  const fileType = getFileTypeFromMimeType(storedFile.mimetype);
+  if (fileType === 'image' && storedFile.size > maxImageSize) {
+    await fs.unlink(storedFile.path).catch(() => undefined);
+    throw createMediaError(`图片文件太大，当前默认最大 ${env.media.maxImageSizeMb}MB。`, 400, 'IMAGE_TOO_LARGE');
+  }
+
   const index = await readMediaIndex();
   const slotNo = normalizeOptionalNumber(metadata.slotNo);
   const ownerId = normalizeOptionalNumber(metadata.ownerId);
   const createdAt = new Date().toISOString();
   const originalName = normalizeOriginalFileName(storedFile.originalname);
-  const dimensions = await readImageDimensions(storedFile.path);
+  const dimensions = fileType === 'image'
+    ? await readImageDimensions(storedFile.path)
+    : { width: null, height: null };
+  const displayName = normalizeDisplayName(metadata.displayName, originalName);
+  const uploadedCategory = normalizeCategory(metadata.category);
+  const shouldSuggestCategory = !metadata.category || uploadedCategory === 'temporary';
+  const suggestedCategory = shouldSuggestCategory
+    ? suggestCategory({
+      fileType,
+      fileName: storedFile.filename,
+      originalName,
+      displayName,
+      alt: metadata.alt?.trim() ?? '',
+      caption: metadata.caption?.trim() ?? '',
+      ownerSlug: metadata.ownerSlug?.trim() ?? '',
+      groupKey: metadata.groupKey?.trim() ?? '',
+    })
+    : undefined;
+  const categoryWarning = uploadedCategory === 'temporary'
+    ? '这张素材仍是临时素材，建议归类。'
+    : undefined;
   const entry: MediaIndexEntry = {
     originalName,
-    displayName: normalizeDisplayName(metadata.displayName, originalName),
-    category: normalizeCategory(metadata.category),
+    displayName,
+    category: uploadedCategory,
     alt: metadata.alt?.trim() ?? '',
     description: metadata.description?.trim() ?? '',
     ownerType: normalizeOwnerType(metadata.ownerType),
@@ -545,13 +706,27 @@ export async function toUploadedImage(file: Express.Multer.File, metadata: Media
     groupKey: metadata.groupKey?.trim() ?? '',
     slotNo,
     caption: metadata.caption?.trim() ?? '',
+    size: storedFile.size,
     enabled: normalizeBoolean(metadata.enabled),
     sortOrder: normalizeSortOrder(metadata.sortOrder, metadata.slotNo),
     width: dimensions.width,
     height: dimensions.height,
+    duration: null,
+    fileType,
+    suggestedCategory,
+    categoryWarning,
     status: 'active',
     createdAt,
   };
+  const duplicateWarnings = getDuplicateWarnings(index, storedFile.filename, entry, storedFile.size);
+  if (wasStorageNameRenamed(metadata.storageName, storedFile.filename)) {
+    duplicateWarnings.push({
+      type: 'storage_name_renamed',
+      message: '存储文件名冲突，已自动追加后缀避免覆盖',
+      fileName: storedFile.filename,
+    });
+  }
+  entry.duplicateWarnings = duplicateWarnings;
 
   index[storedFile.filename] = entry;
   await writeMediaIndex(index);
@@ -564,29 +739,49 @@ export async function toUploadedImage(file: Express.Multer.File, metadata: Media
     mimeType: storedFile.mimetype,
     width: dimensions.width,
     height: dimensions.height,
+    duration: null,
+    fileType,
     createdAt,
   }), usagesByFileName[storedFile.filename]);
 }
 
 export async function listLocalImages(filters: MediaListFilters = {}): Promise<LocalImageFile[]> {
   await fs.mkdir(imageUploadDir, { recursive: true });
+  await fs.mkdir(videoUploadDir, { recursive: true });
 
   const index = await readMediaIndex();
   const usagesByFileName = await getMediaUsagesByFileName();
   const keyword = filters.keyword?.trim().toLowerCase();
   const status = normalizeStatusFilter(filters.status);
-  const entries = await fs.readdir(imageUploadDir, { withFileTypes: true });
+  const mediaDirs = [
+    { dir: imageUploadDir, fileType: 'image' as MediaFileType },
+    { dir: videoUploadDir, fileType: 'video' as MediaFileType },
+  ];
+  const entries = (
+    await Promise.all(mediaDirs.map(async (mediaDir) => {
+      const dirEntries = await fs.readdir(mediaDir.dir, { withFileTypes: true }).catch(() => []);
+      return dirEntries.map((entry) => ({ entry, ...mediaDir }));
+    }))
+  ).flat();
   const images = await Promise.all(
     entries
-      .filter((entry) => entry.isFile())
-      .filter((entry) => mimeTypeByExt[path.extname(entry.name).toLowerCase()])
-      .map(async (entry) => {
-        const filePath = path.join(imageUploadDir, entry.name);
+      .filter(({ entry }) => entry.isFile())
+      .filter(({ entry, fileType }) => {
+        const ext = path.extname(entry.name).toLowerCase();
+        return fileType === 'video' ? videoExtensions.has(ext) : imageExtensions.has(ext);
+      })
+      .map(async ({ entry, dir, fileType }) => {
+        const filePath = path.join(dir, entry.name);
         const stats = await fs.stat(filePath);
-        const dimensions = await readImageDimensions(filePath).catch(() => ({
+        const dimensions = fileType === 'image'
+          ? await readImageDimensions(filePath).catch(() => ({
+            width: null,
+            height: null,
+          }))
+          : ({
           width: null,
           height: null,
-        }));
+        });
         const ext = path.extname(entry.name).toLowerCase();
 
         return withUsages(normalizeEntry(entry.name, index[entry.name] ?? {}, {
@@ -594,6 +789,8 @@ export async function listLocalImages(filters: MediaListFilters = {}): Promise<L
           mimeType: mimeTypeByExt[ext],
           width: dimensions.width,
           height: dimensions.height,
+          duration: index[entry.name]?.duration ?? null,
+          fileType,
           createdAt: stats.birthtime.toISOString(),
         }), usagesByFileName[entry.name]);
       }),
@@ -608,6 +805,22 @@ export async function listLocalImages(filters: MediaListFilters = {}): Promise<L
     .filter((image) => !filters.slotNo || String(image.slotNo ?? '') === filters.slotNo)
     .filter((image) => filters.enabled === undefined || String(image.enabled) === filters.enabled)
     .filter((image) => status === 'all' || image.status === status)
+    .filter((image) => !filters.fileType || image.fileType === filters.fileType)
+    .filter((image) => {
+      if (!filters.cleanup) {
+        return true;
+      }
+      if (filters.cleanup === 'temporary') {
+        return image.category === 'temporary';
+      }
+      if (filters.cleanup === 'old_temporary') {
+        return image.category === 'temporary' && isOlderThanThirtyDays(image.createdAt);
+      }
+      if (filters.cleanup === 'old_archived') {
+        return image.status === 'archived' && isOlderThanThirtyDays(image.createdAt);
+      }
+      return true;
+    })
     .filter((image) => {
       if (!keyword) {
         return true;
@@ -628,7 +841,8 @@ export async function listLocalImages(filters: MediaListFilters = {}): Promise<L
 async function getExistingImage(fileName: string) {
   validateSafeFileName(fileName);
 
-  const filePath = path.join(imageUploadDir, fileName);
+  const fileType = getFileTypeFromFileName(fileName);
+  const filePath = path.join(getMediaUploadDir(fileType), fileName);
   const stats = await fs.stat(filePath).catch((error: NodeJS.ErrnoException) => {
     if (error.code === 'ENOENT') {
       throw Object.assign(new Error('Media file not found'), {
@@ -640,16 +854,20 @@ async function getExistingImage(fileName: string) {
     throw error;
   });
   const ext = path.extname(fileName).toLowerCase();
-  const dimensions = await readImageDimensions(filePath).catch(() => ({
-    width: null,
-    height: null,
-  }));
+  const dimensions = fileType === 'image'
+    ? await readImageDimensions(filePath).catch(() => ({
+      width: null,
+      height: null,
+    }))
+    : { width: null, height: null };
 
   return {
     size: stats.size,
     mimeType: mimeTypeByExt[ext],
     width: dimensions.width,
     height: dimensions.height,
+    duration: null,
+    fileType,
     createdAt: stats.birthtime.toISOString(),
   };
 }
@@ -771,10 +989,10 @@ export async function deleteLocalImage(fileName: string): Promise<DeleteLocalIma
   const status = normalizeStatus(entry?.status);
 
   if (status !== 'archived') {
-    throw createMediaError('Only archived media can be permanently deleted', 400, 'MEDIA_NOT_ARCHIVED');
+    throw createMediaError('请先归档素材，再执行永久删除。', 400, 'MEDIA_NOT_ARCHIVED');
   }
 
-  const filePath = path.join(imageUploadDir, fileName);
+  const filePath = path.join(getMediaUploadDir(getFileTypeFromFileName(fileName)), fileName);
   let deletedFile = false;
   let fileMissing = false;
 

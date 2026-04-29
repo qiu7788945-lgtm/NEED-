@@ -23,3 +23,6 @@ server/logs/
 
 .DS_Store
 Thumbs.db
+
+server/uploads/videos/*
+!server/uploads/videos/.gitkeep

@@ -4,6 +4,10 @@ export const env = {
   nodeEnv,
   isProduction: nodeEnv === 'production',
   port: Number(process.env.PORT ?? 4000),
+  media: {
+    maxImageSizeMb: Number(process.env.MEDIA_MAX_IMAGE_SIZE_MB ?? 10),
+    maxVideoSizeMb: Number(process.env.MEDIA_MAX_VIDEO_SIZE_MB ?? 500),
+  },
   databaseUrl: process.env.DATABASE_URL,
   database: {
     host: process.env.DB_HOST,
