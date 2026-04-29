@@ -20,9 +20,22 @@ function createUploadError(message: string, code: string) {
 
 const storage = multer.diskStorage({
   destination: imageUploadDir,
-  filename: (_req, file, callback) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const safeName = `image-${Date.now()}-${Math.random().toString(36).slice(2, 10)}${ext}`;
+  filename: (req, file, callback) => {
+    const originalName = normalizeOriginalFileName(file.originalname);
+    const ext = path.extname(originalName).toLowerCase();
+    const rawStorageName = typeof req.body.storageName === 'string' ? req.body.storageName.trim() : '';
+    const baseName = rawStorageName || `image-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+    if (!/^[A-Za-z0-9_-]+$/.test(baseName)) {
+      callback(createUploadError('Storage file name can only contain letters, numbers, hyphens, and underscores', 'INVALID_STORAGE_NAME'), '');
+      return;
+    }
+
+    const safeName = `${baseName}${ext}`;
+    if (fs.existsSync(path.join(imageUploadDir, safeName))) {
+      callback(createUploadError('Storage file name already exists', 'STORAGE_NAME_EXISTS'), '');
+      return;
+    }
 
     callback(null, safeName);
   },
@@ -35,7 +48,7 @@ export const imageUpload = multer({
     files: 1,
   },
   fileFilter: (_req, file, callback) => {
-    const ext = path.extname(file.originalname).toLowerCase();
+    const ext = path.extname(normalizeOriginalFileName(file.originalname)).toLowerCase();
     const isAllowedMime = allowedMimeTypes.has(file.mimetype);
     const isAllowedExt = allowedExtensions.has(ext);
 
@@ -47,5 +60,10 @@ export const imageUpload = multer({
     callback(null, true);
   },
 });
+
+export function normalizeOriginalFileName(originalName: string) {
+  const decoded = Buffer.from(originalName, 'latin1').toString('utf8');
+  return decoded.includes('�') ? originalName : decoded;
+}
 
 export { imageUploadDir };

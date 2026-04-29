@@ -3,9 +3,12 @@ const apiBaseUrl = 'http://localhost:4000';
 export interface AdminMediaFile {
   fileName: string;
   originalName?: string;
+  displayName: string;
   url: string;
   size: number;
   mimeType: string;
+  width: number | null;
+  height: number | null;
   category: string;
   alt: string;
   description: string;
@@ -17,6 +20,7 @@ export interface AdminMediaFile {
   caption: string;
   enabled: boolean;
   sortOrder: number;
+  status: 'active' | 'archived';
   createdAt?: string;
 }
 
@@ -47,6 +51,8 @@ async function readJson<TData>(response: Response): Promise<TData> {
 
 export interface MediaUploadMetadata {
   category?: string;
+  displayName?: string;
+  storageName?: string;
   alt?: string;
   description?: string;
   ownerType?: string;
@@ -61,13 +67,14 @@ export interface MediaUploadMetadata {
 
 export async function uploadImage(file: File, metadata: MediaUploadMetadata = {}) {
   const formData = new FormData();
-  formData.append('file', file);
 
   Object.entries(metadata).forEach(([key, value]) => {
     if (value !== undefined && value !== '') {
       formData.append(key, String(value));
     }
   });
+
+  formData.append('file', file);
 
   const data = await readJson<AdminMediaFile>(await fetch(`${apiBaseUrl}/api/media/upload`, {
     method: 'POST',
@@ -89,6 +96,7 @@ export interface MediaListParams {
   groupKey?: string;
   slotNo?: string;
   enabled?: string;
+  status?: 'active' | 'archived' | 'all';
 }
 
 export async function listImages(params: MediaListParams = {}) {
@@ -102,7 +110,7 @@ export async function listImages(params: MediaListParams = {}) {
     searchParams.set('keyword', params.keyword);
   }
 
-  ['ownerType', 'ownerId', 'ownerSlug', 'groupKey', 'slotNo', 'enabled'].forEach((key) => {
+  ['ownerType', 'ownerId', 'ownerSlug', 'groupKey', 'slotNo', 'enabled', 'status'].forEach((key) => {
     const value = params[key as keyof MediaListParams];
     if (value) {
       searchParams.set(key, value);
@@ -115,5 +123,40 @@ export async function listImages(params: MediaListParams = {}) {
   return data.map((item) => ({
     ...item,
     url: toAbsoluteUrl(item.url),
+  }));
+}
+
+export async function archiveImage(fileName: string) {
+  const data = await readJson<AdminMediaFile>(await fetch(`${apiBaseUrl}/api/media/${encodeURIComponent(fileName)}/archive`, {
+    method: 'PATCH',
+  }));
+
+  return {
+    ...data,
+    url: toAbsoluteUrl(data.url),
+  };
+}
+
+export async function restoreImage(fileName: string) {
+  const data = await readJson<AdminMediaFile>(await fetch(`${apiBaseUrl}/api/media/${encodeURIComponent(fileName)}/restore`, {
+    method: 'PATCH',
+  }));
+
+  return {
+    ...data,
+    url: toAbsoluteUrl(data.url),
+  };
+}
+
+export interface DeleteMediaResult {
+  fileName: string;
+  deletedFile: boolean;
+  removedFromIndex: boolean;
+  fileMissing: boolean;
+}
+
+export async function deleteImage(fileName: string) {
+  return readJson<DeleteMediaResult>(await fetch(`${apiBaseUrl}/api/media/${encodeURIComponent(fileName)}`, {
+    method: 'DELETE',
   }));
 }

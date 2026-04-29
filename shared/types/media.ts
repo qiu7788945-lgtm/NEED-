@@ -1,6 +1,5 @@
-import type { MediaStatus } from '../constants/status.js';
-
 export type MediaFileType = 'image' | 'video' | 'document';
+export type MediaStatus = 'active' | 'archived';
 export type MediaCategory =
   | 'home_interactive'
   | 'home_video'
@@ -27,10 +26,13 @@ export interface MediaFile {
   id?: number;
   fileName: string;
   originalName: string;
+  displayName: string;
   fileType: MediaFileType;
   mimeType: string;
   url: string;
   size?: number;
+  width?: number | null;
+  height?: number | null;
   thumbnailUrl?: string;
   alt?: string;
   description?: string;

@@ -329,6 +329,14 @@ button {
   font-size: 12px;
 }
 
+.media-card .media-warning {
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-weight: 900;
+}
+
 .media-card input {
   width: 100%;
   border: 1px solid #e5e7eb;
@@ -336,6 +344,26 @@ button {
   padding: 8px;
   color: #52525b;
   font-size: 12px;
+}
+
+.media-card-actions {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+}
+
+.media-card-actions button {
+  width: 100%;
+  border: 0;
+  border-radius: 999px;
+  padding: 9px 12px;
+  background: #090909;
+  color: #fff;
+  font-weight: 900;
+}
+
+.media-card-actions button.is-danger {
+  background: #b91c1c;
 }
 
 .home-toolbar {

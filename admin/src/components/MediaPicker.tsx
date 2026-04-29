@@ -40,7 +40,7 @@ export function MediaPicker({
   async function refreshImages() {
     setStatus('\u6b63\u5728\u52a0\u8f7d\u5a92\u4f53...');
     try {
-      const nextImages = await listImages({ category, ownerType, ownerSlug, groupKey, keyword });
+      const nextImages = await listImages({ category, ownerType, ownerSlug, groupKey, keyword, status: 'active' });
       setImages(nextImages);
       setStatus(nextImages.length ? '' : '\u6ca1\u6709\u627e\u5230\u5339\u914d\u56fe\u7247\u3002');
     } catch (error) {
@@ -126,7 +126,7 @@ export function MediaPicker({
               {images.map((image) => (
                 <button type="button" className="media-picker-card" key={image.fileName} onClick={() => handleSelect(image)}>
                   <img src={image.url} alt={image.alt || image.originalName || image.fileName} />
-                  <strong>{image.fileName}</strong>
+                  <strong>{image.displayName || image.originalName || image.fileName}</strong>
                   <span>{getMediaCategoryLabel(image.category)}</span>
                   <span>{image.ownerSlug || '-'}</span>
                   <span>{image.groupKey || '-'}</span>

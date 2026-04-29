@@ -2,7 +2,7 @@ export const CONTENT_STATUSES = ['draft', 'published', 'offline', 'archived'] as
 
 export type ContentStatus = (typeof CONTENT_STATUSES)[number];
 
-export const MEDIA_STATUSES = ['active', 'temp', 'archived'] as const;
+export const MEDIA_STATUSES = ['active', 'archived'] as const;
 
 export type MediaStatus = (typeof MEDIA_STATUSES)[number];
 

@@ -15,12 +15,15 @@ Current round scope:
 - Migration runner placeholder
 - Local image upload endpoint
 - Local image listing endpoint
+- Local media archive/restore endpoints
+- Local archived-media permanent delete endpoint
 - Static image access under `/uploads/images`
 - Local homepage interactive image slot config
 - Audit service placeholder
 - No database connection
 - No migration execution
 - No database-backed media library
+- No physical deletion when media is only archived
 - No video upload
 - No COS integration
 - No publishing system
@@ -56,10 +59,17 @@ Media upload:
 POST http://localhost:4000/api/media/upload
 form-data field: file
 optional form-data field: category
-optional form-data fields: alt, description, ownerType, ownerId, ownerSlug, groupKey, slotNo, caption, enabled, sortOrder
+optional form-data fields: displayName, storageName, alt, description, ownerType, ownerId, ownerSlug, groupKey, slotNo, caption, enabled, sortOrder
 allowed: jpg, jpeg, png, webp
 limit: 10MB
 ```
+
+Media file names:
+
+- `originalName`: original upload filename, used for source tracking. New uploads try to decode Chinese names correctly.
+- `displayName`: admin-facing asset name. If omitted, it falls back to `originalName`; use it to fix old mojibake display names.
+- `fileName`: safe storage filename under `server/uploads/images/`.
+- `storageName`: optional upload field for choosing the storage basename, for example `family-day-main-visual-01`. Only letters, numbers, hyphens, and underscores are allowed. The server keeps the original extension automatically.
 
 Expected response shape:
 
@@ -70,9 +80,12 @@ Expected response shape:
   "data": {
     "fileName": "image-0000000000000-abcd1234.jpg",
     "originalName": "example.jpg",
+    "displayName": "family day main visual",
     "url": "/uploads/images/image-0000000000000-abcd1234.jpg",
     "size": 12345,
-    "mimeType": "image/jpeg"
+    "mimeType": "image/jpeg",
+    "width": 1200,
+    "height": 800,
     "category": "temporary",
     "alt": "",
     "description": "",
@@ -83,7 +96,8 @@ Expected response shape:
     "slotNo": null,
     "caption": "",
     "enabled": true,
-    "sortOrder": 0
+    "sortOrder": 0,
+    "status": "active"
   }
 }
 ```
@@ -96,7 +110,31 @@ GET http://localhost:4000/api/media/list?category=home_interactive
 GET http://localhost:4000/api/media/list?ownerType=solution&ownerSlug=family-day&groupKey=hyundai-family-day-2025
 GET http://localhost:4000/api/media/list?enabled=true
 GET http://localhost:4000/api/media/list?keyword=logo
+GET http://localhost:4000/api/media/list?status=archived
+GET http://localhost:4000/api/media/list?status=all
 ```
+
+`status` supports:
+
+- `active`: normal media, also the default when `status` is omitted
+- `archived`: archived media
+- `all`: active and archived media
+
+Old media index entries without `status` are treated as `active`.
+
+Media archive and restore:
+
+```text
+PATCH http://localhost:4000/api/media/:fileName/archive
+PATCH http://localhost:4000/api/media/:fileName/restore
+DELETE http://localhost:4000/api/media/:fileName
+```
+
+Archive/restore only updates `server/data/media-library.json`; it does not physically delete files from `server/uploads/images/`.
+
+Permanent delete is different: it is only allowed for `archived` media, removes the media index entry, and deletes the real file from `server/uploads/images/`. Active media returns `MEDIA_NOT_ARCHIVED`.
+
+`fileName` is validated to reject path traversal. If an image is referenced by the local homepage 12-image config, archive and permanent delete return `MEDIA_USED_BY_HOME` so the homepage reference can be removed first.
 
 Supported categories:
 
@@ -134,6 +172,14 @@ Business ownership fields:
 - `slotNo`: position inside a group
 - `sortOrder`: display order
 - `enabled`: future frontend rendering should ignore disabled media
+- `status`: `active` or `archived`; archived media is hidden from default media lists and pickers
+- `width` / `height`: image dimensions read during upload or list fallback
+- `displayName`: admin-facing asset name
+
+Admin reminder fields:
+
+- Empty `alt` should be treated as "missing GEO image description".
+- `category=temporary` should be treated as unclassified media and should be categorized later.
 
 Homepage interactive image slots:
 
@@ -171,6 +217,8 @@ npm.cmd run lint
 Database note:
 
 This server still does not connect to MySQL or create real tables.
+
+The local archive feature is a first-pass soft delete. Future database integration should add complete usage tracking across homepage, cases, articles, solutions, and page editor content before adding safe physical cleanup for unused files.
 
 Round 7 added draft-only database files:
 

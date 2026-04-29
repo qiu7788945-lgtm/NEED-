@@ -61,6 +61,14 @@ Media ownership logic:
 - `groupKey` identifies a specific image group, for example `hyundai-family-day-2025`.
 - `slotNo` and `sortOrder` define display order inside a group.
 - `enabled=false` means future frontend publishing should not show that media item.
+- `originalName` stores the user's original uploaded filename for source tracking.
+- `displayName` is the human-readable admin asset name and can be used to hide old mojibake filenames.
+- `fileName` is the safe storage filename under the upload directory; optional upload `storageName` can choose its basename with letters, numbers, hyphens, and underscores only.
+- `width` and `height` store image dimensions when they can be detected.
+- `status=active` is normal media; `status=archived` is soft-deleted media hidden from default lists and MediaPicker.
+- Permanent delete is only allowed after archive and should remove both the metadata row and real file.
+- Empty alt/GEO descriptions should be surfaced as an admin reminder.
+- `category=temporary` should be surfaced as an unclassified-media reminder.
 
 Solution media rule:
 
