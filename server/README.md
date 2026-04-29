@@ -15,8 +15,11 @@ Current round scope:
 - Migration runner placeholder
 - Local image upload endpoint
 - Local image listing endpoint
+- Local media metadata edit endpoint
+- Local media usage tracking for homepage 12 image slots
 - Local media archive/restore endpoints
 - Local archived-media permanent delete endpoint
+- Local media batch archive/restore/permanent delete endpoints
 - Static image access under `/uploads/images`
 - Local homepage interactive image slot config
 - Audit service placeholder
@@ -97,7 +100,9 @@ Expected response shape:
     "caption": "",
     "enabled": true,
     "sortOrder": 0,
-    "status": "active"
+    "status": "active",
+    "usageCount": 0,
+    "usages": []
   }
 }
 ```
@@ -122,6 +127,45 @@ GET http://localhost:4000/api/media/list?status=all
 
 Old media index entries without `status` are treated as `active`.
 
+`GET /api/media/list` also returns first-pass usage tracking fields:
+
+- `usageCount`: number of known references.
+- `usages`: usage details. Round 9.6 only checks `server/data/home-interactive-images.json`, matching either `mediaFileName` or the filename from `mediaUrl`.
+
+Example usage item:
+
+```json
+{
+  "type": "home_interactive",
+  "label": "首页管理 / 创意案例现场图组",
+  "detail": "第 1 张图"
+}
+```
+
+Media metadata edit:
+
+```text
+PATCH http://localhost:4000/api/media/:fileName
+Content-Type: application/json
+```
+
+Editable fields:
+
+- `displayName`
+- `category`
+- `alt`
+- `caption`
+- `description`
+- `ownerType`
+- `ownerId`
+- `ownerSlug`
+- `groupKey`
+- `slotNo`
+- `sortOrder`
+- `enabled`
+
+This endpoint validates `fileName`, returns `MEDIA_FILE_NOT_FOUND` when the media is missing, and returns the updated media object. It never changes `fileName`, `storageName`, `originalName`, or `url`, and it does not physically rename files.
+
 Media archive and restore:
 
 ```text
@@ -135,6 +179,51 @@ Archive/restore only updates `server/data/media-library.json`; it does not physi
 Permanent delete is different: it is only allowed for `archived` media, removes the media index entry, and deletes the real file from `server/uploads/images/`. Active media returns `MEDIA_NOT_ARCHIVED`.
 
 `fileName` is validated to reject path traversal. If an image is referenced by the local homepage 12-image config, archive and permanent delete return `MEDIA_USED_BY_HOME` so the homepage reference can be removed first.
+
+Batch media operations:
+
+```text
+PATCH http://localhost:4000/api/media/batch/archive
+PATCH http://localhost:4000/api/media/batch/restore
+DELETE http://localhost:4000/api/media/batch
+```
+
+Request body:
+
+```json
+{
+  "fileNames": ["a.png", "b.jpg"]
+}
+```
+
+Response body:
+
+```json
+{
+  "ok": true,
+  "message": "OK",
+  "data": {
+    "total": 2,
+    "success": 1,
+    "skipped": 1,
+    "failed": 0,
+    "results": [
+      { "fileName": "a.png", "status": "success" },
+      { "fileName": "b.jpg", "status": "skipped", "reason": "MEDIA_USED_BY_HOME" }
+    ]
+  }
+}
+```
+
+Batch rules:
+
+- Each `fileName` is validated independently.
+- One failed item does not fail the whole batch.
+- Batch archive only applies to `active` media.
+- Batch restore only applies to `archived` media.
+- Batch permanent delete only applies to `archived` media.
+- Active media is skipped by batch permanent delete.
+- Homepage-referenced media is skipped by batch permanent delete.
 
 Supported categories:
 
@@ -218,7 +307,7 @@ Database note:
 
 This server still does not connect to MySQL or create real tables.
 
-The local archive feature is a first-pass soft delete. Future database integration should add complete usage tracking across homepage, cases, articles, solutions, and page editor content before adding safe physical cleanup for unused files.
+The local archive feature is a first-pass soft delete. Round 9.6 usage tracking only covers the homepage 12-image config. Future database integration should extend usage tracking across cases, articles, solutions, and page editor content before adding broader safe physical cleanup.
 
 Round 7 added draft-only database files:
 

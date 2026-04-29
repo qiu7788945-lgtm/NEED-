@@ -22,6 +22,12 @@ export type MediaOwnerType =
   | 'system'
   | 'temporary';
 
+export interface MediaUsage {
+  type: 'home_interactive';
+  label: string;
+  detail: string;
+}
+
 export interface MediaFile {
   id?: number;
   fileName: string;
@@ -46,4 +52,6 @@ export interface MediaFile {
   enabled?: boolean;
   sortOrder?: number;
   status: MediaStatus;
+  usageCount?: number;
+  usages?: MediaUsage[];
 }

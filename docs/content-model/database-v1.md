@@ -70,6 +70,18 @@ Media ownership logic:
 - Empty alt/GEO descriptions should be surfaced as an admin reminder.
 - `category=temporary` should be surfaced as an unclassified-media reminder.
 
+Round 9.6 local media maintenance rules:
+
+- Uploaded media metadata can be edited for `displayName`, `category`, `alt`, `caption`, `description`, ownership fields, group fields, ordering, and `enabled`.
+- Metadata editing must not change `fileName`, `storageName`, `originalName`, or `url`, and must not physically rename files.
+- Local usage tracking first checks only `server/data/home-interactive-images.json`, matching `mediaFileName` or the filename inside `mediaUrl`.
+- `GET /api/media/list` includes `usageCount` and `usages` so admin cards can display usage positions.
+- Batch archive applies only to active media.
+- Batch restore applies only to archived media.
+- Batch permanent delete applies only to archived media and skips active media.
+- Batch permanent delete skips media referenced by the homepage 12-image config.
+- Future usage tracking should add cases, articles, scene solution pages, and page editor blocks before broader cleanup automation.
+
 Solution media rule:
 
 - Normal solution scenes use `category=solution_image`, `ownerType=solution`, and `ownerSlug=family-day | salon | annual | exhibition | forum | other`.

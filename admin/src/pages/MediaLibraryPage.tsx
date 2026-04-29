@@ -1,5 +1,18 @@
-import { useEffect, useState } from 'react';
-import { archiveImage, deleteImage, listImages, restoreImage, type AdminMediaFile, uploadImage } from '../api/media';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  archiveImage,
+  batchArchiveImages,
+  batchDeleteImages,
+  batchRestoreImages,
+  deleteImage,
+  listImages,
+  restoreImage,
+  updateImage,
+  type AdminMediaFile,
+  type BatchMediaResult,
+  type MediaUpdateMetadata,
+  uploadImage,
+} from '../api/media';
 import { getMediaCategoryLabel, mediaCategories, mediaOwnerTypes } from '../constants/mediaCategories';
 
 const ownerSlugOptions = [
@@ -12,6 +25,30 @@ const ownerSlugOptions = [
   { value: 'forum', label: '学术与专业论坛 forum' },
   { value: 'other', label: '其他 other' },
 ];
+
+const reasonLabels: Record<string, string> = {
+  INVALID_MEDIA_FILE_NAME: '文件名不合法',
+  MEDIA_FILE_NOT_FOUND: '素材不存在',
+  MEDIA_NOT_ACTIVE: '不是正常素材',
+  MEDIA_NOT_ARCHIVED: '不是已归档素材',
+  MEDIA_OPERATION_FAILED: '操作失败',
+  MEDIA_USED_BY_HOME: '正在被首页使用',
+};
+
+interface EditFormState {
+  displayName: string;
+  category: string;
+  alt: string;
+  caption: string;
+  description: string;
+  ownerType: string;
+  ownerId: string;
+  ownerSlug: string;
+  groupKey: string;
+  slotNo: string;
+  sortOrder: string;
+  enabled: boolean;
+}
 
 function formatFileSize(size: number) {
   if (size >= 1024 * 1024) {
@@ -56,6 +93,50 @@ function getOwnerTypeLabel(value: string) {
   return mediaOwnerTypes.find((item) => item.value === value)?.label ?? value;
 }
 
+function toEditForm(image: AdminMediaFile): EditFormState {
+  return {
+    displayName: image.displayName || '',
+    category: image.category || 'temporary',
+    alt: image.alt || '',
+    caption: image.caption || '',
+    description: image.description || '',
+    ownerType: image.ownerType || '',
+    ownerId: image.ownerId === null ? '' : String(image.ownerId),
+    ownerSlug: image.ownerSlug || '',
+    groupKey: image.groupKey || '',
+    slotNo: image.slotNo === null ? '' : String(image.slotNo),
+    sortOrder: String(image.sortOrder ?? 0),
+    enabled: image.enabled,
+  };
+}
+
+function toUpdateMetadata(form: EditFormState): MediaUpdateMetadata {
+  return {
+    displayName: form.displayName,
+    category: form.category,
+    alt: form.alt,
+    caption: form.caption,
+    description: form.description,
+    ownerType: form.ownerType,
+    ownerId: form.ownerId,
+    ownerSlug: form.ownerSlug,
+    groupKey: form.groupKey,
+    slotNo: form.slotNo,
+    sortOrder: form.sortOrder,
+    enabled: form.enabled,
+  };
+}
+
+function summarizeBatch(result: BatchMediaResult) {
+  const details = result.results
+    .filter((item) => item.status !== 'success')
+    .slice(0, 5)
+    .map((item) => `${item.fileName}: ${reasonLabels[item.reason ?? ''] ?? item.reason ?? '未知原因'}`)
+    .join('；');
+
+  return `完成：成功 ${result.success}，跳过 ${result.skipped}，失败 ${result.failed}${details ? `。${details}` : '。'}`;
+}
+
 export function MediaLibraryPage() {
   const [images, setImages] = useState<AdminMediaFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -73,6 +154,9 @@ export function MediaLibraryPage() {
   const [uploadSortOrder, setUploadSortOrder] = useState('');
   const [showAdvancedUpload, setShowAdvancedUpload] = useState(false);
   const [expandedDetails, setExpandedDetails] = useState<Record<string, boolean>>({});
+  const [editingFileName, setEditingFileName] = useState('');
+  const [editForm, setEditForm] = useState<EditFormState | null>(null);
+  const [selectedFileNames, setSelectedFileNames] = useState<string[]>([]);
   const [filterCategory, setFilterCategory] = useState('');
   const [filterOwnerType, setFilterOwnerType] = useState('');
   const [filterOwnerSlug, setFilterOwnerSlug] = useState('');
@@ -83,6 +167,12 @@ export function MediaLibraryPage() {
   const [latestImage, setLatestImage] = useState<AdminMediaFile | null>(null);
   const [status, setStatus] = useState('请选择一张 jpg、jpeg、png 或 webp 图片。');
   const [isUploading, setIsUploading] = useState(false);
+
+  const selectedImages = useMemo(
+    () => images.filter((image) => selectedFileNames.includes(image.fileName)),
+    [images, selectedFileNames],
+  );
+  const allCurrentPageSelected = images.length > 0 && images.every((image) => selectedFileNames.includes(image.fileName));
 
   async function refreshImages() {
     const nextImages = await listImages({
@@ -95,6 +185,7 @@ export function MediaLibraryPage() {
       keyword,
     });
     setImages(nextImages);
+    setSelectedFileNames((current) => current.filter((fileName) => nextImages.some((image) => image.fileName === fileName)));
   }
 
   useEffect(() => {
@@ -128,14 +219,19 @@ export function MediaLibraryPage() {
     }
   }
 
-  async function handleDelete(fileName: string) {
+  async function handleDelete(image: AdminMediaFile) {
+    if (image.usageCount > 0) {
+      setStatus('这张素材正在被首页使用，不能永久删除。');
+      return;
+    }
+
     const confirmed = window.confirm('永久删除后无法恢复，并会删除服务器上的真实文件。确认永久删除这张素材吗？');
     if (!confirmed) {
       return;
     }
 
     try {
-      const result = await deleteImage(fileName);
+      const result = await deleteImage(image.fileName);
       setStatus(result.fileMissing ? '删除成功：素材记录已清理，真实文件此前已不存在。' : '永久删除成功。');
       await refreshImages();
     } catch (error) {
@@ -205,19 +301,82 @@ export function MediaLibraryPage() {
     }));
   }
 
+  function startEdit(image: AdminMediaFile) {
+    setEditingFileName(image.fileName);
+    setEditForm(toEditForm(image));
+    setExpandedDetails((current) => ({
+      ...current,
+      [image.fileName]: true,
+    }));
+  }
+
+  async function handleSaveEdit() {
+    if (!editForm || !editingFileName) {
+      return;
+    }
+
+    try {
+      await updateImage(editingFileName, toUpdateMetadata(editForm));
+      setStatus('素材信息已保存。');
+      setEditingFileName('');
+      setEditForm(null);
+      await refreshImages();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : '保存失败，请稍后再试。');
+    }
+  }
+
+  function toggleSelected(fileName: string, checked: boolean) {
+    setSelectedFileNames((current) => (
+      checked ? Array.from(new Set([...current, fileName])) : current.filter((item) => item !== fileName)
+    ));
+  }
+
+  function selectCurrentPage() {
+    setSelectedFileNames((current) => Array.from(new Set([...current, ...images.map((image) => image.fileName)])));
+  }
+
+  function clearSelection() {
+    setSelectedFileNames([]);
+  }
+
+  async function runBatch(label: string, action: (fileNames: string[]) => Promise<BatchMediaResult>) {
+    if (selectedFileNames.length === 0) {
+      setStatus('请先选择素材。');
+      return;
+    }
+
+    const confirmed = window.confirm(`确认${label}已选择的 ${selectedFileNames.length} 个素材吗？`);
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      const result = await action(selectedFileNames);
+      setStatus(summarizeBatch(result));
+      await refreshImages();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : `${label}失败，请稍后再试。`);
+    }
+  }
+
+  function updateEditForm(nextValues: Partial<EditFormState>) {
+    setEditForm((current) => (current ? { ...current, ...nextValues } : current));
+  }
+
   return (
     <div className="admin-media-page">
       <div className="admin-section-heading">
         <p className="admin-eyebrow">Media Library</p>
         <h1>媒体库</h1>
-        <p>统一管理图片素材，支持上传、分类、搜索、归档、恢复与已归档素材永久删除。</p>
+        <p>统一管理图片素材，支持上传、分类、搜索、信息维护、使用位置查看、归档、恢复与已归档素材永久删除。</p>
       </div>
 
       <div className="media-upload-panel">
         <div className="media-upload-header">
           <div>
             <h2>上传图片</h2>
-            <p>默认只填写团队日常最常用的信息；归属和存储细节放在高级设置里。</p>
+            <p>日常只填写素材名称、分类、排序和图片说明；归属和存储细节放在高级设置里。</p>
           </div>
           <button type="button" onClick={handleUpload} disabled={isUploading}>
             {isUploading ? '上传中' : '上传'}
@@ -295,7 +454,6 @@ export function MediaLibraryPage() {
                     </option>
                   ))}
                 </select>
-                <small>一般无需手动填写。</small>
               </label>
               <label className="media-field">
                 <span>所属场景</span>
@@ -306,18 +464,17 @@ export function MediaLibraryPage() {
                     </option>
                   ))}
                 </select>
-                <small>用于场景解决方案素材归属。</small>
               </label>
               <label className="media-field">
                 <span>所属项目/图组</span>
-                <input value={uploadGroupKey} onChange={(event) => setUploadGroupKey(event.target.value)} placeholder="用于区分同一场景下不同项目图片" />
+                <input value={uploadGroupKey} onChange={(event) => setUploadGroupKey(event.target.value)} placeholder="用于区分同一场景下不同项目的图组" />
               </label>
               <label className="media-field">
                 <span>图组位置</span>
-                <input value={uploadSlotNo} onChange={(event) => setUploadSlotNo(event.target.value)} placeholder="例如某组图中的第 1 张、第 2 张；可少于 7 张" type="number" />
+                <input value={uploadSlotNo} onChange={(event) => setUploadSlotNo(event.target.value)} placeholder="例如第 1 张、第 2 张" type="number" />
               </label>
               <label className="media-field">
-                <span>内部备注 / description</span>
+                <span>内部备注</span>
                 <input value={uploadDescription} onChange={(event) => setUploadDescription(event.target.value)} placeholder="仅后台内部备注" />
               </label>
               <label className="media-inline-check">
@@ -398,6 +555,27 @@ export function MediaLibraryPage() {
         </button>
       </div>
 
+      <div className="media-batch-toolbar">
+        <div>
+          <strong>已选择 {selectedFileNames.length} 个素材</strong>
+          <span>正常 {selectedImages.filter((image) => image.status === 'active').length}，已归档 {selectedImages.filter((image) => image.status === 'archived').length}</span>
+        </div>
+        <div className="media-batch-actions">
+          <button type="button" onClick={allCurrentPageSelected ? clearSelection : selectCurrentPage}>
+            {allCurrentPageSelected ? '取消选择' : '全选当前页'}
+          </button>
+          <button type="button" onClick={() => void runBatch('批量归档', batchArchiveImages)}>
+            批量归档
+          </button>
+          <button type="button" onClick={() => void runBatch('批量恢复', batchRestoreImages)}>
+            批量恢复
+          </button>
+          <button className="is-danger" type="button" onClick={() => void runBatch('批量永久删除', batchDeleteImages)}>
+            批量永久删除
+          </button>
+        </div>
+      </div>
+
       <p className="media-status">{status}</p>
 
       {latestImage ? (
@@ -414,9 +592,18 @@ export function MediaLibraryPage() {
       <div className="media-grid">
         {images.map((image) => {
           const isExpanded = Boolean(expandedDetails[image.fileName]);
+          const isEditing = editingFileName === image.fileName && editForm;
 
           return (
             <article className="media-card" key={image.fileName}>
+              <label className="media-card-select">
+                <input
+                  type="checkbox"
+                  checked={selectedFileNames.includes(image.fileName)}
+                  onChange={(event) => toggleSelected(image.fileName, event.target.checked)}
+                />
+                <span>选择</span>
+              </label>
               <img src={image.url} alt={image.alt || getMediaTitle(image)} />
               <div className="media-card-body">
                 <div className="media-card-core">
@@ -424,6 +611,7 @@ export function MediaLibraryPage() {
                   <div className="media-card-tags">
                     <span>{getMediaCategoryLabel(image.category)}</span>
                     <span>{image.status === 'archived' ? '已归档' : '正常'}</span>
+                    <span>{image.enabled ? '已启用' : '已停用'}</span>
                   </div>
                   {!image.alt ? <span className="media-warning">缺少 GEO 图片描述</span> : null}
                   {image.category === 'temporary' ? <span className="media-warning">临时素材，建议归类</span> : null}
@@ -434,6 +622,9 @@ export function MediaLibraryPage() {
                   <span>大小：{formatFileSize(image.size)}</span>
                   <span>上传：{formatDateTime(image.createdAt)}</span>
                   <span>说明：{image.caption || '-'}</span>
+                  <span className={image.usageCount > 0 ? 'media-usage-active' : undefined}>
+                    {image.usageCount > 0 ? `使用中：${image.usageCount} 处` : '未被使用'}
+                  </span>
                 </div>
 
                 {isExpanded ? (
@@ -445,8 +636,97 @@ export function MediaLibraryPage() {
                     <span>所属场景：{image.ownerSlug || '-'}</span>
                     <span>所属项目/图组：{image.groupKey || '-'}</span>
                     <span>图组位置：{image.slotNo ?? '-'}</span>
-                    <span>内部备注 / description：{image.description || '-'}</span>
-                    <span>enabled 状态：{image.enabled ? '已启用' : '已停用'}</span>
+                    <span>内部备注：{image.description || '-'}</span>
+                    <span>展示排序：{image.sortOrder}</span>
+                    {image.usages.length > 0 ? (
+                      <div className="media-usage-list">
+                        <strong>使用位置</strong>
+                        {image.usages.map((usage, index) => (
+                          <span key={`${usage.type}-${usage.detail}-${index}`}>{usage.label}：{usage.detail}</span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span>使用位置：未被使用</span>
+                    )}
+                  </div>
+                ) : null}
+
+                {isEditing ? (
+                  <div className="media-edit-form">
+                    <label className="media-field">
+                      <span>素材名称</span>
+                      <input value={editForm.displayName} onChange={(event) => updateEditForm({ displayName: event.target.value })} />
+                    </label>
+                    <label className="media-field">
+                      <span>素材分类</span>
+                      <select value={editForm.category} onChange={(event) => updateEditForm({ category: event.target.value })}>
+                        {mediaCategories.filter((item) => item.value).map((item) => (
+                          <option key={item.value} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="media-field">
+                      <span>图片替代文字/GEO描述</span>
+                      <input value={editForm.alt} onChange={(event) => updateEditForm({ alt: event.target.value })} />
+                    </label>
+                    <label className="media-field">
+                      <span>图片说明</span>
+                      <input value={editForm.caption} onChange={(event) => updateEditForm({ caption: event.target.value })} />
+                    </label>
+                    <label className="media-field">
+                      <span>内部备注</span>
+                      <textarea value={editForm.description} onChange={(event) => updateEditForm({ description: event.target.value })} />
+                    </label>
+                    <label className="media-field">
+                      <span>归属类型</span>
+                      <select value={editForm.ownerType} onChange={(event) => updateEditForm({ ownerType: event.target.value })}>
+                        {mediaOwnerTypes.map((item) => (
+                          <option key={item.value || 'all'} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="media-field">
+                      <span>归属 ID</span>
+                      <input value={editForm.ownerId} type="number" onChange={(event) => updateEditForm({ ownerId: event.target.value })} />
+                    </label>
+                    <label className="media-field">
+                      <span>所属场景</span>
+                      <select value={editForm.ownerSlug} onChange={(event) => updateEditForm({ ownerSlug: event.target.value })}>
+                        {ownerSlugOptions.map((item) => (
+                          <option key={item.value || 'none'} value={item.value}>
+                            {item.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="media-field">
+                      <span>所属项目/图组</span>
+                      <input value={editForm.groupKey} onChange={(event) => updateEditForm({ groupKey: event.target.value })} />
+                    </label>
+                    <label className="media-field">
+                      <span>图组位置</span>
+                      <input value={editForm.slotNo} type="number" onChange={(event) => updateEditForm({ slotNo: event.target.value })} />
+                    </label>
+                    <label className="media-field">
+                      <span>展示排序</span>
+                      <input value={editForm.sortOrder} type="number" onChange={(event) => updateEditForm({ sortOrder: event.target.value })} />
+                    </label>
+                    <label className="media-inline-check">
+                      <input type="checkbox" checked={editForm.enabled} onChange={(event) => updateEditForm({ enabled: event.target.checked })} />
+                      <span>是否启用</span>
+                    </label>
+                    <div className="media-card-actions">
+                      <button type="button" onClick={() => void handleSaveEdit()}>
+                        保存信息
+                      </button>
+                      <button className="media-secondary-button" type="button" onClick={() => { setEditingFileName(''); setEditForm(null); }}>
+                        取消编辑
+                      </button>
+                    </div>
                   </div>
                 ) : null}
 
@@ -456,7 +736,7 @@ export function MediaLibraryPage() {
                       <button type="button" onClick={() => void handleRestore(image.fileName)}>
                         恢复
                       </button>
-                      <button className="is-danger" type="button" onClick={() => void handleDelete(image.fileName)}>
+                      <button className="is-danger" type="button" onClick={() => void handleDelete(image)}>
                         永久删除
                       </button>
                     </>
@@ -465,6 +745,9 @@ export function MediaLibraryPage() {
                       归档
                     </button>
                   )}
+                  <button type="button" onClick={() => startEdit(image)}>
+                    编辑信息
+                  </button>
                   <button type="button" onClick={() => void handleCopyLink(image.url)}>
                     复制链接
                   </button>

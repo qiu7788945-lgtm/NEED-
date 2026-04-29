@@ -65,6 +65,8 @@ export interface LocalImageFile {
   sortOrder: number;
   status: MediaStatus;
   createdAt?: string;
+  usageCount: number;
+  usages: MediaUsage[];
 }
 
 export interface MediaListFilters {
@@ -93,6 +95,41 @@ export interface MediaUploadMetadata {
   caption?: string;
   enabled?: string;
   sortOrder?: string;
+}
+
+export interface MediaUpdateMetadata {
+  displayName?: unknown;
+  category?: unknown;
+  alt?: unknown;
+  caption?: unknown;
+  description?: unknown;
+  ownerType?: unknown;
+  ownerId?: unknown;
+  ownerSlug?: unknown;
+  groupKey?: unknown;
+  slotNo?: unknown;
+  sortOrder?: unknown;
+  enabled?: unknown;
+}
+
+export interface MediaUsage {
+  type: 'home_interactive';
+  label: string;
+  detail: string;
+}
+
+export interface BatchMediaResultItem {
+  fileName: string;
+  status: 'success' | 'skipped' | 'failed';
+  reason?: string;
+}
+
+export interface BatchMediaResult {
+  total: number;
+  success: number;
+  skipped: number;
+  failed: number;
+  results: BatchMediaResultItem[];
 }
 
 type MediaIndexEntry = {
@@ -156,6 +193,38 @@ function normalizeBoolean(value?: string | boolean): boolean {
   }
 
   return value === 'true' || value === '1' || value === 'on';
+}
+
+function normalizeEditableText(value: unknown): string | undefined {
+  return typeof value === 'string' ? value.trim() : undefined;
+}
+
+function normalizeEditableNumber(value: unknown): number | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null || value === '') {
+    return null;
+  }
+
+  if (typeof value === 'string' || typeof value === 'number') {
+    return normalizeOptionalNumber(value);
+  }
+
+  return undefined;
+}
+
+function normalizeEditableBoolean(value: unknown): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (typeof value === 'boolean' || typeof value === 'string') {
+    return normalizeBoolean(value);
+  }
+
+  return undefined;
 }
 
 function normalizeStatus(status?: string): MediaStatus {
@@ -404,7 +473,56 @@ function normalizeEntry(fileName: string, entry: MediaIndexEntry, file: {
     sortOrder: entry.sortOrder ?? entry.slotNo ?? 0,
     status: normalizeStatus(entry.status),
     createdAt: entry.createdAt ?? file.createdAt,
+    usageCount: 0,
+    usages: [],
   };
+}
+
+function withUsages(image: LocalImageFile, usages: MediaUsage[] = []): LocalImageFile {
+  return {
+    ...image,
+    usageCount: usages.length,
+    usages,
+  };
+}
+
+function getFileNameFromMediaUrl(mediaUrl: string) {
+  if (!mediaUrl) {
+    return '';
+  }
+
+  const rawName = path.basename(mediaUrl.split('?')[0]);
+  try {
+    return decodeURIComponent(rawName);
+  } catch {
+    return rawName;
+  }
+}
+
+export async function getMediaUsagesByFileName(): Promise<Record<string, MediaUsage[]>> {
+  const slots = await readHomeInteractiveImages();
+  const usageMap: Record<string, MediaUsage[]> = {};
+
+  slots.forEach((slot) => {
+    const referencedNames = new Set(
+      [slot.mediaFileName, getFileNameFromMediaUrl(slot.mediaUrl)]
+        .map((value) => value.trim())
+        .filter(Boolean),
+    );
+
+    referencedNames.forEach((fileName) => {
+      usageMap[fileName] = [
+        ...(usageMap[fileName] ?? []),
+        {
+          type: 'home_interactive',
+          label: '首页管理 / 创意案例现场图组',
+          detail: `第 ${slot.slotNo} 张图`,
+        },
+      ];
+    });
+  });
+
+  return usageMap;
 }
 
 export async function toUploadedImage(file: Express.Multer.File, metadata: MediaUploadMetadata): Promise<LocalImageFile> {
@@ -438,20 +556,23 @@ export async function toUploadedImage(file: Express.Multer.File, metadata: Media
   index[storedFile.filename] = entry;
   await writeMediaIndex(index);
 
-  return normalizeEntry(storedFile.filename, entry, {
+  const usagesByFileName = await getMediaUsagesByFileName();
+
+  return withUsages(normalizeEntry(storedFile.filename, entry, {
     originalName,
     size: storedFile.size,
     mimeType: storedFile.mimetype,
     width: dimensions.width,
     height: dimensions.height,
     createdAt,
-  });
+  }), usagesByFileName[storedFile.filename]);
 }
 
 export async function listLocalImages(filters: MediaListFilters = {}): Promise<LocalImageFile[]> {
   await fs.mkdir(imageUploadDir, { recursive: true });
 
   const index = await readMediaIndex();
+  const usagesByFileName = await getMediaUsagesByFileName();
   const keyword = filters.keyword?.trim().toLowerCase();
   const status = normalizeStatusFilter(filters.status);
   const entries = await fs.readdir(imageUploadDir, { withFileTypes: true });
@@ -468,13 +589,13 @@ export async function listLocalImages(filters: MediaListFilters = {}): Promise<L
         }));
         const ext = path.extname(entry.name).toLowerCase();
 
-        return normalizeEntry(entry.name, index[entry.name] ?? {}, {
+        return withUsages(normalizeEntry(entry.name, index[entry.name] ?? {}, {
           size: stats.size,
           mimeType: mimeTypeByExt[ext],
           width: dimensions.width,
           height: dimensions.height,
           createdAt: stats.birthtime.toISOString(),
-        });
+        }), usagesByFileName[entry.name]);
       }),
   );
 
@@ -534,12 +655,12 @@ async function getExistingImage(fileName: string) {
 }
 
 async function assertNotUsedByHomeInteractive(fileName: string) {
-  const slots = await readHomeInteractiveImages();
-  const usedSlots = slots.filter((slot) => slot.mediaFileName === fileName);
+  const usagesByFileName = await getMediaUsagesByFileName();
+  const usages = usagesByFileName[fileName] ?? [];
 
-  if (usedSlots.length > 0) {
+  if (usages.length > 0) {
     throw createMediaError('该图片正在首页使用，建议先解除引用。', 409, 'MEDIA_USED_BY_HOME', {
-      slots: usedSlots.map((slot) => slot.slotNo),
+      usages,
     });
   }
 }
@@ -556,7 +677,8 @@ async function updateMediaStatus(fileName: string, status: MediaStatus) {
   index[fileName] = nextEntry;
   await writeMediaIndex(index);
 
-  return normalizeEntry(fileName, nextEntry, file);
+  const usagesByFileName = await getMediaUsagesByFileName();
+  return withUsages(normalizeEntry(fileName, nextEntry, file), usagesByFileName[fileName]);
 }
 
 export async function archiveLocalImage(fileName: string) {
@@ -566,6 +688,71 @@ export async function archiveLocalImage(fileName: string) {
 
 export async function restoreLocalImage(fileName: string) {
   return updateMediaStatus(fileName, 'active');
+}
+
+export async function updateLocalImageMetadata(fileName: string, metadata: MediaUpdateMetadata) {
+  const file = await getExistingImage(fileName);
+  const index = await readMediaIndex();
+  const entry = index[fileName] ?? {};
+
+  const nextEntry: MediaIndexEntry = {
+    ...entry,
+  };
+  const displayName = normalizeEditableText(metadata.displayName);
+  const category = normalizeEditableText(metadata.category);
+  const alt = normalizeEditableText(metadata.alt);
+  const caption = normalizeEditableText(metadata.caption);
+  const description = normalizeEditableText(metadata.description);
+  const ownerType = normalizeEditableText(metadata.ownerType);
+  const ownerId = normalizeEditableNumber(metadata.ownerId);
+  const ownerSlug = normalizeEditableText(metadata.ownerSlug);
+  const groupKey = normalizeEditableText(metadata.groupKey);
+  const slotNo = normalizeEditableNumber(metadata.slotNo);
+  const sortOrder = normalizeEditableNumber(metadata.sortOrder);
+  const enabled = normalizeEditableBoolean(metadata.enabled);
+
+  if (displayName !== undefined) {
+    nextEntry.displayName = normalizeDisplayName(displayName, entry.originalName ?? fileName);
+  }
+  if (category !== undefined) {
+    nextEntry.category = normalizeCategory(category);
+  }
+  if (alt !== undefined) {
+    nextEntry.alt = alt;
+  }
+  if (caption !== undefined) {
+    nextEntry.caption = caption;
+  }
+  if (description !== undefined) {
+    nextEntry.description = description;
+  }
+  if (ownerType !== undefined) {
+    nextEntry.ownerType = normalizeOwnerType(ownerType);
+  }
+  if (ownerId !== undefined) {
+    nextEntry.ownerId = ownerId;
+  }
+  if (ownerSlug !== undefined) {
+    nextEntry.ownerSlug = ownerSlug;
+  }
+  if (groupKey !== undefined) {
+    nextEntry.groupKey = groupKey;
+  }
+  if (slotNo !== undefined) {
+    nextEntry.slotNo = slotNo;
+  }
+  if (sortOrder !== undefined) {
+    nextEntry.sortOrder = sortOrder ?? 0;
+  }
+  if (enabled !== undefined) {
+    nextEntry.enabled = enabled;
+  }
+
+  index[fileName] = nextEntry;
+  await writeMediaIndex(index);
+
+  const usagesByFileName = await getMediaUsagesByFileName();
+  return withUsages(normalizeEntry(fileName, nextEntry, file), usagesByFileName[fileName]);
 }
 
 export interface DeleteLocalImageResult {
@@ -612,4 +799,104 @@ export async function deleteLocalImage(fileName: string): Promise<DeleteLocalIma
     removedFromIndex,
     fileMissing,
   };
+}
+
+function createBatchSummary(results: BatchMediaResultItem[]): BatchMediaResult {
+  return {
+    total: results.length,
+    success: results.filter((result) => result.status === 'success').length,
+    skipped: results.filter((result) => result.status === 'skipped').length,
+    failed: results.filter((result) => result.status === 'failed').length,
+    results,
+  };
+}
+
+function getMediaErrorCode(error: unknown) {
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') {
+    return error.code;
+  }
+
+  return 'MEDIA_OPERATION_FAILED';
+}
+
+async function getImageStatus(fileName: string): Promise<MediaStatus> {
+  await getExistingImage(fileName);
+  const index = await readMediaIndex();
+  return normalizeStatus(index[fileName]?.status);
+}
+
+export async function batchArchiveLocalImages(fileNames: string[]): Promise<BatchMediaResult> {
+  const results: BatchMediaResultItem[] = [];
+
+  for (const fileName of fileNames) {
+    try {
+      validateSafeFileName(fileName);
+      const status = await getImageStatus(fileName);
+      if (status !== 'active') {
+        results.push({ fileName, status: 'skipped', reason: 'MEDIA_NOT_ACTIVE' });
+        continue;
+      }
+
+      await archiveLocalImage(fileName);
+      results.push({ fileName, status: 'success' });
+    } catch (error) {
+      const reason = getMediaErrorCode(error);
+      results.push({
+        fileName,
+        status: reason === 'MEDIA_USED_BY_HOME' ? 'skipped' : 'failed',
+        reason,
+      });
+    }
+  }
+
+  return createBatchSummary(results);
+}
+
+export async function batchRestoreLocalImages(fileNames: string[]): Promise<BatchMediaResult> {
+  const results: BatchMediaResultItem[] = [];
+
+  for (const fileName of fileNames) {
+    try {
+      validateSafeFileName(fileName);
+      const status = await getImageStatus(fileName);
+      if (status !== 'archived') {
+        results.push({ fileName, status: 'skipped', reason: 'MEDIA_NOT_ARCHIVED' });
+        continue;
+      }
+
+      await restoreLocalImage(fileName);
+      results.push({ fileName, status: 'success' });
+    } catch (error) {
+      results.push({ fileName, status: 'failed', reason: getMediaErrorCode(error) });
+    }
+  }
+
+  return createBatchSummary(results);
+}
+
+export async function batchDeleteLocalImages(fileNames: string[]): Promise<BatchMediaResult> {
+  const results: BatchMediaResultItem[] = [];
+
+  for (const fileName of fileNames) {
+    try {
+      validateSafeFileName(fileName);
+      const status = await getImageStatus(fileName);
+      if (status !== 'archived') {
+        results.push({ fileName, status: 'skipped', reason: 'MEDIA_NOT_ARCHIVED' });
+        continue;
+      }
+
+      await deleteLocalImage(fileName);
+      results.push({ fileName, status: 'success' });
+    } catch (error) {
+      const reason = getMediaErrorCode(error);
+      results.push({
+        fileName,
+        status: reason === 'MEDIA_USED_BY_HOME' ? 'skipped' : 'failed',
+        reason,
+      });
+    }
+  }
+
+  return createBatchSummary(results);
 }

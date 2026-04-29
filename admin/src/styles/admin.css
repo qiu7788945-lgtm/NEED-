@@ -299,13 +299,21 @@ button {
 .media-picker-filters input,
 .media-picker-filters select,
 .media-upload-fields input,
-.media-upload-fields select {
+.media-upload-fields select,
+.media-edit-form input,
+.media-edit-form select,
+.media-edit-form textarea {
   width: 100%;
   border: 1px solid #d4d4d8;
   border-radius: 10px;
   padding: 11px 12px;
   background: #fff;
   color: #111;
+}
+
+.media-edit-form textarea {
+  min-height: 86px;
+  resize: vertical;
 }
 
 .media-filter-panel button,
@@ -322,6 +330,52 @@ button {
 
 .media-filter-panel > button {
   align-self: end;
+}
+
+.media-batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 16px 50px rgba(15, 23, 42, 0.05);
+}
+
+.media-batch-toolbar > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.media-batch-toolbar strong {
+  font-size: 14px;
+}
+
+.media-batch-toolbar span {
+  color: #71717a;
+  font-size: 12px;
+}
+
+.media-batch-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.media-batch-actions button {
+  border: 0;
+  border-radius: 999px;
+  padding: 9px 13px;
+  background: #090909;
+  color: #fff;
+  font-weight: 900;
+}
+
+.media-batch-actions button.is-danger {
+  background: #b91c1c;
 }
 
 .media-latest {
@@ -364,10 +418,33 @@ button {
 }
 
 .media-card {
+  position: relative;
   overflow: hidden;
   background: #fff;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
+}
+
+.media-card-select {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 6px 9px;
+  background: rgba(255, 255, 255, 0.92);
+  color: #111;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+}
+
+.media-card-select input {
+  width: auto;
+  margin: 0;
 }
 
 .media-card-body {
@@ -421,6 +498,28 @@ button {
 .media-card-details {
   border-radius: 10px;
   padding: 10px;
+  background: #f8fafc;
+}
+
+.media-usage-active {
+  color: #166534 !important;
+  font-weight: 900;
+}
+
+.media-usage-list,
+.media-edit-form {
+  display: grid;
+  gap: 8px;
+}
+
+.media-usage-list {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 8px;
+}
+
+.media-edit-form {
+  border-radius: 10px;
+  padding: 12px;
   background: #f8fafc;
 }
 
@@ -693,9 +792,22 @@ button {
   .media-upload-panel,
   .media-latest,
   .home-toolbar,
+  .media-batch-toolbar,
   .media-filter-panel,
   .media-picker-filters {
     grid-template-columns: 1fr;
+  }
+
+  .media-batch-toolbar {
+    display: grid;
+  }
+
+  .media-batch-actions {
+    justify-content: stretch;
+  }
+
+  .media-batch-actions button {
+    flex: 1 1 140px;
   }
 
   .media-upload-header {

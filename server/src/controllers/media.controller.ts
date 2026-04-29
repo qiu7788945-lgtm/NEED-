@@ -1,5 +1,15 @@
 import type { RequestHandler } from 'express';
-import { archiveLocalImage, deleteLocalImage, listLocalImages, restoreLocalImage, toUploadedImage } from '../services/media/media.service.js';
+import {
+  archiveLocalImage,
+  batchArchiveLocalImages,
+  batchDeleteLocalImages,
+  batchRestoreLocalImages,
+  deleteLocalImage,
+  listLocalImages,
+  restoreLocalImage,
+  toUploadedImage,
+  updateLocalImageMetadata,
+} from '../services/media/media.service.js';
 import { fail, success } from '../utils/api-response.js';
 
 export const uploadMedia: RequestHandler = async (req, res) => {
@@ -47,6 +57,11 @@ export const archiveMedia: RequestHandler = async (req, res) => {
   res.json(success(image, 'Media archived'));
 };
 
+export const updateMedia: RequestHandler = async (req, res) => {
+  const image = await updateLocalImageMetadata(req.params.fileName, req.body);
+  res.json(success(image, 'Media updated'));
+};
+
 export const restoreMedia: RequestHandler = async (req, res) => {
   const image = await restoreLocalImage(req.params.fileName);
   res.json(success(image, 'Media restored'));
@@ -55,4 +70,45 @@ export const restoreMedia: RequestHandler = async (req, res) => {
 export const deleteMedia: RequestHandler = async (req, res) => {
   const result = await deleteLocalImage(req.params.fileName);
   res.json(success(result, result.fileMissing ? 'Media index removed; file was already missing' : 'Media permanently deleted'));
+};
+
+function getBatchFileNames(body: unknown) {
+  if (!body || typeof body !== 'object' || !('fileNames' in body) || !Array.isArray(body.fileNames)) {
+    return null;
+  }
+
+  return body.fileNames.filter((fileName): fileName is string => typeof fileName === 'string');
+}
+
+export const batchArchiveMedia: RequestHandler = async (req, res) => {
+  const fileNames = getBatchFileNames(req.body);
+  if (!fileNames) {
+    res.status(400).json(fail('fileNames is required', 'FILE_NAMES_REQUIRED'));
+    return;
+  }
+
+  const result = await batchArchiveLocalImages(fileNames);
+  res.json(success(result));
+};
+
+export const batchRestoreMedia: RequestHandler = async (req, res) => {
+  const fileNames = getBatchFileNames(req.body);
+  if (!fileNames) {
+    res.status(400).json(fail('fileNames is required', 'FILE_NAMES_REQUIRED'));
+    return;
+  }
+
+  const result = await batchRestoreLocalImages(fileNames);
+  res.json(success(result));
+};
+
+export const batchDeleteMedia: RequestHandler = async (req, res) => {
+  const fileNames = getBatchFileNames(req.body);
+  if (!fileNames) {
+    res.status(400).json(fail('fileNames is required', 'FILE_NAMES_REQUIRED'));
+    return;
+  }
+
+  const result = await batchDeleteLocalImages(fileNames);
+  res.json(success(result));
 };
