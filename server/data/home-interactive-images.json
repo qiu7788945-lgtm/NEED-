@@ -1,98 +1,98 @@
-[
-  {
-    "slotNo": 1,
-    "mediaUrl": "/uploads/images/image-1777363692399-dxpt09w5.png",
-    "mediaFileName": "image-1777363692399-dxpt09w5.png",
-    "alt": "测试图片1",
-    "sortOrder": 1,
-    "enabled": true
-  },
-  {
-    "slotNo": 2,
-    "mediaUrl": "",
-    "mediaFileName": "",
-    "alt": "",
-    "sortOrder": 2,
-    "enabled": true
-  },
-  {
-    "slotNo": 3,
-    "mediaUrl": "",
-    "mediaFileName": "",
-    "alt": "",
-    "sortOrder": 3,
-    "enabled": true
-  },
-  {
-    "slotNo": 4,
-    "mediaUrl": "",
-    "mediaFileName": "",
-    "alt": "",
-    "sortOrder": 4,
-    "enabled": true
-  },
-  {
-    "slotNo": 5,
-    "mediaUrl": "",
-    "mediaFileName": "",
-    "alt": "",
-    "sortOrder": 5,
-    "enabled": true
-  },
-  {
-    "slotNo": 6,
-    "mediaUrl": "",
-    "mediaFileName": "",
-    "alt": "",
-    "sortOrder": 6,
-    "enabled": true
-  },
-  {
-    "slotNo": 7,
-    "mediaUrl": "",
-    "mediaFileName": "",
-    "alt": "",
-    "sortOrder": 7,
-    "enabled": true
-  },
-  {
-    "slotNo": 8,
-    "mediaUrl": "",
-    "mediaFileName": "",
-    "alt": "",
-    "sortOrder": 8,
-    "enabled": true
-  },
-  {
-    "slotNo": 9,
-    "mediaUrl": "",
-    "mediaFileName": "",
-    "alt": "",
-    "sortOrder": 9,
-    "enabled": true
-  },
-  {
-    "slotNo": 10,
-    "mediaUrl": "",
-    "mediaFileName": "",
-    "alt": "",
-    "sortOrder": 10,
-    "enabled": true
-  },
-  {
-    "slotNo": 11,
-    "mediaUrl": "",
-    "mediaFileName": "",
-    "alt": "",
-    "sortOrder": 11,
-    "enabled": true
-  },
-  {
-    "slotNo": 12,
-    "mediaUrl": "",
-    "mediaFileName": "",
-    "alt": "",
-    "sortOrder": 12,
-    "enabled": true
-  }
+﻿[
+    {
+        "slotNo":  1,
+        "mediaUrl":  "",
+        "mediaFileName":  "",
+        "alt":  "",
+        "sortOrder":  1,
+        "enabled":  true
+    },
+    {
+        "slotNo":  2,
+        "mediaUrl":  "",
+        "mediaFileName":  "",
+        "alt":  "",
+        "sortOrder":  2,
+        "enabled":  true
+    },
+    {
+        "slotNo":  3,
+        "mediaUrl":  "",
+        "mediaFileName":  "",
+        "alt":  "",
+        "sortOrder":  3,
+        "enabled":  true
+    },
+    {
+        "slotNo":  4,
+        "mediaUrl":  "",
+        "mediaFileName":  "",
+        "alt":  "",
+        "sortOrder":  4,
+        "enabled":  true
+    },
+    {
+        "slotNo":  5,
+        "mediaUrl":  "",
+        "mediaFileName":  "",
+        "alt":  "",
+        "sortOrder":  5,
+        "enabled":  true
+    },
+    {
+        "slotNo":  6,
+        "mediaUrl":  "",
+        "mediaFileName":  "",
+        "alt":  "",
+        "sortOrder":  6,
+        "enabled":  true
+    },
+    {
+        "slotNo":  7,
+        "mediaUrl":  "",
+        "mediaFileName":  "",
+        "alt":  "",
+        "sortOrder":  7,
+        "enabled":  true
+    },
+    {
+        "slotNo":  8,
+        "mediaUrl":  "",
+        "mediaFileName":  "",
+        "alt":  "",
+        "sortOrder":  8,
+        "enabled":  true
+    },
+    {
+        "slotNo":  9,
+        "mediaUrl":  "",
+        "mediaFileName":  "",
+        "alt":  "",
+        "sortOrder":  9,
+        "enabled":  true
+    },
+    {
+        "slotNo":  10,
+        "mediaUrl":  "",
+        "mediaFileName":  "",
+        "alt":  "",
+        "sortOrder":  10,
+        "enabled":  true
+    },
+    {
+        "slotNo":  11,
+        "mediaUrl":  "",
+        "mediaFileName":  "",
+        "alt":  "",
+        "sortOrder":  11,
+        "enabled":  true
+    },
+    {
+        "slotNo":  12,
+        "mediaUrl":  "",
+        "mediaFileName":  "",
+        "alt":  "",
+        "sortOrder":  12,
+        "enabled":  true
+    }
 ]

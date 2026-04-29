@@ -6,6 +6,7 @@ import type { MediaCategory, MediaFileType, MediaOwnerType, MediaStatus } from '
 import { env } from '../../config/env.js';
 import { imageUploadDir, normalizeOriginalFileName, videoUploadDir } from '../../middlewares/upload.middleware.js';
 import { readHomeInteractiveImages } from '../home/home-interactive-images.service.js';
+import { readHomeVideoConfig } from '../home/home-video.service.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const dataDir = path.join(serverRoot, 'data');
@@ -134,7 +135,7 @@ export interface MediaUpdateMetadata {
 }
 
 export interface MediaUsage {
-  type: 'home_interactive';
+  type: 'home_interactive' | 'home_video';
   label: string;
   detail: string;
 }
@@ -549,6 +550,7 @@ function getFileNameFromMediaUrl(mediaUrl: string) {
 
 export async function getMediaUsagesByFileName(): Promise<Record<string, MediaUsage[]>> {
   const slots = await readHomeInteractiveImages();
+  const homeVideo = await readHomeVideoConfig();
   const usageMap: Record<string, MediaUsage[]> = {};
 
   slots.forEach((slot) => {
@@ -569,6 +571,28 @@ export async function getMediaUsagesByFileName(): Promise<Record<string, MediaUs
       ];
     });
   });
+
+  if (homeVideo.videoFileName) {
+    usageMap[homeVideo.videoFileName] = [
+      ...(usageMap[homeVideo.videoFileName] ?? []),
+      {
+        type: 'home_video',
+        label: '首页管理 / 首页视频',
+        detail: '首页视频文件',
+      },
+    ];
+  }
+
+  if (homeVideo.posterFileName) {
+    usageMap[homeVideo.posterFileName] = [
+      ...(usageMap[homeVideo.posterFileName] ?? []),
+      {
+        type: 'home_video',
+        label: '首页管理 / 首页视频',
+        detail: '视频封面',
+      },
+    ];
+  }
 
   return usageMap;
 }

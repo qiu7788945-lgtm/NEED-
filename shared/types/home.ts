@@ -6,3 +6,16 @@ export interface HomeInteractiveImageSlot {
   sortOrder: number;
   enabled: boolean;
 }
+
+export interface HomeVideoConfig {
+  videoUrl: string;
+  videoFileName: string;
+  videoDisplayName: string;
+  posterUrl: string;
+  posterFileName: string;
+  posterDisplayName: string;
+  title: string;
+  description: string;
+  enabled: boolean;
+  updatedAt: string;
+}

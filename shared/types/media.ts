@@ -23,7 +23,7 @@ export type MediaOwnerType =
   | 'temporary';
 
 export interface MediaUsage {
-  type: 'home_interactive';
+  type: 'home_interactive' | 'home_video';
   label: string;
   detail: string;
 }

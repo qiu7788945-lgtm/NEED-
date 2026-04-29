@@ -24,6 +24,7 @@ Current round scope:
 - Static image access under `/uploads/images`
 - Static video access under `/uploads/videos`
 - Local homepage interactive image slot config
+- Local homepage video config
 - Audit service placeholder
 - No database connection
 - No migration execution
@@ -160,7 +161,7 @@ Duplicate warnings never block upload. The only hard upload failures are unsuppo
 `GET /api/media/list` also returns first-pass usage tracking fields:
 
 - `usageCount`: number of known references.
-- `usages`: usage details. Round 9.6 only checks `server/data/home-interactive-images.json`, matching either `mediaFileName` or the filename from `mediaUrl`.
+- `usages`: usage details. It checks `server/data/home-interactive-images.json` and `server/data/home-video.json`.
 
 Example usage item:
 
@@ -208,7 +209,7 @@ Archive/restore only updates `server/data/media-library.json`; it does not physi
 
 Permanent delete is different: it is only allowed for `archived` media, removes the media index entry, and deletes the real file from the matching upload directory. Active media returns `MEDIA_NOT_ARCHIVED`.
 
-`fileName` is validated to reject path traversal. If an image is referenced by the local homepage 12-image config, archive and permanent delete return `MEDIA_USED_BY_HOME` so the homepage reference can be removed first.
+`fileName` is validated to reject path traversal. If a media file is referenced by the local homepage 12-image config or homepage video config, archive and permanent delete return `MEDIA_USED_BY_HOME` so the homepage reference can be removed first.
 
 Batch media operations:
 
@@ -343,6 +344,38 @@ The payload must always contain exactly 12 slots:
 }
 ```
 
+Homepage video config:
+
+```text
+GET http://localhost:4000/api/home/video
+PUT http://localhost:4000/api/home/video
+```
+
+The config is stored in:
+
+```text
+server/data/home-video.json
+```
+
+Payload shape:
+
+```json
+{
+  "videoUrl": "/uploads/videos/example.mp4",
+  "videoFileName": "example.mp4",
+  "videoDisplayName": "NEED homepage video",
+  "posterUrl": "/uploads/images/example-poster.jpg",
+  "posterFileName": "example-poster.jpg",
+  "posterDisplayName": "NEED homepage video poster",
+  "title": "NEED 创意现场",
+  "description": "Homepage video description",
+  "enabled": true,
+  "updatedAt": "2026-04-29T00:00:00.000Z"
+}
+```
+
+Admin homepage uploads are point-to-point convenience flows. They still call `POST /api/media/upload`, so uploaded homepage videos, video posters, and interactive images are registered in the media library with `ownerType=home` and `ownerSlug=homepage`.
+
 Validation:
 
 ```bash
@@ -354,7 +387,7 @@ Database note:
 
 This server still does not connect to MySQL or create real tables.
 
-The local archive feature is a first-pass soft delete. Round 9.6 usage tracking only covers the homepage 12-image config. Future database integration should extend usage tracking across cases, articles, solutions, and page editor content before adding broader safe physical cleanup.
+The local archive feature is a first-pass soft delete. Usage tracking currently covers the homepage 12-image config and homepage video config. Future database integration should extend usage tracking across cases, articles, solutions, and page editor content before adding broader safe physical cleanup.
 
 Round 7 added draft-only database files:
 

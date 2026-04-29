@@ -1,8 +1,21 @@
 import { useEffect, useState } from 'react';
-import type { HomeInteractiveImageSlot } from '../../../shared/types/home';
-import { getHomeInteractiveImages, saveHomeInteractiveImages } from '../api/home';
-import type { AdminMediaFile } from '../api/media';
+import type { HomeInteractiveImageSlot, HomeVideoConfig } from '../../../shared/types/home';
+import { getHomeInteractiveImages, getHomeVideo, saveHomeInteractiveImages, saveHomeVideo } from '../api/home';
+import { uploadImage, type AdminMediaFile } from '../api/media';
 import { MediaPicker } from '../components/MediaPicker';
+
+const emptyHomeVideo: HomeVideoConfig = {
+  videoUrl: '',
+  videoFileName: '',
+  videoDisplayName: '',
+  posterUrl: '',
+  posterFileName: '',
+  posterDisplayName: '',
+  title: '',
+  description: '',
+  enabled: false,
+  updatedAt: '',
+};
 
 function toAbsoluteUrl(url: string) {
   if (!url) {
@@ -16,19 +29,35 @@ function toAbsoluteUrl(url: string) {
   return `http://localhost:4000${url}`;
 }
 
+function toRelativeUrl(url: string) {
+  return url.replace('http://localhost:4000', '');
+}
+
+function getMediaTitle(image: AdminMediaFile) {
+  return image.displayName || image.originalName || image.fileName;
+}
+
 export function HomeManagementPage() {
   const [slots, setSlots] = useState<HomeInteractiveImageSlot[]>([]);
-  const [status, setStatus] = useState('\u6b63\u5728\u52a0\u8f7d\u9996\u9875\u914d\u7f6e...');
-  const [isSaving, setIsSaving] = useState(false);
+  const [homeVideo, setHomeVideo] = useState<HomeVideoConfig>(emptyHomeVideo);
+  const [status, setStatus] = useState('正在加载首页配置...');
+  const [videoStatus, setVideoStatus] = useState('');
+  const [slotStatus, setSlotStatus] = useState('');
+  const [isSavingVideo, setIsSavingVideo] = useState(false);
+  const [isSavingSlots, setIsSavingSlots] = useState(false);
+  const [uploadingVideo, setUploadingVideo] = useState(false);
+  const [uploadingPoster, setUploadingPoster] = useState(false);
+  const [uploadingSlotNo, setUploadingSlotNo] = useState<number | null>(null);
 
   useEffect(() => {
-    getHomeInteractiveImages()
-      .then((nextSlots) => {
+    Promise.all([getHomeInteractiveImages(), getHomeVideo()])
+      .then(([nextSlots, nextVideo]) => {
         setSlots(nextSlots);
-        setStatus('\u5df2\u52a0\u8f7d 12 \u4e2a\u56fe\u7247\u69fd\u4f4d\u3002');
+        setHomeVideo(nextVideo);
+        setStatus('首页配置已加载。');
       })
       .catch((error: Error) => {
-        setStatus(error.message);
+        setStatus(error.message || '首页配置加载失败。');
       });
   }, []);
 
@@ -40,23 +69,135 @@ export function HomeManagementPage() {
 
   function bindImage(slotNo: number, image: AdminMediaFile) {
     updateSlot(slotNo, {
-      mediaUrl: image.url.replace('http://localhost:4000', ''),
+      mediaUrl: toRelativeUrl(image.url),
       mediaFileName: image.fileName,
+      alt: image.alt || `首页交互图 ${slotNo}`,
     });
+    setSlotStatus(`槽位 ${slotNo} 已绑定素材：${getMediaTitle(image)}。`);
   }
 
-  async function handleSave() {
-    setIsSaving(true);
-    setStatus('\u6b63\u5728\u4fdd\u5b58...');
+  function bindHomeVideoVideo(video: AdminMediaFile) {
+    setHomeVideo((current) => ({
+      ...current,
+      videoUrl: toRelativeUrl(video.url),
+      videoFileName: video.fileName,
+      videoDisplayName: getMediaTitle(video),
+    }));
+    setVideoStatus(`首页视频已上传并绑定：${getMediaTitle(video)}。`);
+  }
+
+  function bindHomeVideoPoster(poster: AdminMediaFile) {
+    setHomeVideo((current) => ({
+      ...current,
+      posterUrl: toRelativeUrl(poster.url),
+      posterFileName: poster.fileName,
+      posterDisplayName: getMediaTitle(poster),
+    }));
+    setVideoStatus(`视频封面已上传并绑定：${getMediaTitle(poster)}。`);
+  }
+
+  async function handleSaveSlots() {
+    setIsSavingSlots(true);
+    setSlotStatus('正在保存首页交互图配置...');
 
     try {
       const savedSlots = await saveHomeInteractiveImages(slots);
       setSlots(savedSlots);
-      setStatus('\u4fdd\u5b58\u6210\u529f\uff0c\u5237\u65b0\u540e\u4ecd\u4f1a\u4fdd\u7559\u914d\u7f6e\u3002');
+      setSlotStatus('首页交互图保存成功，刷新后仍会保留配置。');
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : '\u4fdd\u5b58\u5931\u8d25\u3002');
+      setSlotStatus(error instanceof Error ? error.message : '首页交互图保存失败。');
     } finally {
-      setIsSaving(false);
+      setIsSavingSlots(false);
+    }
+  }
+
+  async function handleSaveVideo() {
+    setIsSavingVideo(true);
+    setVideoStatus('正在保存首页视频配置...');
+
+    try {
+      const savedVideo = await saveHomeVideo(homeVideo);
+      setHomeVideo(savedVideo);
+      setVideoStatus('首页视频保存成功，刷新后仍会保留配置。');
+    } catch (error) {
+      setVideoStatus(error instanceof Error ? error.message : '首页视频保存失败。');
+    } finally {
+      setIsSavingVideo(false);
+    }
+  }
+
+  async function handleUploadVideo(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+
+    setUploadingVideo(true);
+    setVideoStatus('正在上传首页视频...');
+
+    try {
+      const uploaded = await uploadImage(file, {
+        category: 'home_video',
+        ownerType: 'home',
+        ownerSlug: 'homepage',
+        displayName: homeVideo.title || file.name,
+      });
+      bindHomeVideoVideo(uploaded);
+    } catch (error) {
+      setVideoStatus(error instanceof Error ? error.message : '首页视频上传失败。');
+    } finally {
+      setUploadingVideo(false);
+    }
+  }
+
+  async function handleUploadPoster(file: File | undefined) {
+    if (!file) {
+      return;
+    }
+
+    setUploadingPoster(true);
+    setVideoStatus('正在上传视频封面...');
+
+    try {
+      const uploaded = await uploadImage(file, {
+        category: 'home_video',
+        ownerType: 'home',
+        ownerSlug: 'homepage',
+        displayName: homeVideo.title ? `${homeVideo.title} 封面` : file.name,
+        alt: homeVideo.title,
+        caption: homeVideo.description,
+      });
+      bindHomeVideoPoster(uploaded);
+    } catch (error) {
+      setVideoStatus(error instanceof Error ? error.message : '视频封面上传失败。');
+    } finally {
+      setUploadingPoster(false);
+    }
+  }
+
+  async function handleUploadSlotImage(slotNo: number, file: File | undefined) {
+    if (!file) {
+      return;
+    }
+
+    setUploadingSlotNo(slotNo);
+    setSlotStatus(`正在上传槽位 ${slotNo} 图片...`);
+
+    try {
+      const uploaded = await uploadImage(file, {
+        category: 'home_interactive',
+        ownerType: 'home',
+        ownerSlug: 'homepage',
+        groupKey: 'home-interactive',
+        slotNo: String(slotNo),
+        sortOrder: String(slotNo),
+        displayName: `首页交互图 ${slotNo}`,
+        alt: `首页交互图 ${slotNo}`,
+      });
+      bindImage(slotNo, uploaded);
+    } catch (error) {
+      setSlotStatus(error instanceof Error ? error.message : `槽位 ${slotNo} 图片上传失败。`);
+    } finally {
+      setUploadingSlotNo(null);
     }
   }
 
@@ -64,82 +205,182 @@ export function HomeManagementPage() {
     <div className="admin-home-page">
       <div className="admin-section-heading">
         <p className="admin-eyebrow">Home Management</p>
-        <h1>{'\u9996\u9875\u7ba1\u7406'}</h1>
-        <p>{'\u7ba1\u7406\u9996\u9875\u201c\u521b\u610f / \u6848\u4f8b / \u73b0\u573a\u201d\u4ea4\u4e92\u56fe\u7247\u5e8f\u5217\u7684 12 \u4e2a\u56fa\u5b9a\u69fd\u4f4d\u3002\u672c\u8f6e\u53ea\u4fdd\u5b58\u540e\u53f0\u914d\u7f6e\uff0c\u4e0d\u63a5\u5165\u524d\u53f0\u9996\u9875\u3002'}</p>
+        <h1>首页管理</h1>
+        <p>点对点管理首页视频、视频封面，以及“创意 / 案例 / 现场”12 个交互图槽位。本轮只保存后台配置，不接入正式前台首页。</p>
       </div>
 
-      <div className="home-toolbar">
-        <p>{status}</p>
-        <button type="button" onClick={handleSave} disabled={isSaving || slots.length !== 12}>
-          {isSaving ? '\u4fdd\u5b58\u4e2d' : '\u4fdd\u5b58 12 \u4e2a\u69fd\u4f4d'}
-        </button>
-      </div>
+      <p className="media-status">{status}</p>
 
-      <div className="home-slot-grid">
-        {slots.map((slot) => (
-          <article className="home-slot-card" key={slot.slotNo}>
-            <div className="home-slot-preview">
-              {slot.mediaUrl ? (
-                <img src={toAbsoluteUrl(slot.mediaUrl)} alt={slot.alt || `slot ${slot.slotNo}`} />
-              ) : (
-                <span>{'\u672a\u9009\u62e9\u56fe\u7247'}</span>
-              )}
+      <section className="home-video-panel">
+        <div className="home-toolbar">
+          <div>
+            <p className="admin-eyebrow">Home Video</p>
+            <h2>首页视频</h2>
+            <p>直接上传或替换首页视频与封面，素材会自动登记到媒体库。</p>
+          </div>
+          <button type="button" onClick={() => void handleSaveVideo()} disabled={isSavingVideo}>
+            {isSavingVideo ? '保存中' : '保存首页视频'}
+          </button>
+        </div>
+
+        <div className="home-video-grid">
+          <div className="home-video-preview">
+            {homeVideo.videoUrl ? (
+              <video src={toAbsoluteUrl(homeVideo.videoUrl)} poster={toAbsoluteUrl(homeVideo.posterUrl)} controls preload="metadata" />
+            ) : (
+              <span>未选择首页视频</span>
+            )}
+          </div>
+
+          <div className="home-video-form">
+            <label className="home-switch">
+              <input
+                type="checkbox"
+                checked={homeVideo.enabled}
+                onChange={(event) => setHomeVideo((current) => ({ ...current, enabled: event.target.checked }))}
+              />
+              <span>{homeVideo.enabled ? '启用首页视频' : '禁用首页视频'}</span>
+            </label>
+
+            <label>
+              <span>视频标题</span>
+              <input
+                value={homeVideo.title}
+                onChange={(event) => setHomeVideo((current) => ({ ...current, title: event.target.value }))}
+                placeholder="例如：NEED 创意现场"
+              />
+            </label>
+
+            <label>
+              <span>视频说明</span>
+              <textarea
+                value={homeVideo.description}
+                onChange={(event) => setHomeVideo((current) => ({ ...current, description: event.target.value }))}
+                placeholder="用于后台识别或未来前台展示"
+              />
+            </label>
+
+            <div className="home-upload-row">
+              <label className="home-file-button">
+                <span>{uploadingVideo ? '上传中' : '上传/替换视频'}</span>
+                <input
+                  type="file"
+                  accept=".mp4,.webm,video/mp4,video/webm"
+                  disabled={uploadingVideo}
+                  onChange={(event) => void handleUploadVideo(event.target.files?.[0])}
+                />
+              </label>
+              <label className="home-file-button">
+                <span>{uploadingPoster ? '上传中' : '上传/替换封面'}</span>
+                <input
+                  type="file"
+                  accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                  disabled={uploadingPoster}
+                  onChange={(event) => void handleUploadPoster(event.target.files?.[0])}
+                />
+              </label>
             </div>
 
-            <div className="home-slot-body">
-              <div className="home-slot-title-row">
-                <h2>{'\u69fd\u4f4d'} {slot.slotNo}</h2>
-                <label className="home-switch">
-                  <input
-                    type="checkbox"
-                    checked={slot.enabled}
-                    onChange={(event) => updateSlot(slot.slotNo, { enabled: event.target.checked })}
+            <div className="home-video-meta">
+              <span>视频素材：{homeVideo.videoDisplayName || homeVideo.videoFileName || '未绑定'}</span>
+              <span>封面素材：{homeVideo.posterDisplayName || homeVideo.posterFileName || '未绑定'}</span>
+              <span>更新时间：{homeVideo.updatedAt || '-'}</span>
+            </div>
+
+            {videoStatus ? <p className="media-status">{videoStatus}</p> : null}
+          </div>
+        </div>
+      </section>
+
+      <section className="home-slots-panel">
+        <div className="home-toolbar">
+          <div>
+            <p className="admin-eyebrow">Interactive Images</p>
+            <h2>创意案例现场图组</h2>
+            <p>每个槽位都可以直接上传替换，也可以从媒体库选择已有首页交互图。</p>
+          </div>
+          <button type="button" onClick={() => void handleSaveSlots()} disabled={isSavingSlots || slots.length !== 12}>
+            {isSavingSlots ? '保存中' : '保存 12 个槽位'}
+          </button>
+        </div>
+
+        {slotStatus ? <p className="media-status">{slotStatus}</p> : null}
+
+        <div className="home-slot-grid">
+          {slots.map((slot) => (
+            <article className="home-slot-card" key={slot.slotNo}>
+              <div className="home-slot-preview">
+                {slot.mediaUrl ? (
+                  <img src={toAbsoluteUrl(slot.mediaUrl)} alt={slot.alt || `首页交互图 ${slot.slotNo}`} />
+                ) : (
+                  <span>未选择图片</span>
+                )}
+              </div>
+
+              <div className="home-slot-body">
+                <div className="home-slot-title-row">
+                  <h2>槽位 {slot.slotNo}</h2>
+                  <label className="home-switch">
+                    <input
+                      type="checkbox"
+                      checked={slot.enabled}
+                      onChange={(event) => updateSlot(slot.slotNo, { enabled: event.target.checked })}
+                    />
+                    <span>{slot.enabled ? '启用' : '禁用'}</span>
+                  </label>
+                </div>
+
+                <div className="home-slot-picker-row">
+                  <label className="home-file-button">
+                    <span>{uploadingSlotNo === slot.slotNo ? '上传中' : '上传/替换本槽图片'}</span>
+                    <input
+                      type="file"
+                      accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                      disabled={uploadingSlotNo === slot.slotNo}
+                      onChange={(event) => void handleUploadSlotImage(slot.slotNo, event.target.files?.[0])}
+                    />
+                  </label>
+                  <MediaPicker
+                    defaultCategory="home_interactive"
+                    onSelect={(image) => bindImage(slot.slotNo, image)}
                   />
-                  <span>{slot.enabled ? '\u542f\u7528' : '\u7981\u7528'}</span>
+                  {slot.mediaFileName ? (
+                    <button
+                      className="media-picker-clear"
+                      type="button"
+                      onClick={() => updateSlot(slot.slotNo, { mediaUrl: '', mediaFileName: '' })}
+                    >
+                      清除
+                    </button>
+                  ) : null}
+                </div>
+
+                {slot.mediaFileName ? (
+                  <p className="home-slot-file-name">{slot.mediaFileName}</p>
+                ) : null}
+
+                <label>
+                  <span>Alt/GEO 描述</span>
+                  <input
+                    value={slot.alt}
+                    onChange={(event) => updateSlot(slot.slotNo, { alt: event.target.value })}
+                    placeholder={`首页交互图 ${slot.slotNo}`}
+                  />
+                </label>
+
+                <label>
+                  <span>展示排序</span>
+                  <input
+                    type="number"
+                    value={slot.sortOrder}
+                    onChange={(event) => updateSlot(slot.slotNo, { sortOrder: Number(event.target.value) })}
+                  />
                 </label>
               </div>
-
-              <div className="home-slot-picker-row">
-                <MediaPicker
-                  defaultCategory="home_interactive"
-                  onSelect={(image) => bindImage(slot.slotNo, image)}
-                />
-                {slot.mediaFileName ? (
-                  <button
-                    className="media-picker-clear"
-                    type="button"
-                    onClick={() => updateSlot(slot.slotNo, { mediaUrl: '', mediaFileName: '' })}
-                  >
-                    {'\u6e05\u9664'}
-                  </button>
-                ) : null}
-              </div>
-
-              {slot.mediaFileName ? (
-                <p className="home-slot-file-name">{slot.mediaFileName}</p>
-              ) : null}
-
-              <label>
-                <span>Alt</span>
-                <input
-                  value={slot.alt}
-                  onChange={(event) => updateSlot(slot.slotNo, { alt: event.target.value })}
-                  placeholder="NEED homepage image"
-                />
-              </label>
-
-              <label>
-                <span>Sort Order</span>
-                <input
-                  type="number"
-                  value={slot.sortOrder}
-                  onChange={(event) => updateSlot(slot.slotNo, { sortOrder: Number(event.target.value) })}
-                />
-              </label>
-            </div>
-          </article>
-        ))}
-      </div>
+            </article>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

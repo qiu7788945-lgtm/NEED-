@@ -6,6 +6,8 @@ Current round scope:
 
 - Static admin shell
 - Homepage 12 interactive image slot management
+- Homepage video and poster management
+- Point-to-point homepage uploads that automatically register media-library metadata
 - Local image upload through the server API
 - Media category, ownership, enabled-state, status, and keyword filters
 - Media metadata editing for uploaded assets
@@ -144,11 +146,19 @@ Homepage management test:
 2. Start `npm.cmd run dev:admin`.
 3. Open the admin URL shown by Vite.
 4. Click the Home Management menu item.
-5. Edit the 12 image slots, click the image picker button, choose uploaded images from the modal, and save.
+5. In the Home Video section, upload or replace the homepage video, optionally upload a poster, edit title/description/enabled state, and save.
+6. In the Interactive Images section, upload directly into any slot or click the image picker button to choose existing images, then save the 12 slots.
 
 The MediaPicker opens with `home_interactive` as the default category for homepage slots.
 
 MediaPicker only requests `active` image media by default, so archived media and videos do not appear in homepage image selectors. A future caller can opt into video selection with an explicit `allowVideo` prop.
+
+Homepage point-to-point uploads:
+
+- Homepage video uploads use `category=home_video`, `ownerType=home`, and `ownerSlug=homepage`.
+- Homepage video poster uploads also use `category=home_video`, `ownerType=home`, and `ownerSlug=homepage`.
+- Homepage interactive image slot uploads use `category=home_interactive`, `ownerType=home`, `ownerSlug=homepage`, `groupKey=home-interactive`, and the current `slotNo`.
+- Users do not need to visit the media library first. The upload still goes through the media API, so the asset appears in the media library and remains searchable/manageable there.
 
 Future solution pages can reuse MediaPicker with:
 
@@ -163,6 +173,9 @@ The saved config is stored in:
 
 ```text
 server/data/home-interactive-images.json
+server/data/home-video.json
 ```
+
+This round still does not connect the saved config to the public frontend homepage.
 
 Future database-backed media management should extend usage tracking to cases, articles, scenes, and page editor content before broadening safe physical cleanup. Production video storage should use Tencent Cloud COS or a video service instead of long-term local disk.

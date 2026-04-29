@@ -97,6 +97,18 @@ Round 9.7 local media optimization rules:
 - MediaPicker defaults to active images only so videos do not enter image slots.
 - Production video storage should move to Tencent Cloud COS or a video service rather than relying on local disk.
 
+Round 10 homepage point-to-point rules:
+
+- Homepage video config is stored locally in `server/data/home-video.json`.
+- Homepage interactive image config remains in `server/data/home-interactive-images.json`.
+- Admin homepage uploads are business-module uploads, not a bypass around the media library.
+- Homepage video uploads write media metadata with `category=home_video`, `ownerType=home`, and `ownerSlug=homepage`.
+- Homepage video poster uploads use the same homepage ownership metadata and are optional.
+- Homepage interactive image slot uploads write `category=home_interactive`, `ownerType=home`, `ownerSlug=homepage`, `groupKey=home-interactive`, and the current `slotNo`.
+- MediaPicker remains available for choosing existing active homepage images and defaults to image-only selection.
+- The saved homepage JSON config is still admin-only in this round and is not connected to the public frontend homepage.
+- Future database integration should move these JSON configs into `home_video` and `home_interactive_images` tables.
+
 Solution media rule:
 
 - Normal solution scenes use `category=solution_image`, `ownerType=solution`, and `ownerSlug=family-day | salon | annual | exhibition | forum | other`.

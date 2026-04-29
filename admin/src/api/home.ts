@@ -1,4 +1,4 @@
-import type { HomeInteractiveImageSlot } from '../../../shared/types/home';
+import type { HomeInteractiveImageSlot, HomeVideoConfig } from '../../../shared/types/home';
 
 const apiBaseUrl = 'http://localhost:4000';
 
@@ -32,6 +32,24 @@ export async function saveHomeInteractiveImages(slots: HomeInteractiveImageSlot[
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(slots),
+    }),
+  );
+}
+
+export async function getHomeVideo() {
+  return readJson<HomeVideoConfig>(
+    await fetch(`${apiBaseUrl}/api/home/video`),
+  );
+}
+
+export async function saveHomeVideo(config: HomeVideoConfig) {
+  return readJson<HomeVideoConfig>(
+    await fetch(`${apiBaseUrl}/api/home/video`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(config),
     }),
   );
 }
