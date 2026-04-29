@@ -109,6 +109,16 @@ Round 10 homepage point-to-point rules:
 - The saved homepage JSON config is still admin-only in this round and is not connected to the public frontend homepage.
 - Future database integration should move these JSON configs into `home_video` and `home_interactive_images` tables.
 
+Round 11 article management rules:
+
+- Article records are stored locally in `server/data/articles.json`.
+- The first article categories are `how_to_choose` for 怎么选活动公司, `choose_between_two` for 二选一怎么选, and `method_judgment` for 方法与判断.
+- Article statuses are `draft`, `published`, and `offline`.
+- Article content is text-first: title, slug, summary, content, SEO title, SEO description, keywords, and FAQ items.
+- Slugs should be lowercase letters, numbers, and hyphens. Empty or Chinese-only slugs can fall back to `article-时间戳`, and duplicate slugs should receive suffixes.
+- Round 11 does not connect articles to public frontend routes.
+- Future GEO static publishing can read these records to generate pages, and future MySQL migration can map them to `articles`, `article_blocks`, and related SEO/FAQ tables.
+
 Solution media rule:
 
 - Normal solution scenes use `category=solution_image`, `ownerType=solution`, and `ownerSlug=family-day | salon | annual | exhibition | forum | other`.

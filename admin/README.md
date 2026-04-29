@@ -8,6 +8,7 @@ Current round scope:
 - Homepage 12 interactive image slot management
 - Homepage video and poster management
 - Point-to-point homepage uploads that automatically register media-library metadata
+- Article management for three text-first GEO columns
 - Local image upload through the server API
 - Media category, ownership, enabled-state, status, and keyword filters
 - Media metadata editing for uploaded assets
@@ -30,6 +31,26 @@ Development command:
 ```bash
 npm.cmd run dev:admin
 ```
+
+Article management:
+
+The Article Management menu maintains three pure-text columns:
+
+- 怎么选活动公司
+- 二选一怎么选
+- 方法与判断
+
+The article page supports list filtering by column, status, and keyword; create/edit/delete; publish/offline status changes; direct sort-order editing; and FAQ items for GEO content.
+
+The editor intentionally uses textarea fields. There is no complex rich text editor in this round.
+
+Article data is stored by the API in:
+
+```text
+server/data/articles.json
+```
+
+This round does not connect articles to the public frontend. A future GEO/static-publishing round can consume the JSON records, and a future database round can migrate the records into MySQL.
 
 Media library upload fields:
 

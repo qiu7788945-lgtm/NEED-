@@ -25,6 +25,7 @@ Current round scope:
 - Static video access under `/uploads/videos`
 - Local homepage interactive image slot config
 - Local homepage video config
+- Local article management JSON API
 - Audit service placeholder
 - No database connection
 - No migration execution
@@ -375,6 +376,43 @@ Payload shape:
 ```
 
 Admin homepage uploads are point-to-point convenience flows. They still call `POST /api/media/upload`, so uploaded homepage videos, video posters, and interactive images are registered in the media library with `ownerType=home` and `ownerSlug=homepage`.
+
+Articles:
+
+```text
+GET http://localhost:4000/api/articles
+GET http://localhost:4000/api/articles?category=how_to_choose
+GET http://localhost:4000/api/articles?status=published
+GET http://localhost:4000/api/articles?keyword=活动公司
+GET http://localhost:4000/api/articles/:id
+POST http://localhost:4000/api/articles
+PATCH http://localhost:4000/api/articles/:id
+DELETE http://localhost:4000/api/articles/:id
+PATCH http://localhost:4000/api/articles/:id/status
+PATCH http://localhost:4000/api/articles/reorder
+```
+
+Local article data is stored in:
+
+```text
+server/data/articles.json
+```
+
+Supported article categories:
+
+- `how_to_choose`: 怎么选活动公司
+- `choose_between_two`: 二选一怎么选
+- `method_judgment`: 方法与判断
+
+Supported article statuses:
+
+- `draft`: 草稿
+- `published`: 已上架
+- `offline`: 已下架
+
+Article slugs are normalized to lowercase letters, numbers, and hyphens. When a slug is empty or not usable, the server falls back to `article-时间戳`; duplicate slugs get an automatic numeric suffix.
+
+Round 11 only provides the admin JSON API. Articles are not connected to the public frontend yet. Future rounds can feed these records into the GEO static publishing flow and later migrate them to MySQL.
 
 Validation:
 

@@ -139,7 +139,8 @@ button {
 }
 
 .admin-media-page,
-.admin-home-page {
+.admin-home-page,
+.admin-article-page {
   width: min(1080px, 100%);
   display: grid;
   gap: 22px;
@@ -825,6 +826,170 @@ button {
   overflow-wrap: anywhere;
 }
 
+.article-toolbar,
+.article-list-panel,
+.article-editor-panel {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 16px;
+  box-shadow: 0 16px 50px rgba(15, 23, 42, 0.05);
+}
+
+.article-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(220px, 1.4fr) auto auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.article-toolbar label,
+.article-form label,
+.article-list-item label,
+.article-faq-item label {
+  display: grid;
+  gap: 6px;
+}
+
+.article-toolbar span,
+.article-form span,
+.article-list-item label span,
+.article-faq-item span {
+  color: #52525b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.article-toolbar input,
+.article-toolbar select,
+.article-form input,
+.article-form select,
+.article-form textarea,
+.article-list-item input,
+.article-faq-item input,
+.article-faq-item textarea {
+  width: 100%;
+  border: 1px solid #d4d4d8;
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: #fff;
+  color: #111;
+}
+
+.article-toolbar button,
+.article-list-header button,
+.article-actions button,
+.article-faq-item button {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 15px;
+  background: #090909;
+  color: #fff;
+  font-weight: 900;
+}
+
+.article-actions button.is-danger,
+.article-faq-item button.is-danger {
+  background: #b91c1c;
+}
+
+.article-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.25fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.article-list-panel,
+.article-editor-panel,
+.article-list,
+.article-form,
+.article-seo-panel,
+.article-faq-list {
+  display: grid;
+  gap: 14px;
+}
+
+.article-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.article-list-header h2,
+.article-list-header h3,
+.article-seo-panel h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.article-list-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 86px;
+  gap: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.article-list-item strong,
+.article-list-item span {
+  overflow-wrap: anywhere;
+}
+
+.article-list-item > div:first-child {
+  display: grid;
+  gap: 6px;
+}
+
+.article-list-item > div:first-child span {
+  color: #71717a;
+  font-size: 12px;
+}
+
+.article-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.article-actions button {
+  flex: 1 1 90px;
+}
+
+.article-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.article-form textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.article-full-row {
+  grid-column: 1 / -1;
+}
+
+.article-content-textarea {
+  min-height: 260px !important;
+}
+
+.article-seo-panel {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 14px;
+}
+
+.article-faq-item {
+  display: grid;
+  gap: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
 .media-picker-overlay {
   position: fixed;
   inset: 0;
@@ -926,6 +1091,8 @@ button {
   .home-toolbar,
   .home-video-grid,
   .media-batch-toolbar,
+  .article-toolbar,
+  .article-layout,
   .media-filter-panel,
   .media-picker-filters {
     grid-template-columns: 1fr;
@@ -957,5 +1124,9 @@ button {
 
   .home-toolbar {
     align-items: stretch;
+  }
+
+  .article-form {
+    grid-template-columns: 1fr;
   }
 }
