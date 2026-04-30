@@ -2,15 +2,28 @@
   {
     "slug": "family-day",
     "name": "企业家庭日 / 开放日",
-    "description": "",
+    "description": "企业家庭日不仅是一场员工福利活动，更是企业文化软实力的具象化体现。通过邀请家属走进企业，打破工作与生活的边界，建立更深层次的情感链接。它适合承载员工关怀、家属认同、企业文化表达和园区开放体验。",
     "sortOrder": 1,
     "enabled": true,
-    "groups": []
+    "groups": [
+      {
+        "id": "legacy-festo-2025-family-day",
+        "title": "费斯托 2025 家庭日",
+        "slug": "festo-2025-family-day",
+        "summary": "以“费跃百年，趣超超越”为核心，通过星球主题装置与数字化互动，传递百年企业温度。当前仅迁移源码中的文字型项目组，真实公开权限和图库素材仍需人工确认。",
+        "sceneSlug": "family-day",
+        "sortOrder": 1,
+        "enabled": true,
+        "items": [],
+        "createdAt": "2026-04-30T16:00:00.000+08:00",
+        "updatedAt": "2026-04-30T08:09:26.839Z"
+      }
+    ]
   },
   {
     "slug": "client-appreciation",
     "name": "客户答谢 & 精品沙龙",
-    "description": "",
+    "description": "针对高净值客户或核心渠道商的答谢与沙龙，重点不在于规模，而在于尊贵感与价值交流。它是提升客户粘性、促成深度合作的关键触点，需要关注私密性、节奏、主题体验和恰到好处的服务边界。",
     "sortOrder": 2,
     "enabled": true,
     "groups": []
@@ -18,7 +31,7 @@
   {
     "slug": "annual-meeting",
     "name": "年会活动与企业文化",
-    "description": "",
+    "description": "年会是企业一年一度重要的内部盛会，承载总结过往、表彰先进、提振士气和宣贯新年战略的复合功能。它不只是热闹，更需要在流程、情绪曲线、员工参与和企业文化表达之间建立清晰秩序。",
     "sortOrder": 3,
     "enabled": true,
     "groups": []
@@ -26,7 +39,7 @@
   {
     "slug": "commercial-display",
     "name": "商业美陈与展览",
-    "description": "",
+    "description": "在线下空间里，真实体验是具有冲击力的品牌沟通语言。商业美陈与展览不只是吸引流量的工具，更是品牌质感的外延，需要把视觉吸引、动线组织、工艺落地和可持续复用放在同一套空间表达里判断。",
     "sortOrder": 4,
     "enabled": true,
     "groups": []
@@ -34,7 +47,7 @@
   {
     "slug": "video-digital-assets",
     "name": "视频与数字资产",
-    "description": "",
+    "description": "一场重要活动如果不通过影像记录，它的影响力会随着离场而消散。视频与数字资产是企业传播的长尾引擎，需要在筹备期就明确影像大纲、核心观点、情绪镜头和后续分发场景。",
     "sortOrder": 5,
     "enabled": true,
     "groups": []
@@ -42,7 +55,7 @@
   {
     "slug": "academic-forum",
     "name": "学术与专业论坛",
-    "description": "",
+    "description": "无论是医学峰会、科技论坛还是行业趋势发布，高规格专业论坛都是企业建立行业话语权、展现专业深度的重要现场。它需要兼顾嘉宾接待、知识可视化、流程控场、版权保密和安全隔离。",
     "sortOrder": 6,
     "enabled": true,
     "groups": []
@@ -50,7 +63,7 @@
   {
     "slug": "other",
     "name": "其他",
-    "description": "",
+    "description": "企业需求会不断变化和变体，例如出海峰会、大型厂矿奠基、极端环境产品测试发布，或与品牌调性深度绑定的跨界活动。复杂项目最终仍需拆解为资源统筹、空间美学、流程控制和风险规避。",
     "sortOrder": 7,
     "enabled": true,
     "groups": []
