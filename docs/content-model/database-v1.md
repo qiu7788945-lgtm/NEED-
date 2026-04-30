@@ -119,6 +119,19 @@ Round 11 article management rules:
 - Round 11 does not connect articles to public frontend routes.
 - Future GEO static publishing can read these records to generate pages, and future MySQL migration can map them to `articles`, `article_blocks`, and related SEO/FAQ tables.
 
+Round 12 case analysis management rules:
+
+- Case records are stored locally in `server/data/cases.json`.
+- The first status values are `draft`, `published`, and `offline`.
+- Case fields include title, slug, summary, client type, event type, event date, location, cover image metadata, Word source metadata, parsed HTML, parsed text, extracted images, sort order, SEO title, SEO description, keywords, FAQ items, and timestamps.
+- Word import supports `.docx` only. It does not accept `.doc` or PDF.
+- Word import uses `mammoth` to parse fixed-format HTML and raw text. It does not run AI rewriting and does not try to preserve 100% of Word layout.
+- Word images are extracted to `server/uploads/images/` and registered in the media library with `category=case_image`, `ownerType=case`, `ownerSlug=<case slug>`, and `groupKey=word-import`.
+- Cover images are uploaded separately through the media upload API and registered with `category=case_image`, `ownerType=case`, `ownerSlug=<case slug>`, and `groupKey=cover`.
+- Deleting a case currently removes the JSON record only. Uploaded and extracted media are left for media-library cleanup.
+- Round 12 does not connect cases to the public frontend, does not publish static HTML, does not create MySQL tables, and does not add a page editor.
+- Future static publishing can read these records to generate case pages, and future MySQL migration can map them to `cases`, `case_blocks`, `case_images`, SEO, and FAQ tables.
+
 Solution media rule:
 
 - Normal solution scenes use `category=solution_image`, `ownerType=solution`, and `ownerSlug=family-day | salon | annual | exhibition | forum | other`.

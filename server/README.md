@@ -26,6 +26,9 @@ Current round scope:
 - Local homepage interactive image slot config
 - Local homepage video config
 - Local article management JSON API
+- Local case management JSON API
+- Case .docx Word import with mammoth
+- Case Word image extraction into the media library
 - Audit service placeholder
 - No database connection
 - No migration execution
@@ -290,6 +293,10 @@ Local media metadata is stored in:
 server/data/media-library.json
 ```
 
+The media index reader tolerates UTF-8 BOM and empty files. If the JSON is corrupted, the server backs it up as `media-library.corrupt-<timestamp>.json`, logs a warning, and falls back to an empty index so media list, upload, and Word import do not fail only because of a damaged local index. Writes are atomic: the server writes a unique `media-library.json.<timestamp>.<random>.tmp` file first and then renames it over `media-library.json`. Media index mutations run through an in-memory write queue so concurrent uploads or Word image imports do not overwrite each other.
+
+`media-library.json` stores only persistent metadata. Runtime fields such as `usageCount`, `usages`, `suggestedCategory`, `categoryWarning`, `duplicateWarnings`, `isLargeFile`, and `isLargeDimension` are calculated for API responses and are not written into the index file.
+
 Business ownership fields:
 
 - `ownerType`: `home`, `case`, `article`, `solution`, `page`, `word_import`, `system`, `temporary`
@@ -413,6 +420,39 @@ Supported article statuses:
 Article slugs are normalized to lowercase letters, numbers, and hyphens. When a slug is empty or not usable, the server falls back to `article-时间戳`; duplicate slugs get an automatic numeric suffix.
 
 Round 11 only provides the admin JSON API. Articles are not connected to the public frontend yet. Future rounds can feed these records into the GEO static publishing flow and later migrate them to MySQL.
+
+Cases:
+
+```text
+GET http://localhost:4000/api/cases
+GET http://localhost:4000/api/cases?status=draft
+GET http://localhost:4000/api/cases?keyword=发布会
+GET http://localhost:4000/api/cases/:id
+POST http://localhost:4000/api/cases
+PATCH http://localhost:4000/api/cases/:id
+DELETE http://localhost:4000/api/cases/:id
+PATCH http://localhost:4000/api/cases/:id/status
+PATCH http://localhost:4000/api/cases/reorder
+POST http://localhost:4000/api/cases/import-word
+```
+
+Local case data is stored in:
+
+```text
+server/data/cases.json
+```
+
+`POST /api/cases/import-word` accepts multipart form-data with field `file`. It only accepts `.docx`, rejects `.doc` and PDF, and limits the first version to 30MB. The server uses `mammoth` to parse Word text into `contentHtml` and `contentText`. Word images are extracted into `server/uploads/images/` and registered in the media library with `category=case_image`, `ownerType=case`, the generated case slug as `ownerSlug`, and `groupKey=word-import`.
+
+Case cover images are uploaded through `POST /api/media/upload` by the admin UI and are registered with `category=case_image`, `ownerType=case`, the case slug as `ownerSlug`, and `groupKey=cover`.
+
+Case statuses are:
+
+- `draft`
+- `published`
+- `offline`
+
+This round does not connect cases to the public frontend, does not publish static HTML, does not use AI rewriting, and does not aim for 100% Word style reproduction. Future rounds can connect cases to static publishing and migrate the JSON records to MySQL.
 
 Validation:
 

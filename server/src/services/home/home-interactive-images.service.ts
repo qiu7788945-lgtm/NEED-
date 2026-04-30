@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { HomeInteractiveImageSlot } from '../../../../shared/types/home.js';
+import { logger } from '../../utils/logger.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const dataDir = path.join(serverRoot, 'data');
@@ -16,6 +17,18 @@ function createDefaultSlots(): HomeInteractiveImageSlot[] {
     sortOrder: index + 1,
     enabled: true,
   }));
+}
+
+function normalizeJsonText(text: string) {
+  return text.replace(/^\uFEFF/, '').trim();
+}
+
+function isRecoverableConfigError(error: unknown) {
+  return error instanceof SyntaxError
+    || (typeof error === 'object'
+      && error !== null
+      && 'code' in error
+      && error.code === 'INVALID_HOME_INTERACTIVE_IMAGES');
 }
 
 function createValidationError(message: string) {
@@ -79,17 +92,31 @@ export async function readHomeInteractiveImages() {
 
   try {
     const raw = await fs.readFile(configPath, 'utf8');
-    const parsed = JSON.parse(raw) as HomeInteractiveImageSlot[];
+    const normalizedRaw = normalizeJsonText(raw);
+    if (!normalizedRaw) {
+      logger.warn('Home interactive images config is empty. Falling back to default slots.', { path: configPath });
+      return createDefaultSlots();
+    }
+
+    const parsed = JSON.parse(normalizedRaw) as HomeInteractiveImageSlot[];
 
     return validateHomeInteractiveSlots(parsed);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-      throw error;
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      const defaultSlots = createDefaultSlots();
+      await writeHomeInteractiveImages(defaultSlots);
+      return defaultSlots;
     }
 
-    const defaultSlots = createDefaultSlots();
-    await writeHomeInteractiveImages(defaultSlots);
-    return defaultSlots;
+    if (isRecoverableConfigError(error)) {
+      logger.warn('Home interactive images config is invalid. Falling back to default slots.', {
+        path: configPath,
+        message: error instanceof Error ? error.message : String(error),
+      });
+      return createDefaultSlots();
+    }
+
+    throw error;
   }
 }
 

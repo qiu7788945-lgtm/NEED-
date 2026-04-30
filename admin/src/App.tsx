@@ -2,16 +2,17 @@ import { useState } from 'react';
 import { HomeManagementPage } from './pages/HomeManagementPage';
 import { MediaLibraryPage } from './pages/MediaLibraryPage';
 import { ArticleManagementPage } from './pages/ArticleManagementPage';
+import { CaseManagementPage } from './pages/CaseManagementPage';
 
 const homeMenu = '\u9996\u9875\u7ba1\u7406';
 const mediaMenu = '\u5a92\u4f53\u5e93';
 const articleMenu = '文章管理';
+const caseMenu = '案例解析';
 
 const menuItems = [
   homeMenu,
   '\u9875\u9762\u7f16\u8f91\u5668',
-  '\u6848\u4f8b\u7ba1\u7406',
-  'Word \u6848\u4f8b\u5bfc\u5165',
+  caseMenu,
   articleMenu,
   '\u573a\u666f\u89e3\u51b3\u65b9\u6848',
   mediaMenu,
@@ -49,6 +50,8 @@ export default function App() {
           <HomeManagementPage />
         ) : activeMenu === articleMenu ? (
           <ArticleManagementPage />
+        ) : activeMenu === caseMenu ? (
+          <CaseManagementPage />
         ) : activeMenu === mediaMenu ? (
           <MediaLibraryPage />
         ) : (

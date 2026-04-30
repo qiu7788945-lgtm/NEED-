@@ -5,12 +5,14 @@ import type { Express } from 'express';
 import type { MediaCategory, MediaFileType, MediaOwnerType, MediaStatus } from '../../../../shared/types/media.js';
 import { env } from '../../config/env.js';
 import { imageUploadDir, normalizeOriginalFileName, videoUploadDir } from '../../middlewares/upload.middleware.js';
+import { logger } from '../../utils/logger.js';
 import { readHomeInteractiveImages } from '../home/home-interactive-images.service.js';
 import { readHomeVideoConfig } from '../home/home-video.service.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const dataDir = path.join(serverRoot, 'data');
 const mediaIndexPath = path.join(dataDir, 'media-library.json');
+let mediaIndexQueue = Promise.resolve();
 
 const mimeTypeByExt: Record<string, string> = {
   '.jpg': 'image/jpeg',
@@ -134,6 +136,22 @@ export interface MediaUpdateMetadata {
   enabled?: unknown;
 }
 
+export interface RegisterLocalMediaMetadata {
+  originalName?: string;
+  displayName?: string;
+  category?: string;
+  alt?: string;
+  description?: string;
+  ownerType?: string;
+  ownerId?: string | number | null;
+  ownerSlug?: string;
+  groupKey?: string;
+  slotNo?: string | number | null;
+  caption?: string;
+  enabled?: string | boolean;
+  sortOrder?: string | number | null;
+}
+
 export interface MediaUsage {
   type: 'home_interactive' | 'home_video';
   label: string;
@@ -163,6 +181,13 @@ export interface BatchMediaResult {
 type MediaIndexEntry = {
   originalName?: string;
   displayName?: string;
+  fileType?: MediaFileType;
+  url?: string;
+  size?: number;
+  mimeType?: string;
+  width?: number | null;
+  height?: number | null;
+  duration?: number | null;
   category?: MediaCategory;
   alt?: string;
   description?: string;
@@ -172,16 +197,8 @@ type MediaIndexEntry = {
   groupKey?: string;
   slotNo?: number | null;
   caption?: string;
-  size?: number;
   enabled?: boolean;
   sortOrder?: number;
-  width?: number | null;
-  height?: number | null;
-  duration?: number | null;
-  fileType?: MediaFileType;
-  suggestedCategory?: MediaCategory;
-  categoryWarning?: string;
-  duplicateWarnings?: DuplicateWarning[];
   status?: MediaStatus;
   createdAt?: string;
 };
@@ -447,13 +464,100 @@ function normalizeSortOrder(sortOrder?: string, slotNo?: string) {
   return normalizeOptionalNumber(slotNo) ?? 0;
 }
 
+function normalizeJsonText(text: string) {
+  return text.replace(/^\uFEFF/, '').trim();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function createCorruptMediaIndexPath() {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return path.join(dataDir, `media-library.corrupt-${timestamp}.json`);
+}
+
+function createMediaIndexTmpPath() {
+  return `${mediaIndexPath}.${Date.now()}.${Math.random().toString(36).slice(2, 10)}.tmp`;
+}
+
+function withMediaIndexLock<T>(task: () => Promise<T>): Promise<T> {
+  const run = mediaIndexQueue.then(task, task);
+  mediaIndexQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+function sanitizeMediaIndexEntry(entry: MediaIndexEntry): MediaIndexEntry {
+  return {
+    originalName: entry.originalName,
+    displayName: entry.displayName,
+    fileType: entry.fileType,
+    url: entry.url,
+    size: entry.size,
+    mimeType: entry.mimeType,
+    width: entry.width,
+    height: entry.height,
+    duration: entry.duration,
+    category: entry.category,
+    alt: entry.alt,
+    description: entry.description,
+    ownerType: entry.ownerType,
+    ownerId: entry.ownerId,
+    ownerSlug: entry.ownerSlug,
+    groupKey: entry.groupKey,
+    slotNo: entry.slotNo,
+    caption: entry.caption,
+    enabled: entry.enabled,
+    sortOrder: entry.sortOrder,
+    status: entry.status,
+    createdAt: entry.createdAt,
+  };
+}
+
+function sanitizeMediaIndex(index: MediaIndex): MediaIndex {
+  return Object.fromEntries(
+    Object.entries(index).map(([fileName, entry]) => [fileName, sanitizeMediaIndexEntry(entry)]),
+  );
+}
+
 async function readMediaIndex(): Promise<MediaIndex> {
   await fs.mkdir(dataDir, { recursive: true });
 
   try {
-    return JSON.parse(await fs.readFile(mediaIndexPath, 'utf8')) as MediaIndex;
+    const raw = normalizeJsonText(await fs.readFile(mediaIndexPath, 'utf8'));
+    if (!raw) {
+      return {};
+    }
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed)) {
+      throw new SyntaxError('Media index root must be an object');
+    }
+
+    return parsed as MediaIndex;
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return {};
+    }
+
+    if (error instanceof SyntaxError) {
+      const backupPath = createCorruptMediaIndexPath();
+      let backedUp = true;
+      await fs.rename(mediaIndexPath, backupPath).catch((backupError) => {
+        backedUp = false;
+        logger.warn('媒体索引文件损坏，但备份失败。已降级为空索引。', {
+          path: mediaIndexPath,
+          backupPath,
+          message: backupError instanceof Error ? backupError.message : String(backupError),
+        });
+      });
+      if (backedUp) {
+        logger.warn('媒体索引文件损坏，已备份并降级为空索引。', {
+          path: mediaIndexPath,
+          backupPath,
+          message: error.message,
+        });
+      }
       return {};
     }
 
@@ -463,7 +567,19 @@ async function readMediaIndex(): Promise<MediaIndex> {
 
 async function writeMediaIndex(index: MediaIndex) {
   await fs.mkdir(dataDir, { recursive: true });
-  await fs.writeFile(mediaIndexPath, `${JSON.stringify(index, null, 2)}\n`, 'utf8');
+  const tmpPath = createMediaIndexTmpPath();
+  const persistedIndex = sanitizeMediaIndex(index);
+  await fs.writeFile(tmpPath, `${JSON.stringify(persistedIndex, null, 2)}\n`, 'utf8');
+  try {
+    await fs.rename(tmpPath, mediaIndexPath);
+  } catch (error) {
+    logger.warn('媒体索引原子写入失败，临时文件重命名未完成。', {
+      tmpPath,
+      targetPath: mediaIndexPath,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
 }
 
 function normalizeEntry(fileName: string, entry: MediaIndexEntry, file: {
@@ -487,20 +603,18 @@ function normalizeEntry(fileName: string, entry: MediaIndexEntry, file: {
   const caption = entry.caption ?? '';
   const ownerSlug = entry.ownerSlug ?? '';
   const groupKey = entry.groupKey ?? '';
-  const suggestedCategory = entry.suggestedCategory ?? (
-    category === 'temporary'
-      ? suggestCategory({ fileType, fileName, originalName, displayName, alt, caption, ownerSlug, groupKey })
-      : undefined
-  );
+  const suggestedCategory = category === 'temporary'
+    ? suggestCategory({ fileType, fileName, originalName, displayName, alt, caption, ownerSlug, groupKey })
+    : undefined;
 
   return {
     fileName,
     originalName,
     displayName,
     fileType,
-    url: toMediaUrl(fileName, fileType),
+    url: entry.url ?? toMediaUrl(fileName, fileType),
     size,
-    mimeType: file.mimeType,
+    mimeType: entry.mimeType ?? file.mimeType,
     width,
     height,
     duration: entry.duration ?? file.duration ?? null,
@@ -520,8 +634,8 @@ function normalizeEntry(fileName: string, entry: MediaIndexEntry, file: {
     usageCount: 0,
     usages: [],
     suggestedCategory,
-    categoryWarning: entry.categoryWarning ?? (category === 'temporary' ? '这张素材仍是临时素材，建议归类。' : undefined),
-    duplicateWarnings: entry.duplicateWarnings ?? [],
+    categoryWarning: category === 'temporary' ? '这张素材仍是临时素材，建议归类。' : undefined,
+    duplicateWarnings: [],
     isLargeFile: fileType === 'image' && size > largeFileThreshold,
     isLargeDimension: fileType === 'image' && Boolean((width && width > largeDimensionThreshold) || (height && height > largeDimensionThreshold)),
   };
@@ -692,7 +806,6 @@ export async function toUploadedImage(file: Express.Multer.File, metadata: Media
     throw createMediaError(`图片文件太大，当前默认最大 ${env.media.maxImageSizeMb}MB。`, 400, 'IMAGE_TOO_LARGE');
   }
 
-  const index = await readMediaIndex();
   const slotNo = normalizeOptionalNumber(metadata.slotNo);
   const ownerId = normalizeOptionalNumber(metadata.ownerId);
   const createdAt = new Date().toISOString();
@@ -702,25 +815,16 @@ export async function toUploadedImage(file: Express.Multer.File, metadata: Media
     : { width: null, height: null };
   const displayName = normalizeDisplayName(metadata.displayName, originalName);
   const uploadedCategory = normalizeCategory(metadata.category);
-  const shouldSuggestCategory = !metadata.category || uploadedCategory === 'temporary';
-  const suggestedCategory = shouldSuggestCategory
-    ? suggestCategory({
-      fileType,
-      fileName: storedFile.filename,
-      originalName,
-      displayName,
-      alt: metadata.alt?.trim() ?? '',
-      caption: metadata.caption?.trim() ?? '',
-      ownerSlug: metadata.ownerSlug?.trim() ?? '',
-      groupKey: metadata.groupKey?.trim() ?? '',
-    })
-    : undefined;
-  const categoryWarning = uploadedCategory === 'temporary'
-    ? '这张素材仍是临时素材，建议归类。'
-    : undefined;
   const entry: MediaIndexEntry = {
     originalName,
     displayName,
+    fileType,
+    url: toMediaUrl(storedFile.filename, fileType),
+    size: storedFile.size,
+    mimeType: storedFile.mimetype,
+    width: dimensions.width,
+    height: dimensions.height,
+    duration: null,
     category: uploadedCategory,
     alt: metadata.alt?.trim() ?? '',
     description: metadata.description?.trim() ?? '',
@@ -730,43 +834,42 @@ export async function toUploadedImage(file: Express.Multer.File, metadata: Media
     groupKey: metadata.groupKey?.trim() ?? '',
     slotNo,
     caption: metadata.caption?.trim() ?? '',
-    size: storedFile.size,
     enabled: normalizeBoolean(metadata.enabled),
     sortOrder: normalizeSortOrder(metadata.sortOrder, metadata.slotNo),
-    width: dimensions.width,
-    height: dimensions.height,
-    duration: null,
-    fileType,
-    suggestedCategory,
-    categoryWarning,
     status: 'active',
     createdAt,
   };
-  const duplicateWarnings = getDuplicateWarnings(index, storedFile.filename, entry, storedFile.size);
-  if (wasStorageNameRenamed(metadata.storageName, storedFile.filename)) {
-    duplicateWarnings.push({
-      type: 'storage_name_renamed',
-      message: '存储文件名冲突，已自动追加后缀避免覆盖',
-      fileName: storedFile.filename,
-    });
-  }
-  entry.duplicateWarnings = duplicateWarnings;
 
-  index[storedFile.filename] = entry;
-  await writeMediaIndex(index);
+  return withMediaIndexLock(async () => {
+    const index = await readMediaIndex();
+    const duplicateWarnings = getDuplicateWarnings(index, storedFile.filename, entry, storedFile.size);
+    if (wasStorageNameRenamed(metadata.storageName, storedFile.filename)) {
+      duplicateWarnings.push({
+        type: 'storage_name_renamed',
+        message: '存储文件名冲突，已自动追加后缀避免覆盖',
+        fileName: storedFile.filename,
+      });
+    }
 
-  const usagesByFileName = await getMediaUsagesByFileName();
+    index[storedFile.filename] = entry;
+    await writeMediaIndex(index);
 
-  return withUsages(normalizeEntry(storedFile.filename, entry, {
-    originalName,
-    size: storedFile.size,
-    mimeType: storedFile.mimetype,
-    width: dimensions.width,
-    height: dimensions.height,
-    duration: null,
-    fileType,
-    createdAt,
-  }), usagesByFileName[storedFile.filename]);
+    const usagesByFileName = await getMediaUsagesByFileName();
+
+    return {
+      ...withUsages(normalizeEntry(storedFile.filename, entry, {
+        originalName,
+        size: storedFile.size,
+        mimeType: storedFile.mimetype,
+        width: dimensions.width,
+        height: dimensions.height,
+        duration: null,
+        fileType,
+        createdAt,
+      }), usagesByFileName[storedFile.filename]),
+      duplicateWarnings,
+    };
+  });
 }
 
 export async function listLocalImages(filters: MediaListFilters = {}): Promise<LocalImageFile[]> {
@@ -808,15 +911,21 @@ export async function listLocalImages(filters: MediaListFilters = {}): Promise<L
         });
         const ext = path.extname(entry.name).toLowerCase();
 
-        return withUsages(normalizeEntry(entry.name, index[entry.name] ?? {}, {
+        const indexEntry = index[entry.name] ?? {};
+        const image = withUsages(normalizeEntry(entry.name, indexEntry, {
           size: stats.size,
           mimeType: mimeTypeByExt[ext],
           width: dimensions.width,
           height: dimensions.height,
-          duration: index[entry.name]?.duration ?? null,
+          duration: indexEntry.duration ?? null,
           fileType,
           createdAt: stats.birthtime.toISOString(),
         }), usagesByFileName[entry.name]);
+
+        return {
+          ...image,
+          duplicateWarnings: getDuplicateWarnings(index, entry.name, indexEntry, stats.size),
+        };
       }),
   );
 
@@ -909,18 +1018,21 @@ async function assertNotUsedByHomeInteractive(fileName: string) {
 
 async function updateMediaStatus(fileName: string, status: MediaStatus) {
   const file = await getExistingImage(fileName);
-  const index = await readMediaIndex();
-  const entry = index[fileName] ?? {};
-  const nextEntry: MediaIndexEntry = {
-    ...entry,
-    status,
-  };
 
-  index[fileName] = nextEntry;
-  await writeMediaIndex(index);
+  return withMediaIndexLock(async () => {
+    const index = await readMediaIndex();
+    const entry = index[fileName] ?? {};
+    const nextEntry: MediaIndexEntry = {
+      ...entry,
+      status,
+    };
 
-  const usagesByFileName = await getMediaUsagesByFileName();
-  return withUsages(normalizeEntry(fileName, nextEntry, file), usagesByFileName[fileName]);
+    index[fileName] = nextEntry;
+    await writeMediaIndex(index);
+
+    const usagesByFileName = await getMediaUsagesByFileName();
+    return withUsages(normalizeEntry(fileName, nextEntry, file), usagesByFileName[fileName]);
+  });
 }
 
 export async function archiveLocalImage(fileName: string) {
@@ -934,67 +1046,115 @@ export async function restoreLocalImage(fileName: string) {
 
 export async function updateLocalImageMetadata(fileName: string, metadata: MediaUpdateMetadata) {
   const file = await getExistingImage(fileName);
-  const index = await readMediaIndex();
-  const entry = index[fileName] ?? {};
 
-  const nextEntry: MediaIndexEntry = {
-    ...entry,
-  };
-  const displayName = normalizeEditableText(metadata.displayName);
-  const category = normalizeEditableText(metadata.category);
-  const alt = normalizeEditableText(metadata.alt);
-  const caption = normalizeEditableText(metadata.caption);
-  const description = normalizeEditableText(metadata.description);
-  const ownerType = normalizeEditableText(metadata.ownerType);
-  const ownerId = normalizeEditableNumber(metadata.ownerId);
-  const ownerSlug = normalizeEditableText(metadata.ownerSlug);
-  const groupKey = normalizeEditableText(metadata.groupKey);
-  const slotNo = normalizeEditableNumber(metadata.slotNo);
-  const sortOrder = normalizeEditableNumber(metadata.sortOrder);
-  const enabled = normalizeEditableBoolean(metadata.enabled);
+  return withMediaIndexLock(async () => {
+    const index = await readMediaIndex();
+    const entry = index[fileName] ?? {};
+    const nextEntry: MediaIndexEntry = {
+      ...entry,
+    };
+    const displayName = normalizeEditableText(metadata.displayName);
+    const category = normalizeEditableText(metadata.category);
+    const alt = normalizeEditableText(metadata.alt);
+    const caption = normalizeEditableText(metadata.caption);
+    const description = normalizeEditableText(metadata.description);
+    const ownerType = normalizeEditableText(metadata.ownerType);
+    const ownerId = normalizeEditableNumber(metadata.ownerId);
+    const ownerSlug = normalizeEditableText(metadata.ownerSlug);
+    const groupKey = normalizeEditableText(metadata.groupKey);
+    const slotNo = normalizeEditableNumber(metadata.slotNo);
+    const sortOrder = normalizeEditableNumber(metadata.sortOrder);
+    const enabled = normalizeEditableBoolean(metadata.enabled);
 
-  if (displayName !== undefined) {
-    nextEntry.displayName = normalizeDisplayName(displayName, entry.originalName ?? fileName);
-  }
-  if (category !== undefined) {
-    nextEntry.category = normalizeCategory(category);
-  }
-  if (alt !== undefined) {
-    nextEntry.alt = alt;
-  }
-  if (caption !== undefined) {
-    nextEntry.caption = caption;
-  }
-  if (description !== undefined) {
-    nextEntry.description = description;
-  }
-  if (ownerType !== undefined) {
-    nextEntry.ownerType = normalizeOwnerType(ownerType);
-  }
-  if (ownerId !== undefined) {
-    nextEntry.ownerId = ownerId;
-  }
-  if (ownerSlug !== undefined) {
-    nextEntry.ownerSlug = ownerSlug;
-  }
-  if (groupKey !== undefined) {
-    nextEntry.groupKey = groupKey;
-  }
-  if (slotNo !== undefined) {
-    nextEntry.slotNo = slotNo;
-  }
-  if (sortOrder !== undefined) {
-    nextEntry.sortOrder = sortOrder ?? 0;
-  }
-  if (enabled !== undefined) {
-    nextEntry.enabled = enabled;
+    if (displayName !== undefined) {
+      nextEntry.displayName = normalizeDisplayName(displayName, entry.originalName ?? fileName);
+    }
+    if (category !== undefined) {
+      nextEntry.category = normalizeCategory(category);
+    }
+    if (alt !== undefined) {
+      nextEntry.alt = alt;
+    }
+    if (caption !== undefined) {
+      nextEntry.caption = caption;
+    }
+    if (description !== undefined) {
+      nextEntry.description = description;
+    }
+    if (ownerType !== undefined) {
+      nextEntry.ownerType = normalizeOwnerType(ownerType);
+    }
+    if (ownerId !== undefined) {
+      nextEntry.ownerId = ownerId;
+    }
+    if (ownerSlug !== undefined) {
+      nextEntry.ownerSlug = ownerSlug;
+    }
+    if (groupKey !== undefined) {
+      nextEntry.groupKey = groupKey;
+    }
+    if (slotNo !== undefined) {
+      nextEntry.slotNo = slotNo;
+    }
+    if (sortOrder !== undefined) {
+      nextEntry.sortOrder = sortOrder ?? 0;
+    }
+    if (enabled !== undefined) {
+      nextEntry.enabled = enabled;
+    }
+
+    index[fileName] = nextEntry;
+    await writeMediaIndex(index);
+
+    const usagesByFileName = await getMediaUsagesByFileName();
+    return withUsages(normalizeEntry(fileName, nextEntry, file), usagesByFileName[fileName]);
+  });
+}
+
+export async function registerLocalImageFile(fileName: string, metadata: RegisterLocalMediaMetadata) {
+  const file = await getExistingImage(fileName);
+  if (file.fileType !== 'image') {
+    throw createMediaError('只能登记图片素材。', 400, 'INVALID_IMAGE_TYPE');
   }
 
-  index[fileName] = nextEntry;
-  await writeMediaIndex(index);
+  const originalName = normalizeOriginalFileName(metadata.originalName ?? fileName);
+  const slotNo = normalizeOptionalNumber(metadata.slotNo);
+  const sortOrder = normalizeOptionalNumber(metadata.sortOrder) ?? slotNo ?? 0;
 
-  const usagesByFileName = await getMediaUsagesByFileName();
-  return withUsages(normalizeEntry(fileName, nextEntry, file), usagesByFileName[fileName]);
+  return withMediaIndexLock(async () => {
+    const index = await readMediaIndex();
+    const entry: MediaIndexEntry = {
+      ...index[fileName],
+      originalName,
+      displayName: normalizeDisplayName(metadata.displayName, originalName),
+      fileType: 'image',
+      url: toImageUrl(fileName),
+      size: file.size,
+      mimeType: file.mimeType,
+      width: file.width,
+      height: file.height,
+      duration: null,
+      category: normalizeCategory(metadata.category),
+      alt: metadata.alt?.trim() ?? '',
+      description: metadata.description?.trim() ?? '',
+      ownerType: normalizeOwnerType(metadata.ownerType),
+      ownerId: normalizeOptionalNumber(metadata.ownerId),
+      ownerSlug: metadata.ownerSlug?.trim() ?? '',
+      groupKey: metadata.groupKey?.trim() ?? '',
+      slotNo,
+      caption: metadata.caption?.trim() ?? '',
+      enabled: normalizeBoolean(metadata.enabled),
+      sortOrder,
+      status: 'active',
+      createdAt: index[fileName]?.createdAt ?? new Date().toISOString(),
+    };
+
+    index[fileName] = entry;
+    await writeMediaIndex(index);
+
+    const usagesByFileName = await getMediaUsagesByFileName();
+    return withUsages(normalizeEntry(fileName, entry, file), usagesByFileName[fileName]);
+  });
 }
 
 export interface DeleteLocalImageResult {
@@ -1008,39 +1168,41 @@ export async function deleteLocalImage(fileName: string): Promise<DeleteLocalIma
   validateSafeFileName(fileName);
   await assertNotUsedByHomeInteractive(fileName);
 
-  const index = await readMediaIndex();
-  const entry = index[fileName];
-  const status = normalizeStatus(entry?.status);
+  return withMediaIndexLock(async () => {
+    const index = await readMediaIndex();
+    const entry = index[fileName];
+    const status = normalizeStatus(entry?.status);
 
-  if (status !== 'archived') {
-    throw createMediaError('请先归档素材，再执行永久删除。', 400, 'MEDIA_NOT_ARCHIVED');
-  }
-
-  const filePath = path.join(getMediaUploadDir(getFileTypeFromFileName(fileName)), fileName);
-  let deletedFile = false;
-  let fileMissing = false;
-
-  try {
-    await fs.unlink(filePath);
-    deletedFile = true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      fileMissing = true;
-    } else {
-      throw error;
+    if (status !== 'archived') {
+      throw createMediaError('请先归档素材，再执行永久删除。', 400, 'MEDIA_NOT_ARCHIVED');
     }
-  }
 
-  const removedFromIndex = Boolean(index[fileName]);
-  delete index[fileName];
-  await writeMediaIndex(index);
+    const filePath = path.join(getMediaUploadDir(getFileTypeFromFileName(fileName)), fileName);
+    let deletedFile = false;
+    let fileMissing = false;
 
-  return {
-    fileName,
-    deletedFile,
-    removedFromIndex,
-    fileMissing,
-  };
+    try {
+      await fs.unlink(filePath);
+      deletedFile = true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        fileMissing = true;
+      } else {
+        throw error;
+      }
+    }
+
+    const removedFromIndex = Boolean(index[fileName]);
+    delete index[fileName];
+    await writeMediaIndex(index);
+
+    return {
+      fileName,
+      deletedFile,
+      removedFromIndex,
+      fileMissing,
+    };
+  });
 }
 
 function createBatchSummary(results: BatchMediaResultItem[]): BatchMediaResult {

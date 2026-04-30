@@ -9,6 +9,8 @@ Current round scope:
 - Homepage video and poster management
 - Point-to-point homepage uploads that automatically register media-library metadata
 - Article management for three text-first GEO columns
+- Case analysis management with .docx Word import
+- Case cover upload and Word image preview
 - Local image upload through the server API
 - Media category, ownership, enabled-state, status, and keyword filters
 - Media metadata editing for uploaded assets
@@ -51,6 +53,34 @@ server/data/articles.json
 ```
 
 This round does not connect articles to the public frontend. A future GEO/static-publishing round can consume the JSON records, and a future database round can migrate the records into MySQL.
+
+Case analysis management:
+
+The Case Analysis menu supports:
+
+- Case list filtering by status and keyword
+- Manual case draft creation
+- `.docx` Word upload to generate a case draft
+- Case base information editing
+- Cover upload or replacement
+- Word-imported image preview
+- Parsed HTML preview and editable plain text
+- SEO title, SEO description, keywords, and FAQ items
+- Publish/offline status changes
+- Sort-order editing and save
+- Delete with a confirmation dialog
+
+Word import is deliberately fixed-format and lightweight. It uses `mammoth` on the API server, supports `.docx` only, does not import `.doc` or PDF, does not run AI rewriting, and does not try to preserve every Word style. The goal is to bring text and images into a draft quickly.
+
+Case data is stored by the API in:
+
+```text
+server/data/cases.json
+```
+
+Case Word images and cover images are visible in the media library with `category=case_image` and `ownerType=case`. Cover uploads use `groupKey=cover`; Word imports use `groupKey=word-import`.
+
+This round does not connect cases to the public frontend. Static HTML publishing and MySQL migration are planned for later rounds.
 
 Media library upload fields:
 
