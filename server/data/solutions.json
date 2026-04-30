@@ -13,7 +13,7 @@
         "summary": "以“费跃百年，趣超超越”为核心，通过星球主题装置与数字化互动，传递百年企业温度。当前仅迁移源码中的文字型项目组，真实公开权限和图库素材仍需人工确认。",
         "sceneSlug": "family-day",
         "sortOrder": 1,
-        "enabled": true,
+        "enabled": false,
         "items": [],
         "createdAt": "2026-04-30T16:00:00.000+08:00",
         "updatedAt": "2026-04-30T08:09:26.839Z"
