@@ -31,3 +31,5 @@ server/uploads/documents/*
 !server/uploads/documents/.gitkeep
 server/data/media-library.broken-backup.json
 server/data/media-library.corrupt-*.json
+
+dist-static/

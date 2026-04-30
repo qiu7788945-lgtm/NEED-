@@ -9,6 +9,7 @@
     "dev:admin": "vite --config admin/vite.config.ts --port=3001 --host=0.0.0.0",
     "build": "vite build",
     "build:admin": "vite build --config admin/vite.config.ts",
+    "build:static": "tsx server/src/scripts/build-static-site.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",

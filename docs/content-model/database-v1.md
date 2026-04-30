@@ -168,3 +168,13 @@ Round 16 quality check rules:
 - Each issue has `severity=high | medium | low`, `blockingPublish`, `needsHumanConfirmation`, and a target object hint.
 - High-priority blocking issues should be treated as static-publishing gates in later rounds.
 - Future MySQL migration can map these rules into a dashboard or publish preflight table, but the first implementation stays file-based.
+
+Round 17 static HTML build rules:
+
+- `npm.cmd run build:static` reads local JSON content and writes static HTML to `dist-static/`.
+- The first static build is file-based and does not use MySQL.
+- The build generates homepage, article, case, solution, contact, 404, sitemap, robots, and static CSS files.
+- Article and case details default to `published` records only.
+- `--include-draft` or `INCLUDE_DRAFT_STATIC=true` can generate local draft preview pages, but those pages are not included in `sitemap.xml`.
+- Sitemap includes only public pages: homepage, list pages, published article/case details, enabled solution scenes, enabled solution groups, and contact.
+- The build is read-only for business data and must not mutate `server/data/*.json`.

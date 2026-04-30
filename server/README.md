@@ -526,3 +526,19 @@ GET http://localhost:4000/api/quality-check
 ```
 
 This read-only endpoint checks local homepage, article, case, solution, and public media seed JSON data. It returns high, medium, and low priority issues plus a `blockingPublish` flag for static-publishing risks. The endpoint never writes to `server/data/*.json`, never auto-fixes SEO, and never changes publish status.
+
+Static HTML build:
+
+```bash
+npm.cmd run build:static
+```
+
+The static build reads the local JSON content files and writes a standalone HTML site to `dist-static/`. It generates homepage, article list/detail pages, case list/detail pages, solution pages, contact page, `404.html`, `sitemap.xml`, `robots.txt`, and `assets/static.css`.
+
+By default, article and case detail pages are generated only for `published` records. For local previews, run:
+
+```bash
+npm.cmd run build:static -- --include-draft
+```
+
+Draft preview pages are never included in `sitemap.xml`. The build does not modify `server/data/*.json`, does not copy or delete `public/`, and does not deploy anything.
