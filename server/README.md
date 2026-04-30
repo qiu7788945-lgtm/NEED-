@@ -23,6 +23,7 @@ Current round scope:
 - Local image and video upload endpoint
 - Static image access under `/uploads/images`
 - Static video access under `/uploads/videos`
+- Static access to project `public/` assets, for example `/hero-video.mp4`
 - Local homepage interactive image slot config
 - Local homepage video config
 - Local article management JSON API

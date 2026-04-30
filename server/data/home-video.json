@@ -1,12 +1,12 @@
-﻿{
-  "videoUrl": "",
-  "videoFileName": "",
-  "videoDisplayName": "",
+{
+  "videoUrl": "/hero-video.mp4",
+  "videoFileName": "hero-video.mp4",
+  "videoDisplayName": "首页首屏视频",
   "posterUrl": "",
   "posterFileName": "",
   "posterDisplayName": "",
-  "title": "",
-  "description": "",
-  "enabled": false,
-  "updatedAt": ""
+  "title": "NEED 首页视频",
+  "description": "NEED 官网首页首屏展示视频",
+  "enabled": true,
+  "updatedAt": "2026-04-30T13:32:35.4234094+08:00"
 }
