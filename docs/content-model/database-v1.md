@@ -132,6 +132,20 @@ Round 12 case analysis management rules:
 - Round 12 does not connect cases to the public frontend, does not publish static HTML, does not create MySQL tables, and does not add a page editor.
 - Future static publishing can read these records to generate case pages, and future MySQL migration can map them to `cases`, `case_blocks`, `case_images`, SEO, and FAQ tables.
 
+Round 13 scene solution management rules:
+
+- Scene solution records are stored locally in `server/data/solutions.json`.
+- The fixed scene slugs are `family-day`, `client-appreciation`, `annual-meeting`, `commercial-display`, `video-digital-assets`, `academic-forum`, and `other`.
+- Each scene owns case groups with title, slug, summary, sort order, enabled state, and media items.
+- Normal scenes allow up to 7 image items per group. Groups can contain fewer than 7 images.
+- `video-digital-assets` allows up to 1 item per group, either a video or an image.
+- Scene uploads are point-to-point admin flows but still write to the shared media library.
+- Normal scene uploads use `category=solution_image`, `ownerType=solution`, `ownerSlug=<sceneSlug>`, and `groupKey=<group slug or id>`.
+- Video and digital asset video uploads use `category=solution_video`; image uploads use solution ownership metadata as well.
+- Deleting a group item only removes the reference from `solutions.json`; it does not delete the real file.
+- Round 13 does not connect scene solutions to public frontend routes, does not publish static HTML, and does not create MySQL tables.
+- Future publishing can map these records to solution pages, and future MySQL migration can map them to `solutions`, `solution_pages`, `solution_page_blocks`, and media relation tables.
+
 Solution media rule:
 
 - Normal solution scenes use `category=solution_image`, `ownerType=solution`, and `ownerSlug=family-day | salon | annual | exhibition | forum | other`.

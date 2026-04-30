@@ -29,6 +29,7 @@ Current round scope:
 - Local case management JSON API
 - Case .docx Word import with mammoth
 - Case Word image extraction into the media library
+- Local scene solution management JSON API
 - Audit service placeholder
 - No database connection
 - No migration execution
@@ -453,6 +454,35 @@ Case statuses are:
 - `offline`
 
 This round does not connect cases to the public frontend, does not publish static HTML, does not use AI rewriting, and does not aim for 100% Word style reproduction. Future rounds can connect cases to static publishing and migrate the JSON records to MySQL.
+
+Scene solutions:
+
+```text
+GET http://localhost:4000/api/solutions
+GET http://localhost:4000/api/solutions/:sceneSlug
+POST http://localhost:4000/api/solutions/:sceneSlug/groups
+PATCH http://localhost:4000/api/solutions/:sceneSlug/groups/:groupId
+DELETE http://localhost:4000/api/solutions/:sceneSlug/groups/:groupId
+PATCH http://localhost:4000/api/solutions/:sceneSlug/groups/reorder
+POST http://localhost:4000/api/solutions/:sceneSlug/groups/:groupId/items
+PATCH http://localhost:4000/api/solutions/:sceneSlug/groups/:groupId/items/:itemId
+DELETE http://localhost:4000/api/solutions/:sceneSlug/groups/:groupId/items/:itemId
+PATCH http://localhost:4000/api/solutions/:sceneSlug/groups/:groupId/items/reorder
+```
+
+Local scene solution data is stored in:
+
+```text
+server/data/solutions.json
+```
+
+If the file does not exist, the server initializes seven fixed scenes: `family-day`, `client-appreciation`, `annual-meeting`, `commercial-display`, `video-digital-assets`, `academic-forum`, and `other`.
+
+Normal scenes allow up to 7 image items in each group. `video-digital-assets` allows up to 1 item per group, and that item may be an image or a video. Group item deletion only removes the reference from `solutions.json`; it never physically deletes uploaded files.
+
+Admin uploads still go through `POST /api/media/upload`, so solution images/videos enter the media library automatically. Normal scene uploads use `category=solution_image`, `ownerType=solution`, and `ownerSlug=<sceneSlug>`. Video/digital asset uploads use `category=solution_video` for videos and the same ownership fields.
+
+Round 13 does not connect scene solutions to the public frontend, does not publish static HTML, and does not use MySQL. Future rounds can feed this JSON into static publishing and later migrate it to MySQL solution tables.
 
 Validation:
 

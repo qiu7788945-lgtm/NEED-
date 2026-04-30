@@ -3,18 +3,20 @@ import { HomeManagementPage } from './pages/HomeManagementPage';
 import { MediaLibraryPage } from './pages/MediaLibraryPage';
 import { ArticleManagementPage } from './pages/ArticleManagementPage';
 import { CaseManagementPage } from './pages/CaseManagementPage';
+import { SolutionManagementPage } from './pages/SolutionManagementPage';
 
 const homeMenu = '\u9996\u9875\u7ba1\u7406';
 const mediaMenu = '\u5a92\u4f53\u5e93';
 const articleMenu = '文章管理';
 const caseMenu = '案例解析';
+const solutionMenu = '场景解决方案';
 
 const menuItems = [
   homeMenu,
   '\u9875\u9762\u7f16\u8f91\u5668',
   caseMenu,
   articleMenu,
-  '\u573a\u666f\u89e3\u51b3\u65b9\u6848',
+  solutionMenu,
   mediaMenu,
   'SEO / GEO \u7ba1\u7406',
   '\u53d1\u5e03\u7ba1\u7406',
@@ -52,6 +54,8 @@ export default function App() {
           <ArticleManagementPage />
         ) : activeMenu === caseMenu ? (
           <CaseManagementPage />
+        ) : activeMenu === solutionMenu ? (
+          <SolutionManagementPage />
         ) : activeMenu === mediaMenu ? (
           <MediaLibraryPage />
         ) : (

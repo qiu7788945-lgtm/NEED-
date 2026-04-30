@@ -141,7 +141,8 @@ button {
 .admin-media-page,
 .admin-home-page,
 .admin-article-page,
-.admin-case-page {
+.admin-case-page,
+.admin-solution-page {
   width: min(1080px, 100%);
   display: grid;
   gap: 22px;
@@ -1172,6 +1173,235 @@ button {
   overflow-wrap: anywhere;
 }
 
+.solution-layout {
+  display: grid;
+  grid-template-columns: 260px minmax(0, 1fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.solution-scenes,
+.solution-main,
+.solution-group-form,
+.solution-group-card,
+.solution-items-panel {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 16px 50px rgba(15, 23, 42, 0.05);
+}
+
+.solution-scenes {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.solution-scenes button {
+  display: grid;
+  gap: 5px;
+  border: 0;
+  border-radius: 10px;
+  padding: 12px;
+  background: #f4f4f5;
+  color: #111;
+  text-align: left;
+}
+
+.solution-scenes button.is-active {
+  background: #090909;
+  color: #fff;
+}
+
+.solution-scenes span,
+.solution-group-top span,
+.solution-item-upload span {
+  color: #71717a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.solution-scenes button.is-active span {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.solution-main {
+  display: grid;
+  gap: 16px;
+  padding: 16px;
+  min-width: 0;
+}
+
+.solution-scene-header,
+.solution-group-toolbar,
+.solution-group-top,
+.solution-card-actions,
+.solution-item-upload {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.solution-scene-header h2,
+.solution-group-toolbar h3 {
+  margin: 0;
+}
+
+.solution-scene-header p:not(.admin-eyebrow),
+.solution-group-card p {
+  margin: 8px 0 0;
+  color: #52525b;
+  line-height: 1.6;
+}
+
+.solution-scene-header button,
+.solution-group-toolbar button,
+.solution-group-form button,
+.solution-card-actions button,
+.solution-item-upload button,
+.solution-item-card button {
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 15px;
+  background: #090909;
+  color: #fff;
+  font-weight: 900;
+}
+
+.solution-card-actions button.is-danger,
+.solution-item-card button.is-danger {
+  background: #b91c1c;
+}
+
+.solution-group-form {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 12px;
+  padding: 14px;
+}
+
+.solution-group-form label:not(.home-switch),
+.solution-group-top label,
+.solution-item-card label {
+  display: grid;
+  gap: 6px;
+}
+
+.solution-group-form span,
+.solution-group-top label span,
+.solution-item-card label span {
+  color: #52525b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.solution-group-form input,
+.solution-group-form textarea,
+.solution-group-top input,
+.solution-item-card input,
+.solution-item-card textarea {
+  width: 100%;
+  border: 1px solid #d4d4d8;
+  border-radius: 10px;
+  padding: 10px 11px;
+  background: #fff;
+  color: #111;
+}
+
+.solution-group-form textarea,
+.solution-item-card textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
+.solution-full-row {
+  grid-column: 1 / -1;
+}
+
+.solution-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.solution-group-card {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  min-width: 0;
+}
+
+.solution-group-card * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+.solution-group-top > div {
+  display: grid;
+  gap: 5px;
+}
+
+.solution-group-top label {
+  width: 92px;
+}
+
+.solution-card-actions {
+  justify-content: flex-start;
+}
+
+.solution-items-panel {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  background: #f8fafc;
+  box-shadow: none;
+}
+
+.solution-item-upload {
+  justify-content: flex-start;
+}
+
+.solution-item-upload > span {
+  flex: 1 1 220px;
+}
+
+.home-file-button.is-disabled {
+  opacity: 0.55;
+}
+
+.solution-items-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.solution-item-card {
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.solution-item-card img,
+.solution-item-card video {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #f4f4f5;
+}
+
+.solution-item-card figcaption {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.solution-item-card strong {
+  overflow-wrap: anywhere;
+}
+
 .media-picker-overlay {
   position: fixed;
   inset: 0;
@@ -1275,6 +1505,7 @@ button {
   .media-batch-toolbar,
   .article-toolbar,
   .article-layout,
+  .solution-layout,
   .media-filter-panel,
   .media-picker-filters {
     grid-template-columns: 1fr;
@@ -1319,5 +1550,9 @@ button {
   .case-list-cover {
     width: 84px;
     height: 66px;
+  }
+
+  .solution-group-form {
+    grid-template-columns: 1fr;
   }
 }

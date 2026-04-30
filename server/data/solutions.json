@@ -1,0 +1,58 @@
+[
+  {
+    "slug": "family-day",
+    "name": "企业家庭日 / 开放日",
+    "description": "",
+    "sortOrder": 1,
+    "enabled": true,
+    "groups": []
+  },
+  {
+    "slug": "client-appreciation",
+    "name": "客户答谢 & 精品沙龙",
+    "description": "",
+    "sortOrder": 2,
+    "enabled": true,
+    "groups": []
+  },
+  {
+    "slug": "annual-meeting",
+    "name": "年会活动与企业文化",
+    "description": "",
+    "sortOrder": 3,
+    "enabled": true,
+    "groups": []
+  },
+  {
+    "slug": "commercial-display",
+    "name": "商业美陈与展览",
+    "description": "",
+    "sortOrder": 4,
+    "enabled": true,
+    "groups": []
+  },
+  {
+    "slug": "video-digital-assets",
+    "name": "视频与数字资产",
+    "description": "",
+    "sortOrder": 5,
+    "enabled": true,
+    "groups": []
+  },
+  {
+    "slug": "academic-forum",
+    "name": "学术与专业论坛",
+    "description": "",
+    "sortOrder": 6,
+    "enabled": true,
+    "groups": []
+  },
+  {
+    "slug": "other",
+    "name": "其他",
+    "description": "",
+    "sortOrder": 7,
+    "enabled": true,
+    "groups": []
+  }
+]

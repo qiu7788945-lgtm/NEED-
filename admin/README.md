@@ -11,6 +11,7 @@ Current round scope:
 - Article management for three text-first GEO columns
 - Case analysis management with .docx Word import
 - Case cover upload and Word image preview
+- Scene solution case-group management
 - Local image upload through the server API
 - Media category, ownership, enabled-state, status, and keyword filters
 - Media metadata editing for uploaded assets
@@ -81,6 +82,32 @@ server/data/cases.json
 Case Word images and cover images are visible in the media library with `category=case_image` and `ownerType=case`. Cover uploads use `groupKey=cover`; Word imports use `groupKey=word-import`.
 
 This round does not connect cases to the public frontend. Static HTML publishing and MySQL migration are planned for later rounds.
+
+Scene solution management:
+
+The Scene Solutions menu maintains seven fixed scenes:
+
+- 企业家庭日 / 开放日
+- 客户答谢 & 精品沙龙
+- 年会活动与企业文化
+- 商业美陈与展览
+- 视频与数字资产
+- 学术与专业论坛
+- 其他
+
+Each scene can create, edit, delete, and sort case groups. Each group can upload media directly from the scene page, preview the uploaded media, edit alt/GEO description and caption, delete the group reference, and save item sorting.
+
+Normal scenes allow up to 7 images per group. The Video & Digital Assets scene allows only 1 item per group, either an mp4/webm video or a jpg/png/webp main image.
+
+Uploads are point-to-point convenience flows. They still call the media upload API, so assets appear in the media library with `ownerType=solution`, `ownerSlug=<sceneSlug>`, and `groupKey=<group slug>`. Removing an item from a group does not delete the real media file; media archive or permanent deletion remains a media-library operation.
+
+Scene data is stored by the API in:
+
+```text
+server/data/solutions.json
+```
+
+This round does not connect scene solutions to the public frontend. Static HTML publishing and MySQL migration are planned for later rounds.
 
 Media library upload fields:
 
