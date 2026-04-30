@@ -136,6 +136,11 @@ function createUniqueSlug(articles: Article[], slug: string, currentId?: string)
 function createArticleFromInput(input: ArticleInput, articles: Article[]): Article {
   const now = new Date().toISOString();
   const title = normalizeText(input.title);
+  const category = normalizeCategory(input.category);
+  const requestedSortOrder = normalizeNumber(input.sortOrder, 0);
+  const nextCategorySortOrder = articles
+    .filter((item) => item.category === category)
+    .reduce((maxSortOrder, item) => Math.max(maxSortOrder, item.sortOrder), 0) + 1;
 
   if (!title) {
     throw createArticleError('文章标题不能为空。', 400, 'ARTICLE_TITLE_REQUIRED');
@@ -145,10 +150,10 @@ function createArticleFromInput(input: ArticleInput, articles: Article[]): Artic
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     title,
     slug: createUniqueSlug(articles, input.slug || title),
-    category: normalizeCategory(input.category),
+    category,
     summary: normalizeText(input.summary),
     content: normalizeText(input.content),
-    sortOrder: normalizeNumber(input.sortOrder, articles.length + 1),
+    sortOrder: requestedSortOrder > 0 ? requestedSortOrder : nextCategorySortOrder,
     status: normalizeStatus(input.status),
     seoTitle: normalizeText(input.seoTitle),
     seoDescription: normalizeText(input.seoDescription),

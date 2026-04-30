@@ -912,11 +912,20 @@ button {
   gap: 14px;
 }
 
+.article-list-panel,
+.article-editor-panel,
+.article-category-group,
+.article-list-item,
+.article-list-item * {
+  min-width: 0;
+}
+
 .article-list-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  flex-wrap: wrap;
 }
 
 .article-list-header h2,
@@ -924,6 +933,104 @@ button {
 .article-seo-panel h3 {
   margin: 0;
   font-size: 20px;
+}
+
+.article-list-count {
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: #f4f4f5;
+  color: #52525b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.article-category-groups {
+  display: grid;
+  gap: 16px;
+}
+
+.article-category-group {
+  display: grid;
+  gap: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.article-category-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  border-left: 5px solid #111827;
+  border-radius: 13px 13px 0 0;
+  padding: 14px;
+  background: #f4f4f5;
+}
+
+.article-category-group--method .article-category-header {
+  border-left-color: #111827;
+  background: #f4f4f5;
+}
+
+.article-category-group--choose .article-category-header {
+  border-left-color: #7f9f91;
+  background: #f4faf7;
+}
+
+.article-category-group--compare .article-category-header {
+  border-left-color: #b9823b;
+  background: #fff7ed;
+}
+
+.article-category-header p {
+  margin: 0;
+  color: #111;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.article-category-header span {
+  display: block;
+  margin-top: 5px;
+  color: #52525b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.article-category-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.article-category-meta strong {
+  border-radius: 999px;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.72);
+  color: #111;
+  font-size: 12px;
+}
+
+.article-category-meta button {
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 12px;
+  background: #090909;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.article-category-meta button:disabled {
+  opacity: 0.45;
+}
+
+.article-category-group .article-list {
+  padding: 12px;
 }
 
 .article-list-item {
@@ -948,6 +1055,11 @@ button {
 .article-list-item > div:first-child span {
   color: #71717a;
   font-size: 12px;
+}
+
+.article-list-item label input {
+  width: 80px;
+  max-width: 100%;
 }
 
 .article-actions {

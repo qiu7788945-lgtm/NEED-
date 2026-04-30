@@ -8,7 +8,6 @@ import {
   updateArticle,
   updateArticleStatus,
 } from '../api/articles';
-import { articleCategories, articleStatuses, getArticleCategoryLabel, getArticleStatusLabel } from '../constants/articleOptions';
 
 interface ArticleFormState {
   id: string;
@@ -24,6 +23,41 @@ interface ArticleFormState {
   keywords: string;
   faqItems: ArticleFaqItem[];
 }
+
+interface ArticleCategorySection {
+  value: ArticleCategory;
+  title: string;
+  description: string;
+  tone: 'method' | 'choose' | 'compare';
+}
+
+const articleCategorySections: ArticleCategorySection[] = [
+  {
+    value: 'method_judgment',
+    title: '方法与判断',
+    description: '活动执行、目标判断、预算判断、方案落地等方法类内容。',
+    tone: 'method',
+  },
+  {
+    value: 'how_to_choose',
+    title: '怎么选活动公司',
+    description: '帮助客户判断活动公司是否理解需求、是否靠谱、案例是否适合。',
+    tone: 'choose',
+  },
+  {
+    value: 'choose_between_two',
+    title: '二选一怎么选',
+    description: '两家供应商、两种方案、两种报价之间的比较判断。',
+    tone: 'compare',
+  },
+];
+
+const articleStatuses: Array<{ value: ArticleStatus | ''; label: string }> = [
+  { value: '', label: '全部状态' },
+  { value: 'draft', label: '草稿' },
+  { value: 'published', label: '已上架' },
+  { value: 'offline', label: '已下架' },
+];
 
 const emptyForm: ArticleFormState = {
   id: '',
@@ -53,6 +87,26 @@ function formatDateTime(value: string) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function getArticleCategoryLabel(value: string) {
+  return articleCategorySections.find((category) => category.value === value)?.title ?? value;
+}
+
+function getArticleStatusLabel(value: string) {
+  return articleStatuses.find((status) => status.value === value)?.label ?? value;
+}
+
+function sortArticlesInCategory(items: Article[]) {
+  return [...items].sort((a, b) => (
+    (a.sortOrder - b.sortOrder) || String(b.updatedAt).localeCompare(String(a.updatedAt))
+  ));
+}
+
+function getNextSortOrderForCategory(items: Article[], category: ArticleCategory) {
+  return items
+    .filter((article) => article.category === category)
+    .reduce((maxSortOrder, article) => Math.max(maxSortOrder, article.sortOrder), 0) + 1;
 }
 
 function toForm(article: Article): ArticleFormState {
@@ -90,6 +144,7 @@ function toInput(form: ArticleFormState): ArticleInput {
 
 export function ArticleManagementPage() {
   const [articles, setArticles] = useState<Article[]>([]);
+  const [allArticles, setAllArticles] = useState<Article[]>([]);
   const [filterCategory, setFilterCategory] = useState<ArticleCategory | ''>('');
   const [filterStatus, setFilterStatus] = useState<ArticleStatus | ''>('');
   const [keyword, setKeyword] = useState('');
@@ -98,13 +153,21 @@ export function ArticleManagementPage() {
   const [status, setStatus] = useState('正在加载文章...');
   const [isSaving, setIsSaving] = useState(false);
 
+  const visibleCategorySections = articleCategorySections.filter((section) => (
+    !filterCategory || section.value === filterCategory
+  ));
+
   async function refreshArticles() {
-    const nextArticles = await listArticles({
-      category: filterCategory,
-      status: filterStatus,
-      keyword,
-    });
+    const [nextArticles, nextAllArticles] = await Promise.all([
+      listArticles({
+        category: filterCategory,
+        status: filterStatus,
+        keyword,
+      }),
+      listArticles(),
+    ]);
     setArticles(nextArticles);
+    setAllArticles(nextAllArticles);
     setStatus(nextArticles.length ? `已加载 ${nextArticles.length} 篇文章。` : '还没有符合条件的文章。');
   }
 
@@ -114,10 +177,15 @@ export function ArticleManagementPage() {
     });
   }, [filterCategory, filterStatus]);
 
-  function resetForm() {
+  function getArticlesForCategory(category: ArticleCategory) {
+    return sortArticlesInCategory(articles.filter((article) => article.category === category));
+  }
+
+  function resetForm(category: ArticleCategory = filterCategory || 'how_to_choose') {
     setForm({
       ...emptyForm,
-      sortOrder: String(articles.length + 1),
+      category,
+      sortOrder: String(getNextSortOrderForCategory(allArticles, category)),
     });
     setIsEditing(false);
   }
@@ -157,7 +225,7 @@ export function ArticleManagementPage() {
       await deleteArticle(article.id);
       setStatus('文章已删除。');
       if (form.id === article.id) {
-        resetForm();
+        resetForm(article.category);
       }
       await refreshArticles();
     } catch (error) {
@@ -183,14 +251,16 @@ export function ArticleManagementPage() {
     )));
   }
 
-  async function handleSaveOrder() {
+  async function handleSaveCategoryOrder(category: ArticleCategory) {
+    const categoryArticles = articles.filter((article) => article.category === category);
+
     try {
-      const savedArticles = await reorderArticles(articles.map((article) => ({
+      await reorderArticles(categoryArticles.map((article) => ({
         id: article.id,
         sortOrder: article.sortOrder,
       })));
-      setArticles(savedArticles);
-      setStatus('排序已保存。');
+      setStatus(`${getArticleCategoryLabel(category)} 排序已保存。`);
+      await refreshArticles();
     } catch (error) {
       setStatus(error instanceof Error ? error.message : '排序保存失败。');
     }
@@ -231,9 +301,10 @@ export function ArticleManagementPage() {
         <label>
           <span>栏目</span>
           <select value={filterCategory} onChange={(event) => setFilterCategory(event.target.value as ArticleCategory | '')}>
-            {articleCategories.map((category) => (
-              <option key={category.value || 'all'} value={category.value}>
-                {category.label}
+            <option value="">全部栏目</option>
+            {articleCategorySections.map((category) => (
+              <option key={category.value} value={category.value}>
+                {category.title}
               </option>
             ))}
           </select>
@@ -264,7 +335,7 @@ export function ArticleManagementPage() {
         <button type="button" onClick={() => void refreshArticles()}>
           搜索
         </button>
-        <button type="button" onClick={resetForm}>
+        <button type="button" onClick={() => resetForm()}>
           新建文章
         </button>
       </div>
@@ -275,39 +346,70 @@ export function ArticleManagementPage() {
         <section className="article-list-panel">
           <div className="article-list-header">
             <h2>文章列表</h2>
-            <button type="button" onClick={() => void handleSaveOrder()}>
-              保存排序
-            </button>
+            <span className="article-list-count">当前 {articles.length} 篇</span>
           </div>
 
-          <div className="article-list">
-            {articles.map((article) => (
-              <article className="article-list-item" key={article.id}>
-                <div>
-                  <strong>{article.title}</strong>
-                  <span>{getArticleCategoryLabel(article.category)} · {getArticleStatusLabel(article.status)} · 更新 {formatDateTime(article.updatedAt)}</span>
-                </div>
-                <label>
-                  <span>排序</span>
-                  <input
-                    type="number"
-                    value={article.sortOrder}
-                    onChange={(event) => updateArticleSortOrder(article.id, event.target.value)}
-                  />
-                </label>
-                <div className="article-actions">
-                  <button type="button" onClick={() => editArticle(article)}>
-                    编辑
-                  </button>
-                  <button type="button" onClick={() => void handleToggleStatus(article)}>
-                    {article.status === 'published' ? '下架' : '上架'}
-                  </button>
-                  <button className="is-danger" type="button" onClick={() => void handleDeleteArticle(article)}>
-                    删除
-                  </button>
-                </div>
-              </article>
-            ))}
+          <div className="article-category-groups">
+            {visibleCategorySections.map((section) => {
+              const categoryArticles = getArticlesForCategory(section.value);
+
+              return (
+                <section className={`article-category-group article-category-group--${section.tone}`} key={section.value}>
+                  <div className="article-category-header">
+                    <div>
+                      <p>{section.title}</p>
+                      <span>{section.description}</span>
+                    </div>
+                    <div className="article-category-meta">
+                      <strong>{categoryArticles.length} 篇</strong>
+                      <button type="button" onClick={() => resetForm(section.value)}>
+                        新建本栏目
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleSaveCategoryOrder(section.value)}
+                        disabled={categoryArticles.length === 0}
+                      >
+                        保存本栏目排序
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="article-list">
+                    {categoryArticles.map((article) => (
+                      <article className="article-list-item" key={article.id}>
+                        <div>
+                          <strong>{article.title}</strong>
+                          <span>
+                            {getArticleStatusLabel(article.status)} · 更新 {formatDateTime(article.updatedAt)}
+                          </span>
+                        </div>
+                        <label>
+                          <span>排序</span>
+                          <input
+                            type="number"
+                            value={article.sortOrder}
+                            onChange={(event) => updateArticleSortOrder(article.id, event.target.value)}
+                          />
+                        </label>
+                        <div className="article-actions">
+                          <button type="button" onClick={() => editArticle(article)}>
+                            编辑
+                          </button>
+                          <button type="button" onClick={() => void handleToggleStatus(article)}>
+                            {article.status === 'published' ? '下架' : '上架'}
+                          </button>
+                          <button className="is-danger" type="button" onClick={() => void handleDeleteArticle(article)}>
+                            删除
+                          </button>
+                        </div>
+                      </article>
+                    ))}
+                    {categoryArticles.length === 0 ? <p className="media-status">该栏目暂无符合条件的文章。</p> : null}
+                  </div>
+                </section>
+              );
+            })}
           </div>
         </section>
 
@@ -330,10 +432,20 @@ export function ArticleManagementPage() {
             </label>
             <label>
               <span>所属栏目</span>
-              <select value={form.category} onChange={(event) => setForm({ ...form, category: event.target.value as ArticleCategory })}>
-                {articleCategories.filter((category) => category.value).map((category) => (
+              <select
+                value={form.category}
+                onChange={(event) => {
+                  const nextCategory = event.target.value as ArticleCategory;
+                  setForm((current) => ({
+                    ...current,
+                    category: nextCategory,
+                    sortOrder: isEditing ? current.sortOrder : String(getNextSortOrderForCategory(allArticles, nextCategory)),
+                  }));
+                }}
+              >
+                {articleCategorySections.map((category) => (
                   <option key={category.value} value={category.value}>
-                    {category.label}
+                    {category.title}
                   </option>
                 ))}
               </select>
@@ -349,7 +461,7 @@ export function ArticleManagementPage() {
               </select>
             </label>
             <label>
-              <span>展示排序</span>
+              <span>栏目内排序</span>
               <input type="number" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: event.target.value })} />
             </label>
             <label className="article-full-row">
