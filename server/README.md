@@ -518,3 +518,11 @@ database migration runner placeholder
 ```
 
 Real database connection, migration execution, and migration history tracking should be added in the next database implementation round.
+
+Quality check:
+
+```text
+GET http://localhost:4000/api/quality-check
+```
+
+This read-only endpoint checks local homepage, article, case, solution, and public media seed JSON data. It returns high, medium, and low priority issues plus a `blockingPublish` flag for static-publishing risks. The endpoint never writes to `server/data/*.json`, never auto-fixes SEO, and never changes publish status.

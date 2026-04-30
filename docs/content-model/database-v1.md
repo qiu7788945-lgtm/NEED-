@@ -160,3 +160,11 @@ Recommended implementation order:
 3. Add homepage, cases, articles, and solutions tables.
 4. Add publishing tables and preview/release metadata.
 5. Add validation around slug uniqueness, status transitions, and media delete protection.
+
+Round 16 quality check rules:
+
+- `GET /api/quality-check` reads the current local JSON content files and returns content-health issues for homepage, articles, cases, scene solutions, media seed records, and cross-module SEO/GEO risks.
+- The check is read-only and must not mutate `server/data/*.json`.
+- Each issue has `severity=high | medium | low`, `blockingPublish`, `needsHumanConfirmation`, and a target object hint.
+- High-priority blocking issues should be treated as static-publishing gates in later rounds.
+- Future MySQL migration can map these rules into a dashboard or publish preflight table, but the first implementation stays file-based.

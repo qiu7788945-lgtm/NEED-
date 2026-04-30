@@ -257,3 +257,10 @@ server/data/home-video.json
 This round still does not connect the saved config to the public frontend homepage.
 
 Future database-backed media management should extend usage tracking to cases, articles, scenes, and page editor content before broadening safe physical cleanup. Production video storage should use Tencent Cloud COS or a video service instead of long-term local disk.
+
+GEO quality check:
+
+- The sidebar contains a "GEO 检查" page.
+- The page calls `GET /api/quality-check` and shows high, medium, and low priority content-health issues.
+- Filters cover module, priority, blocking-publish status, and human-confirmation status.
+- The page is read-only. It does not change JSON data, SEO fields, alt text, article body content, or publish status.
