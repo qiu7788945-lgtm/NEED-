@@ -3,6 +3,7 @@ import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
 import { ArrowRight, ArrowDown, CheckCircle2, Users, Target, Zap, Menu, X, ChevronDown, Play, Pause, Volume2, VolumeX, Copy, Check } from 'lucide-react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import ContactAndAssetsPage from './pages/ContactAndAssetsPage';
+import { fetchHomeVideo } from './services/publicContent';
 import gsap from 'gsap';
 import Markdown from 'react-markdown';
 
@@ -198,6 +199,7 @@ function HeroSection() {
   const [isPlaying, setIsPlaying] = useState(true);
   const [volume, setVolume] = useState(0.45);
   const [isMuted, setIsMuted] = useState(true); // Start muted to allow autoplay
+  const [heroVideoSrc, setHeroVideoSrc] = useState('/hero-video.mp4');
 
   const { scrollYProgress } = useScroll({
     target: containerRef,
@@ -211,6 +213,18 @@ function HeroSection() {
   const videoWidth = useTransform(scrollYProgress, [0, 0.3, 0.8], ["60vw", "90vw", "100vw"]);
   const videoHeight = useTransform(scrollYProgress, [0, 0.3, 0.8], ["35vh", "80vh", "100vh"]);
   const videoRadius = useTransform(scrollYProgress, [0, 0.3, 0.8], ["24px", "24px", "0px"]);
+
+  useEffect(() => {
+    fetchHomeVideo()
+      .then((homeVideo) => {
+        if (homeVideo?.enabled && homeVideo.videoUrl) {
+          setHeroVideoSrc(homeVideo.videoUrl);
+        }
+      })
+      .catch(() => {
+        setHeroVideoSrc('/hero-video.mp4');
+      });
+  }, []);
 
   useEffect(() => {
     if (videoRef.current) {
@@ -297,7 +311,7 @@ function HeroSection() {
               loop 
               playsInline
               className="absolute inset-0 w-full h-full object-cover"
-              src="/hero-video.mp4"
+              src={heroVideoSrc}
             />
             
             {/* Video Controls - Minimalist Transparent Module (Always visible) */}
