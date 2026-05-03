@@ -3,7 +3,7 @@ import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
 import { ArrowRight, ArrowDown, CheckCircle2, Users, Target, Zap, Menu, X, ChevronDown, Play, Pause, Volume2, VolumeX, Copy, Check } from 'lucide-react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import ContactAndAssetsPage from './pages/ContactAndAssetsPage';
-import { fetchHomeVideo, fetchPublishedArticles, fetchPublishedCases } from './services/publicContent';
+import { fetchHomeVideo, fetchPublishedArticles, fetchPublishedCases, fetchEnabledSolutions } from './services/publicContent';
 import gsap from 'gsap';
 import Markdown from 'react-markdown';
 
@@ -2311,6 +2311,7 @@ function QRCodeModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
 
 function SolutionsPage() {
   const { pathname } = useLocation();
+  const [publicSolutions, setPublicSolutions] = useState<Array<{ id: string; title: string; desc: string }>>([]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -2325,6 +2326,23 @@ function SolutionsPage() {
     { title: '学术与专业论坛', desc: '汇聚行业智慧，打造高规格思想交锋平台', id: 'forum' },
     { title: '其他', desc: '灵活定制，满足更多元、更复杂的特殊场景需求', id: 'other' },
   ];
+  const visibleSolutions = publicSolutions.length > 0 ? publicSolutions : solutionsList;
+
+  useEffect(() => {
+    fetchEnabledSolutions()
+      .then((solutions) => {
+        if (solutions.length > 0) {
+          setPublicSolutions(solutions.map((solution) => ({
+            id: solution.id || solution.slug,
+            title: solution.title,
+            desc: solution.desc,
+          })));
+        }
+      })
+      .catch(() => {
+        setPublicSolutions([]);
+      });
+  }, []);
 
   return (
     <div className="min-h-screen bg-white pt-32 pb-32">
@@ -2340,7 +2358,7 @@ function SolutionsPage() {
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {solutionsList.map((solution, idx) => (
+          {visibleSolutions.map((solution, idx) => (
             <Link 
               key={idx} 
               to={`/solutions/${solution.id}`}
