@@ -33,3 +33,4 @@ server/data/media-library.broken-backup.json
 server/data/media-library.corrupt-*.json
 
 dist-static/
+dist-prerender/
