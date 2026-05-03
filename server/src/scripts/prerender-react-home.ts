@@ -3,61 +3,108 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
+interface RouteConfig {
+  path: string;
+  outputFile: string;
+  requiredChecks: Array<{
+    label: string;
+    test: (normalizedBodyText: string, normalizedHtml: string) => boolean;
+  }>;
+}
+
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const outputDir = path.join(projectRoot, 'dist-prerender');
-const outputFile = path.join(outputDir, 'index.html');
-const targetUrl = process.env.PRERENDER_URL || 'http://localhost:3000/';
+const baseUrl = process.env.PRERENDER_BASE_URL || 'http://localhost:3000';
+const routes: RouteConfig[] = [
+  {
+    path: '/',
+    outputFile: 'index.html',
+    requiredChecks: [
+      {
+        label: 'YOU NEED. WE BUILD.',
+        test: (bodyText, html) => /YOU\s+NEED\.?\s+WE\s+BUILD\.?/i.test(bodyText) || /YOU\s+NEED\.?\s+WE\s+BUILD\.?/i.test(html),
+      },
+      {
+        label: '尼德公关',
+        test: (bodyText, html) => bodyText.includes('尼德公关') || html.includes('尼德公关'),
+      },
+      {
+        label: '怎么选活动公司',
+        test: (bodyText, html) => bodyText.includes('怎么选活动公司') || html.includes('怎么选活动公司'),
+      },
+    ],
+  },
+  {
+    path: '/solutions',
+    outputFile: path.join('solutions', 'index.html'),
+    requiredChecks: [
+      {
+        label: '场景方案',
+        test: (bodyText, html) => bodyText.includes('场景方案') || html.includes('场景方案'),
+      },
+      {
+        label: '企业家庭日',
+        test: (bodyText, html) => bodyText.includes('企业家庭日') || html.includes('企业家庭日'),
+      },
+      {
+        label: '年会活动',
+        test: (bodyText, html) => bodyText.includes('年会活动') || html.includes('年会活动'),
+      },
+    ],
+  },
+];
 
 function normalizeContent(value: string) {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function routeUrl(routePath: string) {
+  return new URL(routePath, `${baseUrl.replace(/\/+$/, '')}/`).toString();
+}
+
 async function main() {
   const browser = await chromium.launch();
+  let hasFailedChecks = false;
 
   try {
     const page = await browser.newPage();
 
-    await page.goto(targetUrl, { waitUntil: 'networkidle' });
-    await page.waitForTimeout(2000);
+    for (const route of routes) {
+      const targetUrl = routeUrl(route.path);
+      const outputFile = path.join(outputDir, route.outputFile);
 
-    const html = await page.content();
-    const bodyText = await page.locator('body').innerText();
+      await page.goto(targetUrl, { waitUntil: 'networkidle' });
+      await page.waitForTimeout(2000);
 
-    await fs.mkdir(outputDir, { recursive: true });
-    await fs.writeFile(outputFile, html, 'utf8');
+      const html = await page.content();
+      const bodyText = await page.locator('body').innerText();
 
-    console.log(`Visited URL: ${targetUrl}`);
-    console.log(`Output file: ${outputFile}`);
-    console.log(`HTML characters: ${html.length}`);
-    console.log(`Body text preview: ${bodyText.replace(/\s+/g, ' ').trim().slice(0, 300)}`);
+      await fs.mkdir(path.dirname(outputFile), { recursive: true });
+      await fs.writeFile(outputFile, html, 'utf8');
 
-    const normalizedBodyText = normalizeContent(bodyText);
-    const normalizedHtml = normalizeContent(html);
-    const normalizedBodyTextUpper = normalizedBodyText.toUpperCase();
-    const normalizedHtmlUpper = normalizedHtml.toUpperCase();
-    const checks = [
-      {
-        label: 'YOU NEED. WE BUILD.',
-        passed: /YOU\s+NEED\.?\s+WE\s+BUILD\.?/i.test(normalizedBodyTextUpper)
-          || /YOU\s+NEED\.?\s+WE\s+BUILD\.?/i.test(normalizedHtmlUpper),
-      },
-      {
-        label: '尼德公关',
-        passed: normalizedBodyText.includes('尼德公关') || normalizedHtml.includes('尼德公关'),
-      },
-      {
-        label: '怎么选活动公司',
-        passed: normalizedBodyText.includes('怎么选活动公司') || normalizedHtml.includes('怎么选活动公司'),
-      },
-    ];
-    const missingTexts = checks.filter((check) => !check.passed).map((check) => check.label);
+      console.log(`Visited URL: ${targetUrl}`);
+      console.log(`Output file: ${outputFile}`);
+      console.log(`HTML characters: ${html.length}`);
+      console.log(`Body text preview: ${normalizeContent(bodyText).slice(0, 300)}`);
 
-    if (missingTexts.length > 0) {
-      console.error(`Content check failed. Missing: ${missingTexts.join(', ')}`);
+      const normalizedBodyText = normalizeContent(bodyText);
+      const normalizedHtml = normalizeContent(html);
+      const missingTexts = route.requiredChecks
+        .filter((check) => !check.test(normalizedBodyText, normalizedHtml))
+        .map((check) => check.label);
+
+      if (missingTexts.length > 0) {
+        hasFailedChecks = true;
+        console.error(`Content check failed for ${route.path}. Missing: ${missingTexts.join(', ')}`);
+      } else {
+        console.log(`Content check passed for ${route.path}`);
+      }
+    }
+
+    if (hasFailedChecks) {
       process.exitCode = 1;
     } else {
-      console.log('Content check passed');
+      console.log('All prerender content checks passed');
     }
   } finally {
     await browser.close();
@@ -65,6 +112,6 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error('Failed to prerender React home page:', error);
+  console.error('Failed to prerender React routes:', error);
   process.exitCode = 1;
 });
