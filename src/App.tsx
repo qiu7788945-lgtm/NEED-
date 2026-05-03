@@ -3,7 +3,7 @@ import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
 import { ArrowRight, ArrowDown, CheckCircle2, Users, Target, Zap, Menu, X, ChevronDown, Play, Pause, Volume2, VolumeX, Copy, Check } from 'lucide-react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import ContactAndAssetsPage from './pages/ContactAndAssetsPage';
-import { fetchHomeVideo } from './services/publicContent';
+import { fetchHomeVideo, fetchPublishedArticles } from './services/publicContent';
 import gsap from 'gsap';
 import Markdown from 'react-markdown';
 
@@ -675,6 +675,25 @@ function CTASection() {
 // --- Home Page Sections ---
 
 function MethodsSection() {
+  const [publicArticles, setPublicArticles] = useState<Array<{ id: string; title: string; excerpt: string }>>([]);
+  const methodArticles = publicArticles.length > 0 ? publicArticles : articlesData;
+
+  useEffect(() => {
+    fetchPublishedArticles()
+      .then((articles) => {
+        if (articles.length > 0) {
+          setPublicArticles(articles.map((article) => ({
+            id: article.id || article.slug,
+            title: article.title,
+            excerpt: article.excerpt,
+          })));
+        }
+      })
+      .catch(() => {
+        setPublicArticles([]);
+      });
+  }, []);
+
   return (
     <section id="methods" className="py-24 px-6 md:px-12 lg:px-24 bg-[#f4f4f5] text-black">
       <div className="max-w-7xl mx-auto w-full">
@@ -688,7 +707,7 @@ function MethodsSection() {
         </header>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8">
-          {articlesData.map((article) => (
+          {methodArticles.map((article) => (
             <Link 
               key={article.id} 
               to={`/how-to-choose/${article.id}`}
