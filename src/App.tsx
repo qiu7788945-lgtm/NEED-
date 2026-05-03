@@ -3,7 +3,7 @@ import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
 import { ArrowRight, ArrowDown, CheckCircle2, Users, Target, Zap, Menu, X, ChevronDown, Play, Pause, Volume2, VolumeX, Copy, Check } from 'lucide-react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import ContactAndAssetsPage from './pages/ContactAndAssetsPage';
-import { fetchHomeVideo, fetchPublishedArticles } from './services/publicContent';
+import { fetchHomeVideo, fetchPublishedArticles, fetchPublishedCases } from './services/publicContent';
 import gsap from 'gsap';
 import Markdown from 'react-markdown';
 
@@ -741,6 +741,27 @@ function MethodsSection() {
 
 function CasesPreviewSection() {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [publicCases, setPublicCases] = useState<Array<{ id: string; title: string; excerpt: string; coverImg: string; tags: string[] }>>([]);
+  const baseCases = publicCases.length > 0 ? publicCases : caseStudiesData;
+  const extendedCases = [...baseCases, { ...baseCases[0], id: `${baseCases[0].id}-2` }, { ...baseCases[0], id: `${baseCases[0].id}-3` }];
+
+  useEffect(() => {
+    fetchPublishedCases()
+      .then((cases) => {
+        if (cases.length > 0) {
+          setPublicCases(cases.map((caseStudy) => ({
+            id: caseStudy.id || caseStudy.slug,
+            title: caseStudy.title,
+            excerpt: caseStudy.excerpt,
+            coverImg: caseStudy.coverImg || caseStudiesData[0].coverImg,
+            tags: caseStudy.tags.length > 0 ? caseStudy.tags : caseStudiesData[0].tags,
+          })));
+        }
+      })
+      .catch(() => {
+        setPublicCases([]);
+      });
+  }, []);
 
   const scrollLeft = () => {
     if (scrollRef.current) {
@@ -784,7 +805,7 @@ function CasesPreviewSection() {
         </header>
 
         <div ref={scrollRef} className="flex overflow-x-auto snap-x snap-mandatory gap-6 pb-12 [&::-webkit-scrollbar]:hidden" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
-          {[...caseStudiesData, { ...caseStudiesData[0], id: 'hyundai-family-day-2' }, { ...caseStudiesData[0], id: 'hyundai-family-day-3' }].map((caseStudy) => (
+          {extendedCases.map((caseStudy) => (
             <Link 
               key={caseStudy.id} 
               to={`/cases/${caseStudy.id}`}
