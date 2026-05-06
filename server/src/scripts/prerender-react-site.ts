@@ -79,6 +79,33 @@ const routes: RouteConfig[] = [
       },
     ],
   },
+  {
+    path: '/solutions/family-day',
+    outputFile: path.join('solutions', 'family-day', 'index.html'),
+    metadata: {
+      title: '企业家庭日活动方案｜NEED 尼德公关',
+      description:
+        '企业家庭日活动不只是员工福利，更是企业文化、家属认同和组织温度的现场表达。NEED 尼德公关从目标、动线、互动体验和现场执行角度梳理家庭日活动的落地方法。',
+    },
+    requiredChecks: [
+      {
+        label: '费斯托 2025 家庭日',
+        test: (bodyText, html) => bodyText.includes('费斯托 2025 家庭日') || html.includes('费斯托 2025 家庭日'),
+      },
+      {
+        label: '费跃百年，趣超超越',
+        test: (bodyText, html) => bodyText.includes('费跃百年，趣超超越') || html.includes('费跃百年，趣超超越'),
+      },
+      {
+        label: '家庭日',
+        test: (bodyText, html) => bodyText.includes('家庭日') || html.includes('家庭日'),
+      },
+      {
+        label: '联系我们探讨项目',
+        test: (bodyText, html) => bodyText.includes('联系我们探讨项目') || html.includes('联系我们探讨项目'),
+      },
+    ],
+  },
 ];
 
 function normalizeContent(value: string) {
