@@ -133,6 +133,33 @@ const routes: RouteConfig[] = [
       },
     ],
   },
+  {
+    path: '/how-to-choose',
+    outputFile: path.join('how-to-choose', 'index.html'),
+    metadata: {
+      title: '怎么选活动公司｜NEED 尼德公关',
+      description:
+        '选择活动公司不只看案例是否好看，更要看对方能否理解需求、判断重点、控制预算并把现场稳稳落地。NEED 尼德公关从需求、方案、预算与执行角度梳理选择方法。',
+    },
+    requiredChecks: [
+      {
+        label: '怎么选活动公司',
+        test: (bodyText, html) => bodyText.includes('怎么选活动公司') || html.includes('怎么选活动公司'),
+      },
+      {
+        label: '理解需求',
+        test: (bodyText, html) => bodyText.includes('理解需求') || html.includes('理解需求'),
+      },
+      {
+        label: '判断力',
+        test: (bodyText, html) => bodyText.includes('判断力') || html.includes('判断力'),
+      },
+      {
+        label: '执行力',
+        test: (bodyText, html) => bodyText.includes('执行力') || html.includes('执行力'),
+      },
+    ],
+  },
 ];
 
 function normalizeContent(value: string) {
