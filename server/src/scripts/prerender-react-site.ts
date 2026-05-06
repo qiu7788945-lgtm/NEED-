@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
+import { getStaticRouteManifest, type RouteManifestItem } from './prerender-route-manifest.js';
 
 interface RouteConfig {
   path: string;
@@ -20,6 +21,8 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const outputDir = path.join(projectRoot, 'dist-prerender');
 const baseUrl = process.env.PRERENDER_BASE_URL || 'http://localhost:3000';
 const SITE_BASE_URL = process.env.SITE_BASE_URL || 'http://localhost:3000';
+const manifest = getStaticRouteManifest(SITE_BASE_URL);
+const expectedRouteCount = 17;
 const serviceChecks = [
   {
     url: 'http://localhost:4000',
@@ -32,413 +35,29 @@ const serviceChecks = [
     runCommand: 'Please run: npm.cmd run dev',
   },
 ];
-const routes: RouteConfig[] = [
-  {
-    path: '/',
-    outputFile: 'index.html',
+
+function createRequiredCheck(label: string): RouteConfig['requiredChecks'][number] {
+  return {
+    label,
+    test: (bodyText, html) => bodyText.includes(label) || html.includes(label),
+  };
+}
+
+function toRouteConfig(route: RouteManifestItem): RouteConfig {
+  return {
+    path: route.path,
+    outputFile: route.outputPath,
     metadata: {
-      title: 'NEED 尼德公关｜企业活动策划与现场落地',
-      description:
-        'NEED 尼德公关服务企业活动策划与落地，覆盖年会、企业家庭日、客户答谢、品牌活动等场景，重视需求判断、预算控制与现场交付。',
+      title: route.title,
+      description: route.description,
     },
-    requiredChecks: [
-      {
-        label: 'YOU NEED. WE BUILD.',
-        test: (bodyText, html) => /YOU\s+NEED\.?\s+WE\s+BUILD\.?/i.test(bodyText) || /YOU\s+NEED\.?\s+WE\s+BUILD\.?/i.test(html),
-      },
-      {
-        label: '尼德公关',
-        test: (bodyText, html) => bodyText.includes('尼德公关') || html.includes('尼德公关'),
-      },
-      {
-        label: '怎么选活动公司',
-        test: (bodyText, html) => bodyText.includes('怎么选活动公司') || html.includes('怎么选活动公司'),
-      },
-    ],
-  },
-  {
-    path: '/solutions',
-    outputFile: path.join('solutions', 'index.html'),
-    metadata: {
-      title: '场景方案｜NEED 尼德公关',
-      description:
-        '按企业家庭日、年会活动、客户答谢、品牌活动等不同场景，梳理活动目标、执行重点与落地判断，帮助企业在预算内拿到更确定的现场结果。',
-    },
-    requiredChecks: [
-      {
-        label: '场景方案',
-        test: (bodyText, html) => bodyText.includes('场景方案') || html.includes('场景方案'),
-      },
-      {
-        label: '企业家庭日',
-        test: (bodyText, html) => bodyText.includes('企业家庭日') || html.includes('企业家庭日'),
-      },
-      {
-        label: '年会活动',
-        test: (bodyText, html) => bodyText.includes('年会活动') || html.includes('年会活动'),
-      },
-    ],
-  },
-  {
-    path: '/solutions/family-day',
-    outputFile: path.join('solutions', 'family-day', 'index.html'),
-    metadata: {
-      title: '企业家庭日活动方案｜NEED 尼德公关',
-      description:
-        '企业家庭日活动不只是员工福利，更是企业文化、家属认同和组织温度的现场表达。NEED 尼德公关从目标、动线、互动体验和现场执行角度梳理家庭日活动的落地方法。',
-    },
-    requiredChecks: [
-      {
-        label: '费斯托 2025 家庭日',
-        test: (bodyText, html) => bodyText.includes('费斯托 2025 家庭日') || html.includes('费斯托 2025 家庭日'),
-      },
-      {
-        label: '费跃百年，趣超超越',
-        test: (bodyText, html) => bodyText.includes('费跃百年，趣超超越') || html.includes('费跃百年，趣超超越'),
-      },
-      {
-        label: '家庭日',
-        test: (bodyText, html) => bodyText.includes('家庭日') || html.includes('家庭日'),
-      },
-      {
-        label: '联系我们探讨项目',
-        test: (bodyText, html) => bodyText.includes('联系我们探讨项目') || html.includes('联系我们探讨项目'),
-      },
-    ],
-  },
-  {
-    path: '/contact',
-    outputFile: path.join('contact', 'index.html'),
-    metadata: {
-      title: '联系 NEED 尼德公关｜联系方式与交付资产',
-      description:
-        '联系 NEED 尼德公关，了解企业活动策划、年会、家庭日、客户答谢、品牌活动等项目合作方式，并查看团队自有设备、制作、印刷与特装交付资产。',
-    },
-    requiredChecks: [
-      {
-        label: 'CONTACT',
-        test: (bodyText, html) => bodyText.includes('CONTACT') || html.includes('CONTACT'),
-      },
-      {
-        label: 'HQ Location',
-        test: (bodyText, html) => bodyText.includes('HQ Location') || html.includes('HQ Location'),
-      },
-      {
-        label: 'needpr@163.com',
-        test: (bodyText, html) => bodyText.includes('needpr@163.com') || html.includes('needpr@163.com'),
-      },
-      {
-        label: 'Hardcore Assets',
-        test: (bodyText, html) => bodyText.includes('Hardcore Assets') || html.includes('Hardcore Assets'),
-      },
-    ],
-  },
-  {
-    path: '/how-to-choose',
-    outputFile: path.join('how-to-choose', 'index.html'),
-    metadata: {
-      title: '怎么选活动公司｜NEED 尼德公关',
-      description:
-        '选择活动公司不只看案例是否好看，更要看对方能否理解需求、判断重点、控制预算并把现场稳稳落地。NEED 尼德公关从需求、方案、预算与执行角度梳理选择方法。',
-    },
-    requiredChecks: [
-      {
-        label: '怎么选活动公司',
-        test: (bodyText, html) => bodyText.includes('怎么选活动公司') || html.includes('怎么选活动公司'),
-      },
-      {
-        label: '理解需求',
-        test: (bodyText, html) => bodyText.includes('理解需求') || html.includes('理解需求'),
-      },
-      {
-        label: '判断力',
-        test: (bodyText, html) => bodyText.includes('判断力') || html.includes('判断力'),
-      },
-      {
-        label: '执行力',
-        test: (bodyText, html) => bodyText.includes('执行力') || html.includes('执行力'),
-      },
-    ],
-  },
-  {
-    path: '/how-to-choose/01',
-    outputFile: path.join('how-to-choose', '01', 'index.html'),
-    metadata: {
-      title: '真正靠谱的活动执行，不是现场救火能力，而是前面少埋雷｜NEED 尼德公关',
-      description: '很多人把现场救火能力当成活动执行的核心能力，但对企业活动来说，真正靠谱的执行，是前面少埋雷、流程更顺、风险更早被看见。',
-    },
-    requiredChecks: [
-      {
-        label: '真正靠谱的活动执行',
-        test: (bodyText, html) => bodyText.includes('真正靠谱的活动执行') || html.includes('真正靠谱的活动执行'),
-      },
-      {
-        label: '不是现场救火能力',
-        test: (bodyText, html) => bodyText.includes('不是现场救火能力') || html.includes('不是现场救火能力'),
-      },
-      {
-        label: '前面少埋雷',
-        test: (bodyText, html) => bodyText.includes('前面少埋雷') || html.includes('前面少埋雷'),
-      },
-    ],
-  },
-  {
-    path: '/how-to-choose/02',
-    outputFile: path.join('how-to-choose', '02', 'index.html'),
-    metadata: {
-      title: '为什么有些方案看起来很好，现场却不成立｜NEED 尼德公关',
-      description: '很多活动方案在提案里很好看，到了现场却不成立。NEED 从时间、场地、流程、执行条件和判断误差五个角度，解释其中原因。',
-    },
-    requiredChecks: [
-      {
-        label: '方案看起来很好',
-        test: (bodyText, html) => bodyText.includes('方案看起来很好') || html.includes('方案看起来很好'),
-      },
-      {
-        label: '现场却不成立',
-        test: (bodyText, html) => bodyText.includes('现场却不成立') || html.includes('现场却不成立'),
-      },
-      {
-        label: '时间',
-        test: (bodyText, html) => bodyText.includes('时间') || html.includes('时间'),
-      },
-      {
-        label: '场地',
-        test: (bodyText, html) => bodyText.includes('场地') || html.includes('场地'),
-      },
-    ],
-  },
-  {
-    path: '/how-to-choose/03',
-    outputFile: path.join('how-to-choose', '03', 'index.html'),
-    metadata: {
-      title: '为什么一场活动开始前，先把目标判断清楚更重要｜NEED 尼德公关',
-      description: '很多活动的问题，不是执行不努力，而是一开始目标没判断清楚。NEED 从企业活动策划与执行的角度，解释为什么目标判断是方案成立的第一步。',
-    },
-    requiredChecks: [
-      {
-        label: '目标判断清楚',
-        test: (bodyText, html) => bodyText.includes('目标判断清楚') || html.includes('目标判断清楚'),
-      },
-      {
-        label: '活动开始前',
-        test: (bodyText, html) => bodyText.includes('活动开始前') || html.includes('活动开始前'),
-      },
-      {
-        label: '企业活动策划与执行',
-        test: (bodyText, html) => bodyText.includes('企业活动策划与执行') || html.includes('企业活动策划与执行'),
-      },
-    ],
-  },
-  {
-    path: '/how-to-choose/04',
-    outputFile: path.join('how-to-choose', '04', 'index.html'),
-    metadata: {
-      title: '为什么预算判断，比一味堆创意更重要｜NEED 尼德公关',
-      description: '很多活动不是没有创意，而是预算花错了地方。NEED 从企业活动策划与执行的角度，解释为什么预算判断比一味堆创意更重要。',
-    },
-    requiredChecks: [
-      {
-        label: '预算判断',
-        test: (bodyText, html) => bodyText.includes('预算判断') || html.includes('预算判断'),
-      },
-      {
-        label: '一味堆创意',
-        test: (bodyText, html) => bodyText.includes('一味堆创意') || html.includes('一味堆创意'),
-      },
-      {
-        label: '预算花错了地方',
-        test: (bodyText, html) => bodyText.includes('预算花错了地方') || html.includes('预算花错了地方'),
-      },
-    ],
-  },
-  {
-    path: '/choose-between-two',
-    outputFile: path.join('choose-between-two', 'index.html'),
-    metadata: {
-      title: '两家活动公司二选一怎么选｜NEED 尼德公关',
-      description:
-        '当两家活动公司方案都看起来不错时，真正该比较的不是谁更会包装，而是谁更理解需求、判断更清楚、执行更稳。NEED 尼德公关梳理活动公司二选一的判断方法。',
-    },
-    requiredChecks: [
-      {
-        label: '二选一怎么选',
-        test: (bodyText, html) => bodyText.includes('二选一怎么选') || html.includes('二选一怎么选'),
-      },
-      {
-        label: '谁更理解需求',
-        test: (bodyText, html) => bodyText.includes('谁更理解需求') || html.includes('谁更理解需求'),
-      },
-      {
-        label: '判断更清楚',
-        test: (bodyText, html) => bodyText.includes('判断更清楚') || html.includes('判断更清楚'),
-      },
-      {
-        label: '执行更稳',
-        test: (bodyText, html) => bodyText.includes('执行更稳') || html.includes('执行更稳'),
-      },
-    ],
-  },
-  {
-    path: '/solutions/salon',
-    outputFile: path.join('solutions', 'salon', 'index.html'),
-    metadata: {
-      title: '客户答谢&精品沙龙｜NEED 尼德公关',
-      description: '针对高净值客户或核心渠道商的答谢与沙龙，重点不在于规模，而在于尊贵感与价值交流。它是提升客户粘性、促成深度合作的关键触点。',
-    },
-    requiredChecks: [
-      {
-        label: '客户答谢&精品沙龙',
-        test: (bodyText, html) => bodyText.includes('客户答谢&精品沙龙') || html.includes('客户答谢&精品沙龙'),
-      },
-      {
-        label: '高净值客户',
-        test: (bodyText, html) => bodyText.includes('高净值客户') || html.includes('高净值客户'),
-      },
-      {
-        label: '深度互动',
-        test: (bodyText, html) => bodyText.includes('深度互动') || html.includes('深度互动'),
-      },
-    ],
-  },
-  {
-    path: '/solutions/annual',
-    outputFile: path.join('solutions', 'annual', 'index.html'),
-    metadata: {
-      title: '年会活动与企业文化｜NEED 尼德公关',
-      description: '年会是企业一年一度最重要的内部盛会，它承载着总结过往、表彰先进、提振士气以及宣贯新年战略的复合功能。',
-    },
-    requiredChecks: [
-      {
-        label: '年会活动与企业文化',
-        test: (bodyText, html) => bodyText.includes('年会活动与企业文化') || html.includes('年会活动与企业文化'),
-      },
-      {
-        label: '企业向心力',
-        test: (bodyText, html) => bodyText.includes('企业向心力') || html.includes('企业向心力'),
-      },
-      {
-        label: '提振士气',
-        test: (bodyText, html) => bodyText.includes('提振士气') || html.includes('提振士气'),
-      },
-    ],
-  },
-  {
-    path: '/solutions/exhibition',
-    outputFile: path.join('solutions', 'exhibition', 'index.html'),
-    metadata: {
-      title: '商业美陈与展览｜NEED 尼德公关',
-      description: '在碎片化时代，线下的真实空间体验是最具冲击力的品牌沟通语言。美陈与展览不仅是吸引流量的工具，更是品牌质感的外延。',
-    },
-    requiredChecks: [
-      {
-        label: '商业美陈与展览',
-        test: (bodyText, html) => bodyText.includes('商业美陈与展览') || html.includes('商业美陈与展览'),
-      },
-      {
-        label: '空间即媒介',
-        test: (bodyText, html) => bodyText.includes('空间即媒介') || html.includes('空间即媒介'),
-      },
-      {
-        label: '品牌核心视觉体验',
-        test: (bodyText, html) => bodyText.includes('品牌核心视觉体验') || html.includes('品牌核心视觉体验'),
-      },
-    ],
-  },
-  {
-    path: '/solutions/video',
-    outputFile: path.join('solutions', 'video', 'index.html'),
-    metadata: {
-      title: '视频与数字资产｜NEED 尼德公关',
-      description: '一场百万级的活动，如果不通过影像记录，它的影响力将随着离场而消散。视频与数字资产是企业传播的长尾引擎。',
-    },
-    requiredChecks: [
-      {
-        label: '视频与数字资产',
-        test: (bodyText, html) => bodyText.includes('视频与数字资产') || html.includes('视频与数字资产'),
-      },
-      {
-        label: '长效复用',
-        test: (bodyText, html) => bodyText.includes('长效复用') || html.includes('长效复用'),
-      },
-      {
-        label: '活动背后的核心价值',
-        test: (bodyText, html) => bodyText.includes('活动背后的核心价值') || html.includes('活动背后的核心价值'),
-      },
-    ],
-  },
-  {
-    path: '/solutions/forum',
-    outputFile: path.join('solutions', 'forum', 'index.html'),
-    metadata: {
-      title: '学术与专业论坛｜NEED 尼德公关',
-      description: '无论是医学峰会、科技论坛还是行业趋势发布，高规格的专业论坛是奠定企业行业话语权、展现专业深度的绝对核心现场。',
-    },
-    requiredChecks: [
-      {
-        label: '学术与专业论坛',
-        test: (bodyText, html) => bodyText.includes('学术与专业论坛') || html.includes('学术与专业论坛'),
-      },
-      {
-        label: '行业智慧',
-        test: (bodyText, html) => bodyText.includes('行业智慧') || html.includes('行业智慧'),
-      },
-      {
-        label: '高规格思想交锋平台',
-        test: (bodyText, html) => bodyText.includes('高规格思想交锋平台') || html.includes('高规格思想交锋平台'),
-      },
-    ],
-  },
-  {
-    path: '/solutions/other',
-    outputFile: path.join('solutions', 'other', 'index.html'),
-    metadata: {
-      title: '其他特殊场景需求｜NEED 尼德公关',
-      description: '企业的需求永远是在不断进化和变体中的。不论是出海峰会、大型厂矿奠基、极寒环境下的产品测试发布，还是与品牌调性深度绑定的跨界大秀。',
-    },
-    requiredChecks: [
-      {
-        label: '其他特殊场景需求',
-        test: (bodyText, html) => bodyText.includes('其他特殊场景需求') || html.includes('其他特殊场景需求'),
-      },
-      {
-        label: '灵活定制',
-        test: (bodyText, html) => bodyText.includes('灵活定制') || html.includes('灵活定制'),
-      },
-      {
-        label: '突破常规',
-        test: (bodyText, html) => bodyText.includes('突破常规') || html.includes('突破常规'),
-      },
-    ],
-  },
-  {
-    path: '/cases/hyundai-family-day',
-    outputFile: path.join('cases', 'hyundai-family-day', 'index.html'),
-    metadata: {
-      title: '制造研发中心的家庭日，不只是让孩子玩一天｜NEED 尼德公关',
-      description:
-        '从荣誉致敬、亲子互动到开放日动线，NEED 为现代汽车研发中心打造了一场围绕“家庭”与“感恩”的企业家庭日活动。',
-    },
-    requiredChecks: [
-      {
-        label: '制造研发中心的家庭日',
-        test: (bodyText, html) => bodyText.includes('制造研发中心的家庭日') || html.includes('制造研发中心的家庭日'),
-      },
-      {
-        label: '现代汽车研发中心',
-        test: (bodyText, html) => bodyText.includes('现代汽车研发中心') || html.includes('现代汽车研发中心'),
-      },
-      {
-        label: '家庭日开放日',
-        test: (bodyText, html) => bodyText.includes('家庭日开放日') || html.includes('家庭日开放日'),
-      },
-      {
-        label: '荣誉致敬',
-        test: (bodyText, html) => bodyText.includes('荣誉致敬') || html.includes('荣誉致敬'),
-      },
-    ],
-  },
-];
+    requiredChecks: route.requiredChecks.map(createRequiredCheck),
+  };
+}
+
+const routes = manifest.routes
+  .filter((route) => route.shouldGenerate)
+  .map(toRouteConfig);
 
 function normalizeContent(value: string) {
   return value.replace(/\s+/g, ' ').trim();
@@ -622,6 +241,18 @@ async function checkRequiredServices() {
 }
 
 async function main() {
+  console.log(`Manifest routes loaded: ${routes.length}`);
+
+  if (routes.length === 0) {
+    console.error('No routes with shouldGenerate=true found in route manifest.');
+    process.exitCode = 1;
+    return;
+  }
+
+  if (routes.length !== expectedRouteCount) {
+    console.warn(`Warning: expected ${expectedRouteCount} manifest routes, but loaded ${routes.length}.`);
+  }
+
   const canPrerender = await checkRequiredServices();
 
   if (!canPrerender) {
