@@ -279,6 +279,138 @@ const routes: RouteConfig[] = [
       },
     ],
   },
+  {
+    path: '/solutions/salon',
+    outputFile: path.join('solutions', 'salon', 'index.html'),
+    metadata: {
+      title: '客户答谢&精品沙龙｜NEED 尼德公关',
+      description: '针对高净值客户或核心渠道商的答谢与沙龙，重点不在于规模，而在于尊贵感与价值交流。它是提升客户粘性、促成深度合作的关键触点。',
+    },
+    requiredChecks: [
+      {
+        label: '客户答谢&精品沙龙',
+        test: (bodyText, html) => bodyText.includes('客户答谢&精品沙龙') || html.includes('客户答谢&精品沙龙'),
+      },
+      {
+        label: '高净值客户',
+        test: (bodyText, html) => bodyText.includes('高净值客户') || html.includes('高净值客户'),
+      },
+      {
+        label: '深度互动',
+        test: (bodyText, html) => bodyText.includes('深度互动') || html.includes('深度互动'),
+      },
+    ],
+  },
+  {
+    path: '/solutions/annual',
+    outputFile: path.join('solutions', 'annual', 'index.html'),
+    metadata: {
+      title: '年会活动与企业文化｜NEED 尼德公关',
+      description: '年会是企业一年一度最重要的内部盛会，它承载着总结过往、表彰先进、提振士气以及宣贯新年战略的复合功能。',
+    },
+    requiredChecks: [
+      {
+        label: '年会活动与企业文化',
+        test: (bodyText, html) => bodyText.includes('年会活动与企业文化') || html.includes('年会活动与企业文化'),
+      },
+      {
+        label: '企业向心力',
+        test: (bodyText, html) => bodyText.includes('企业向心力') || html.includes('企业向心力'),
+      },
+      {
+        label: '提振士气',
+        test: (bodyText, html) => bodyText.includes('提振士气') || html.includes('提振士气'),
+      },
+    ],
+  },
+  {
+    path: '/solutions/exhibition',
+    outputFile: path.join('solutions', 'exhibition', 'index.html'),
+    metadata: {
+      title: '商业美陈与展览｜NEED 尼德公关',
+      description: '在碎片化时代，线下的真实空间体验是最具冲击力的品牌沟通语言。美陈与展览不仅是吸引流量的工具，更是品牌质感的外延。',
+    },
+    requiredChecks: [
+      {
+        label: '商业美陈与展览',
+        test: (bodyText, html) => bodyText.includes('商业美陈与展览') || html.includes('商业美陈与展览'),
+      },
+      {
+        label: '空间即媒介',
+        test: (bodyText, html) => bodyText.includes('空间即媒介') || html.includes('空间即媒介'),
+      },
+      {
+        label: '品牌核心视觉体验',
+        test: (bodyText, html) => bodyText.includes('品牌核心视觉体验') || html.includes('品牌核心视觉体验'),
+      },
+    ],
+  },
+  {
+    path: '/solutions/video',
+    outputFile: path.join('solutions', 'video', 'index.html'),
+    metadata: {
+      title: '视频与数字资产｜NEED 尼德公关',
+      description: '一场百万级的活动，如果不通过影像记录，它的影响力将随着离场而消散。视频与数字资产是企业传播的长尾引擎。',
+    },
+    requiredChecks: [
+      {
+        label: '视频与数字资产',
+        test: (bodyText, html) => bodyText.includes('视频与数字资产') || html.includes('视频与数字资产'),
+      },
+      {
+        label: '长效复用',
+        test: (bodyText, html) => bodyText.includes('长效复用') || html.includes('长效复用'),
+      },
+      {
+        label: '活动背后的核心价值',
+        test: (bodyText, html) => bodyText.includes('活动背后的核心价值') || html.includes('活动背后的核心价值'),
+      },
+    ],
+  },
+  {
+    path: '/solutions/forum',
+    outputFile: path.join('solutions', 'forum', 'index.html'),
+    metadata: {
+      title: '学术与专业论坛｜NEED 尼德公关',
+      description: '无论是医学峰会、科技论坛还是行业趋势发布，高规格的专业论坛是奠定企业行业话语权、展现专业深度的绝对核心现场。',
+    },
+    requiredChecks: [
+      {
+        label: '学术与专业论坛',
+        test: (bodyText, html) => bodyText.includes('学术与专业论坛') || html.includes('学术与专业论坛'),
+      },
+      {
+        label: '行业智慧',
+        test: (bodyText, html) => bodyText.includes('行业智慧') || html.includes('行业智慧'),
+      },
+      {
+        label: '高规格思想交锋平台',
+        test: (bodyText, html) => bodyText.includes('高规格思想交锋平台') || html.includes('高规格思想交锋平台'),
+      },
+    ],
+  },
+  {
+    path: '/solutions/other',
+    outputFile: path.join('solutions', 'other', 'index.html'),
+    metadata: {
+      title: '其他特殊场景需求｜NEED 尼德公关',
+      description: '企业的需求永远是在不断进化和变体中的。不论是出海峰会、大型厂矿奠基、极寒环境下的产品测试发布，还是与品牌调性深度绑定的跨界大秀。',
+    },
+    requiredChecks: [
+      {
+        label: '其他特殊场景需求',
+        test: (bodyText, html) => bodyText.includes('其他特殊场景需求') || html.includes('其他特殊场景需求'),
+      },
+      {
+        label: '灵活定制',
+        test: (bodyText, html) => bodyText.includes('灵活定制') || html.includes('灵活定制'),
+      },
+      {
+        label: '突破常规',
+        test: (bodyText, html) => bodyText.includes('突破常规') || html.includes('突破常规'),
+      },
+    ],
+  },
 ];
 
 function normalizeContent(value: string) {
