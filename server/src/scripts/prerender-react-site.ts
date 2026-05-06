@@ -252,6 +252,33 @@ const routes: RouteConfig[] = [
       },
     ],
   },
+  {
+    path: '/choose-between-two',
+    outputFile: path.join('choose-between-two', 'index.html'),
+    metadata: {
+      title: '两家活动公司二选一怎么选｜NEED 尼德公关',
+      description:
+        '当两家活动公司方案都看起来不错时，真正该比较的不是谁更会包装，而是谁更理解需求、判断更清楚、执行更稳。NEED 尼德公关梳理活动公司二选一的判断方法。',
+    },
+    requiredChecks: [
+      {
+        label: '二选一怎么选',
+        test: (bodyText, html) => bodyText.includes('二选一怎么选') || html.includes('二选一怎么选'),
+      },
+      {
+        label: '谁更理解需求',
+        test: (bodyText, html) => bodyText.includes('谁更理解需求') || html.includes('谁更理解需求'),
+      },
+      {
+        label: '判断更清楚',
+        test: (bodyText, html) => bodyText.includes('判断更清楚') || html.includes('判断更清楚'),
+      },
+      {
+        label: '执行更稳',
+        test: (bodyText, html) => bodyText.includes('执行更稳') || html.includes('执行更稳'),
+      },
+    ],
+  },
 ];
 
 function normalizeContent(value: string) {
