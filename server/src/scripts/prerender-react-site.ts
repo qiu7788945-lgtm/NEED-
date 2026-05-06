@@ -411,6 +411,33 @@ const routes: RouteConfig[] = [
       },
     ],
   },
+  {
+    path: '/cases/hyundai-family-day',
+    outputFile: path.join('cases', 'hyundai-family-day', 'index.html'),
+    metadata: {
+      title: '制造研发中心的家庭日，不只是让孩子玩一天｜NEED 尼德公关',
+      description:
+        '从荣誉致敬、亲子互动到开放日动线，NEED 为现代汽车研发中心打造了一场围绕“家庭”与“感恩”的企业家庭日活动。',
+    },
+    requiredChecks: [
+      {
+        label: '制造研发中心的家庭日',
+        test: (bodyText, html) => bodyText.includes('制造研发中心的家庭日') || html.includes('制造研发中心的家庭日'),
+      },
+      {
+        label: '现代汽车研发中心',
+        test: (bodyText, html) => bodyText.includes('现代汽车研发中心') || html.includes('现代汽车研发中心'),
+      },
+      {
+        label: '家庭日开放日',
+        test: (bodyText, html) => bodyText.includes('家庭日开放日') || html.includes('家庭日开放日'),
+      },
+      {
+        label: '荣誉致敬',
+        test: (bodyText, html) => bodyText.includes('荣誉致敬') || html.includes('荣誉致敬'),
+      },
+    ],
+  },
 ];
 
 function normalizeContent(value: string) {
