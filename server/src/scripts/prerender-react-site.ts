@@ -160,6 +160,98 @@ const routes: RouteConfig[] = [
       },
     ],
   },
+  {
+    path: '/how-to-choose/01',
+    outputFile: path.join('how-to-choose', '01', 'index.html'),
+    metadata: {
+      title: '真正靠谱的活动执行，不是现场救火能力，而是前面少埋雷｜NEED 尼德公关',
+      description: '很多人把现场救火能力当成活动执行的核心能力，但对企业活动来说，真正靠谱的执行，是前面少埋雷、流程更顺、风险更早被看见。',
+    },
+    requiredChecks: [
+      {
+        label: '真正靠谱的活动执行',
+        test: (bodyText, html) => bodyText.includes('真正靠谱的活动执行') || html.includes('真正靠谱的活动执行'),
+      },
+      {
+        label: '不是现场救火能力',
+        test: (bodyText, html) => bodyText.includes('不是现场救火能力') || html.includes('不是现场救火能力'),
+      },
+      {
+        label: '前面少埋雷',
+        test: (bodyText, html) => bodyText.includes('前面少埋雷') || html.includes('前面少埋雷'),
+      },
+    ],
+  },
+  {
+    path: '/how-to-choose/02',
+    outputFile: path.join('how-to-choose', '02', 'index.html'),
+    metadata: {
+      title: '为什么有些方案看起来很好，现场却不成立｜NEED 尼德公关',
+      description: '很多活动方案在提案里很好看，到了现场却不成立。NEED 从时间、场地、流程、执行条件和判断误差五个角度，解释其中原因。',
+    },
+    requiredChecks: [
+      {
+        label: '方案看起来很好',
+        test: (bodyText, html) => bodyText.includes('方案看起来很好') || html.includes('方案看起来很好'),
+      },
+      {
+        label: '现场却不成立',
+        test: (bodyText, html) => bodyText.includes('现场却不成立') || html.includes('现场却不成立'),
+      },
+      {
+        label: '时间',
+        test: (bodyText, html) => bodyText.includes('时间') || html.includes('时间'),
+      },
+      {
+        label: '场地',
+        test: (bodyText, html) => bodyText.includes('场地') || html.includes('场地'),
+      },
+    ],
+  },
+  {
+    path: '/how-to-choose/03',
+    outputFile: path.join('how-to-choose', '03', 'index.html'),
+    metadata: {
+      title: '为什么一场活动开始前，先把目标判断清楚更重要｜NEED 尼德公关',
+      description: '很多活动的问题，不是执行不努力，而是一开始目标没判断清楚。NEED 从企业活动策划与执行的角度，解释为什么目标判断是方案成立的第一步。',
+    },
+    requiredChecks: [
+      {
+        label: '目标判断清楚',
+        test: (bodyText, html) => bodyText.includes('目标判断清楚') || html.includes('目标判断清楚'),
+      },
+      {
+        label: '活动开始前',
+        test: (bodyText, html) => bodyText.includes('活动开始前') || html.includes('活动开始前'),
+      },
+      {
+        label: '企业活动策划与执行',
+        test: (bodyText, html) => bodyText.includes('企业活动策划与执行') || html.includes('企业活动策划与执行'),
+      },
+    ],
+  },
+  {
+    path: '/how-to-choose/04',
+    outputFile: path.join('how-to-choose', '04', 'index.html'),
+    metadata: {
+      title: '为什么预算判断，比一味堆创意更重要｜NEED 尼德公关',
+      description: '很多活动不是没有创意，而是预算花错了地方。NEED 从企业活动策划与执行的角度，解释为什么预算判断比一味堆创意更重要。',
+    },
+    requiredChecks: [
+      {
+        label: '预算判断',
+        test: (bodyText, html) => bodyText.includes('预算判断') || html.includes('预算判断'),
+      },
+      {
+        label: '一味堆创意',
+        test: (bodyText, html) => bodyText.includes('一味堆创意') || html.includes('一味堆创意'),
+      },
+      {
+        label: '预算花错了地方',
+        test: (bodyText, html) => bodyText.includes('预算花错了地方') || html.includes('预算花错了地方'),
+      },
+    ],
+  },
 ];
 
 function normalizeContent(value: string) {
