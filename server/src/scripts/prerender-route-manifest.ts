@@ -237,6 +237,34 @@ const staticRoutes: StaticRouteInput[] = [
   },
 ];
 
+const fixedRoutePaths = new Set(['/', '/solutions', '/contact', '/how-to-choose', '/choose-between-two']);
+
+const fixedRoutes = staticRoutes.filter((route) => fixedRoutePaths.has(route.path));
+const contentRoutes = staticRoutes.filter((route) => !fixedRoutePaths.has(route.path));
+
+function getRouteByPath(routes: StaticRouteInput[], path: string) {
+  const route = routes.find((item) => item.path === path);
+
+  if (!route) {
+    throw new Error(`Missing route manifest item for ${path}`);
+  }
+
+  return route;
+}
+
+function buildStaticRoutes(): StaticRouteInput[] {
+  return [
+    getRouteByPath(fixedRoutes, '/'),
+    getRouteByPath(fixedRoutes, '/solutions'),
+    ...contentRoutes.filter((route) => route.sourceType === 'solution'),
+    getRouteByPath(fixedRoutes, '/contact'),
+    getRouteByPath(fixedRoutes, '/how-to-choose'),
+    ...contentRoutes.filter((route) => route.sourceType === 'article'),
+    getRouteByPath(fixedRoutes, '/choose-between-two'),
+    ...contentRoutes.filter((route) => route.sourceType === 'case'),
+  ];
+}
+
 function toManifestItem(route: StaticRouteInput): RouteManifestItem {
   return {
     ...route,
@@ -264,7 +292,7 @@ function countRoutesBySourceType(routes: RouteManifestItem[]): Record<RouteSourc
 }
 
 export function getStaticRouteManifest(siteBaseUrl: string): RouteManifest {
-  const routes = staticRoutes.map(toManifestItem);
+  const routes = buildStaticRoutes().map(toManifestItem);
 
   return {
     generatedAt: new Date().toISOString(),
