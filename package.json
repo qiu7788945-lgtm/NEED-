@@ -10,6 +10,7 @@
     "build": "vite build",
     "build:admin": "vite build --config admin/vite.config.ts",
     "build:static": "tsx server/src/scripts/build-static-site.ts",
+    "build:prerender": "tsx server/src/scripts/prerender-react-site.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
