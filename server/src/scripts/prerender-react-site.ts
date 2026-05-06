@@ -15,6 +15,18 @@ interface RouteConfig {
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const outputDir = path.join(projectRoot, 'dist-prerender');
 const baseUrl = process.env.PRERENDER_BASE_URL || 'http://localhost:3000';
+const serviceChecks = [
+  {
+    url: 'http://localhost:4000',
+    unavailableMessage: 'Backend API is not reachable at http://localhost:4000',
+    runCommand: 'Please run: npm.cmd run dev:server',
+  },
+  {
+    url: 'http://localhost:3000',
+    unavailableMessage: 'Frontend Vite app is not reachable at http://localhost:3000',
+    runCommand: 'Please run: npm.cmd run dev',
+  },
+];
 const routes: RouteConfig[] = [
   {
     path: '/',
@@ -62,7 +74,47 @@ function routeUrl(routePath: string) {
   return new URL(routePath, `${baseUrl.replace(/\/+$/, '')}/`).toString();
 }
 
+async function isServiceReachable(url: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    await response.body?.cancel();
+    return true;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function checkRequiredServices() {
+  const results = await Promise.all(
+    serviceChecks.map(async (service) => ({
+      service,
+      isReachable: await isServiceReachable(service.url),
+    })),
+  );
+
+  const unreachableServices = results.filter((result) => !result.isReachable);
+
+  for (const { service } of unreachableServices) {
+    console.error(service.unavailableMessage);
+    console.error(service.runCommand);
+  }
+
+  return unreachableServices.length === 0;
+}
+
 async function main() {
+  const canPrerender = await checkRequiredServices();
+
+  if (!canPrerender) {
+    process.exitCode = 1;
+    return;
+  }
+
   const browser = await chromium.launch();
   let hasFailedChecks = false;
 
