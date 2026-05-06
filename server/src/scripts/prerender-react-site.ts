@@ -128,6 +128,15 @@ function escapeHtml(value: string) {
     .replace(/"/g, '&quot;');
 }
 
+function escapeXml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
 function upsertHeadTag(html: string, existingTagPattern: RegExp, replacementTag: string) {
   if (existingTagPattern.test(html)) {
     return html.replace(existingTagPattern, replacementTag);
@@ -176,6 +185,72 @@ function getMissingHeadChecks(html: string, route: RouteConfig) {
 
   if (!html.includes(escapedCanonical)) {
     missingChecks.push(`canonical URL: ${canonicalUrl(route.path)}`);
+  }
+
+  return missingChecks;
+}
+
+function renderSitemap() {
+  const urls = routes
+    .map((route) => `  <url><loc>${escapeXml(canonicalUrl(route.path))}</loc></url>`)
+    .join('\n');
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+${urls}
+</urlset>
+`;
+}
+
+function renderRobots() {
+  return `User-agent: *
+Allow: /
+Sitemap: ${canonicalUrl('/sitemap.xml')}
+`;
+}
+
+async function writePrerenderIndexFiles() {
+  const sitemapFile = path.join(outputDir, 'sitemap.xml');
+  const robotsFile = path.join(outputDir, 'robots.txt');
+
+  await fs.writeFile(sitemapFile, renderSitemap(), 'utf8');
+  await fs.writeFile(robotsFile, renderRobots(), 'utf8');
+
+  console.log(`Sitemap file: ${sitemapFile}`);
+  console.log(`Robots file: ${robotsFile}`);
+
+  return { sitemapFile, robotsFile };
+}
+
+async function getMissingIndexFileChecks(sitemapFile: string, robotsFile: string) {
+  const missingChecks: string[] = [];
+  let sitemap = '';
+  let robots = '';
+
+  try {
+    sitemap = await fs.readFile(sitemapFile, 'utf8');
+  } catch {
+    missingChecks.push(`sitemap.xml file: ${sitemapFile}`);
+  }
+
+  try {
+    robots = await fs.readFile(robotsFile, 'utf8');
+  } catch {
+    missingChecks.push(`robots.txt file: ${robotsFile}`);
+  }
+
+  if (sitemap) {
+    for (const route of routes) {
+      const url = canonicalUrl(route.path);
+
+      if (!sitemap.includes(escapeXml(url))) {
+        missingChecks.push(`sitemap URL: ${url}`);
+      }
+    }
+  }
+
+  if (robots && !robots.includes(`Sitemap: ${canonicalUrl('/sitemap.xml')}`)) {
+    missingChecks.push(`robots Sitemap line: Sitemap: ${canonicalUrl('/sitemap.xml')}`);
   }
 
   return missingChecks;
@@ -261,6 +336,14 @@ async function main() {
       } else {
         console.log(`Content check passed for ${route.path}`);
       }
+    }
+
+    const { sitemapFile, robotsFile } = await writePrerenderIndexFiles();
+    const missingIndexFileChecks = await getMissingIndexFileChecks(sitemapFile, robotsFile);
+
+    if (missingIndexFileChecks.length > 0) {
+      hasFailedChecks = true;
+      console.error(`Prerender index file check failed. Missing: ${missingIndexFileChecks.join(', ')}`);
     }
 
     if (hasFailedChecks) {
