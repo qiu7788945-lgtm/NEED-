@@ -6,6 +6,10 @@ import { chromium } from 'playwright';
 interface RouteConfig {
   path: string;
   outputFile: string;
+  metadata: {
+    title: string;
+    description: string;
+  };
   requiredChecks: Array<{
     label: string;
     test: (normalizedBodyText: string, normalizedHtml: string) => boolean;
@@ -15,6 +19,7 @@ interface RouteConfig {
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const outputDir = path.join(projectRoot, 'dist-prerender');
 const baseUrl = process.env.PRERENDER_BASE_URL || 'http://localhost:3000';
+const SITE_BASE_URL = process.env.SITE_BASE_URL || 'http://localhost:3000';
 const serviceChecks = [
   {
     url: 'http://localhost:4000',
@@ -31,6 +36,11 @@ const routes: RouteConfig[] = [
   {
     path: '/',
     outputFile: 'index.html',
+    metadata: {
+      title: 'NEED 尼德公关｜企业活动策划与现场落地',
+      description:
+        'NEED 尼德公关服务企业活动策划与落地，覆盖年会、企业家庭日、客户答谢、品牌活动等场景，重视需求判断、预算控制与现场交付。',
+    },
     requiredChecks: [
       {
         label: 'YOU NEED. WE BUILD.',
@@ -49,6 +59,11 @@ const routes: RouteConfig[] = [
   {
     path: '/solutions',
     outputFile: path.join('solutions', 'index.html'),
+    metadata: {
+      title: '场景方案｜NEED 尼德公关',
+      description:
+        '按企业家庭日、年会活动、客户答谢、品牌活动等不同场景，梳理活动目标、执行重点与落地判断，帮助企业在预算内拿到更确定的现场结果。',
+    },
     requiredChecks: [
       {
         label: '场景方案',
@@ -72,6 +87,71 @@ function normalizeContent(value: string) {
 
 function routeUrl(routePath: string) {
   return new URL(routePath, `${baseUrl.replace(/\/+$/, '')}/`).toString();
+}
+
+function canonicalUrl(routePath: string) {
+  return new URL(routePath, `${SITE_BASE_URL.replace(/\/+$/, '')}/`).toString();
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function upsertHeadTag(html: string, existingTagPattern: RegExp, replacementTag: string) {
+  if (existingTagPattern.test(html)) {
+    return html.replace(existingTagPattern, replacementTag);
+  }
+
+  return html.replace(/<\/head>/i, `${replacementTag}\n</head>`);
+}
+
+function applyRouteHead(html: string, route: RouteConfig) {
+  const title = escapeHtml(route.metadata.title);
+  const description = escapeHtml(route.metadata.description);
+  const canonical = escapeHtml(canonicalUrl(route.path));
+
+  let nextHtml = upsertHeadTag(html, /<title\b[^>]*>[\s\S]*?<\/title>/i, `<title>${title}</title>`);
+  nextHtml = upsertHeadTag(
+    nextHtml,
+    /<meta\b(?=[^>]*\bname=["']description["'])[^>]*>/i,
+    `<meta name="description" content="${description}">`,
+  );
+  nextHtml = upsertHeadTag(
+    nextHtml,
+    /<link\b(?=[^>]*\brel=["']canonical["'])[^>]*>/i,
+    `<link rel="canonical" href="${canonical}">`,
+  );
+
+  return nextHtml;
+}
+
+function getMissingHeadChecks(html: string, route: RouteConfig) {
+  const escapedTitle = escapeHtml(route.metadata.title);
+  const escapedDescription = escapeHtml(route.metadata.description);
+  const escapedCanonical = escapeHtml(canonicalUrl(route.path));
+  const missingChecks: string[] = [];
+
+  if (!html.includes(escapedTitle)) {
+    missingChecks.push(`title: ${route.metadata.title}`);
+  }
+
+  if (!html.includes(escapedDescription)) {
+    missingChecks.push(`description: ${route.metadata.description}`);
+  }
+
+  if (!html.includes('rel="canonical"')) {
+    missingChecks.push('rel="canonical"');
+  }
+
+  if (!html.includes(escapedCanonical)) {
+    missingChecks.push(`canonical URL: ${canonicalUrl(route.path)}`);
+  }
+
+  return missingChecks;
 }
 
 async function isServiceReachable(url: string) {
@@ -128,7 +208,7 @@ async function main() {
       await page.goto(targetUrl, { waitUntil: 'networkidle' });
       await page.waitForTimeout(2000);
 
-      const html = await page.content();
+      const html = applyRouteHead(await page.content(), route);
       const bodyText = await page.locator('body').innerText();
 
       await fs.mkdir(path.dirname(outputFile), { recursive: true });
@@ -141,9 +221,12 @@ async function main() {
 
       const normalizedBodyText = normalizeContent(bodyText);
       const normalizedHtml = normalizeContent(html);
-      const missingTexts = route.requiredChecks
-        .filter((check) => !check.test(normalizedBodyText, normalizedHtml))
-        .map((check) => check.label);
+      const missingTexts = [
+        ...route.requiredChecks
+          .filter((check) => !check.test(normalizedBodyText, normalizedHtml))
+          .map((check) => check.label),
+        ...getMissingHeadChecks(html, route),
+      ];
 
       if (missingTexts.length > 0) {
         hasFailedChecks = true;
