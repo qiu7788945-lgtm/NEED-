@@ -163,20 +163,25 @@ Sitemap: ${canonicalUrl('/sitemap.xml')}
 async function writePrerenderIndexFiles() {
   const sitemapFile = path.join(outputDir, 'sitemap.xml');
   const robotsFile = path.join(outputDir, 'robots.txt');
+  const routeManifestFile = path.join(outputDir, 'route-manifest.json');
 
+  await fs.mkdir(outputDir, { recursive: true });
+  await fs.writeFile(routeManifestFile, JSON.stringify(manifest, null, 2), 'utf8');
   await fs.writeFile(sitemapFile, renderSitemap(), 'utf8');
   await fs.writeFile(robotsFile, renderRobots(), 'utf8');
 
+  console.log(`Route manifest file: ${routeManifestFile}`);
   console.log(`Sitemap file: ${sitemapFile}`);
   console.log(`Robots file: ${robotsFile}`);
 
-  return { sitemapFile, robotsFile };
+  return { sitemapFile, robotsFile, routeManifestFile };
 }
 
-async function getMissingIndexFileChecks(sitemapFile: string, robotsFile: string) {
+async function getMissingIndexFileChecks(sitemapFile: string, robotsFile: string, routeManifestFile: string) {
   const missingChecks: string[] = [];
   let sitemap = '';
   let robots = '';
+  let routeManifestJson = '';
 
   try {
     sitemap = await fs.readFile(sitemapFile, 'utf8');
@@ -188,6 +193,12 @@ async function getMissingIndexFileChecks(sitemapFile: string, robotsFile: string
     robots = await fs.readFile(robotsFile, 'utf8');
   } catch {
     missingChecks.push(`robots.txt file: ${robotsFile}`);
+  }
+
+  try {
+    routeManifestJson = await fs.readFile(routeManifestFile, 'utf8');
+  } catch {
+    missingChecks.push(`route-manifest.json file: ${routeManifestFile}`);
   }
 
   if (sitemap) {
@@ -202,6 +213,27 @@ async function getMissingIndexFileChecks(sitemapFile: string, robotsFile: string
 
   if (robots && !robots.includes(`Sitemap: ${canonicalUrl('/sitemap.xml')}`)) {
     missingChecks.push(`robots Sitemap line: Sitemap: ${canonicalUrl('/sitemap.xml')}`);
+  }
+
+  if (routeManifestJson) {
+    try {
+      const routeManifest = JSON.parse(routeManifestJson) as Partial<{
+        routes: unknown[];
+        skippedRoutes: unknown[];
+      }>;
+
+      if (!Array.isArray(routeManifest.routes)) {
+        missingChecks.push('route-manifest.json routes array');
+      } else if (routeManifest.routes.length !== routes.length) {
+        missingChecks.push(`route-manifest.json routes.length: expected ${routes.length}, got ${routeManifest.routes.length}`);
+      }
+
+      if (!Array.isArray(routeManifest.skippedRoutes)) {
+        missingChecks.push('route-manifest.json skippedRoutes array');
+      }
+    } catch (error) {
+      missingChecks.push(`route-manifest.json valid JSON: ${(error as Error).message}`);
+    }
   }
 
   return missingChecks;
@@ -301,8 +333,8 @@ async function main() {
       }
     }
 
-    const { sitemapFile, robotsFile } = await writePrerenderIndexFiles();
-    const missingIndexFileChecks = await getMissingIndexFileChecks(sitemapFile, robotsFile);
+    const { sitemapFile, robotsFile, routeManifestFile } = await writePrerenderIndexFiles();
+    const missingIndexFileChecks = await getMissingIndexFileChecks(sitemapFile, robotsFile, routeManifestFile);
 
     if (missingIndexFileChecks.length > 0) {
       hasFailedChecks = true;
