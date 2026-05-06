@@ -106,6 +106,33 @@ const routes: RouteConfig[] = [
       },
     ],
   },
+  {
+    path: '/contact',
+    outputFile: path.join('contact', 'index.html'),
+    metadata: {
+      title: '联系 NEED 尼德公关｜联系方式与交付资产',
+      description:
+        '联系 NEED 尼德公关，了解企业活动策划、年会、家庭日、客户答谢、品牌活动等项目合作方式，并查看团队自有设备、制作、印刷与特装交付资产。',
+    },
+    requiredChecks: [
+      {
+        label: 'CONTACT',
+        test: (bodyText, html) => bodyText.includes('CONTACT') || html.includes('CONTACT'),
+      },
+      {
+        label: 'HQ Location',
+        test: (bodyText, html) => bodyText.includes('HQ Location') || html.includes('HQ Location'),
+      },
+      {
+        label: 'needpr@163.com',
+        test: (bodyText, html) => bodyText.includes('needpr@163.com') || html.includes('needpr@163.com'),
+      },
+      {
+        label: 'Hardcore Assets',
+        test: (bodyText, html) => bodyText.includes('Hardcore Assets') || html.includes('Hardcore Assets'),
+      },
+    ],
+  },
 ];
 
 function normalizeContent(value: string) {
