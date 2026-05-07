@@ -1,3 +1,7 @@
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 export type RouteSourceType = 'fixed' | 'solution' | 'article' | 'case';
 
 export interface RouteManifestItem {
@@ -29,6 +33,17 @@ type StaticRouteInput = Omit<
   RouteManifestItem,
   'published' | 'enabled' | 'shouldGenerate' | 'skipReason' | 'errors'
 >;
+
+interface SolutionSceneSource {
+  slug?: unknown;
+  name?: unknown;
+  description?: unknown;
+  sortOrder?: unknown;
+  enabled?: unknown;
+}
+
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+const solutionsDataPath = join(scriptDir, '../../data/solutions.json');
 
 const staticRoutes: StaticRouteInput[] = [
   {
@@ -237,10 +252,22 @@ const staticRoutes: StaticRouteInput[] = [
   },
 ];
 
+const solutionSlugToReactPath: Record<string, string> = {
+  'family-day': '/solutions/family-day',
+  'client-appreciation': '/solutions/salon',
+  'annual-meeting': '/solutions/annual',
+  'commercial-display': '/solutions/exhibition',
+  'video-digital-assets': '/solutions/video',
+  'academic-forum': '/solutions/forum',
+  other: '/solutions/other',
+};
+
 const fixedRoutePaths = new Set(['/', '/solutions', '/contact', '/how-to-choose', '/choose-between-two']);
 
 const fixedRoutes = staticRoutes.filter((route) => fixedRoutePaths.has(route.path));
 const contentRoutes = staticRoutes.filter((route) => !fixedRoutePaths.has(route.path));
+const solutionRouteTemplates = contentRoutes.filter((route) => route.sourceType === 'solution');
+const nonSolutionContentRoutes = contentRoutes.filter((route) => route.sourceType !== 'solution');
 
 function getRouteByPath(routes: StaticRouteInput[], path: string) {
   const route = routes.find((item) => item.path === path);
@@ -252,16 +279,16 @@ function getRouteByPath(routes: StaticRouteInput[], path: string) {
   return route;
 }
 
-function buildStaticRoutes(): StaticRouteInput[] {
+function buildStaticRoutes(solutionRoutes: StaticRouteInput[]): StaticRouteInput[] {
   return [
     getRouteByPath(fixedRoutes, '/'),
     getRouteByPath(fixedRoutes, '/solutions'),
-    ...contentRoutes.filter((route) => route.sourceType === 'solution'),
+    ...solutionRoutes,
     getRouteByPath(fixedRoutes, '/contact'),
     getRouteByPath(fixedRoutes, '/how-to-choose'),
-    ...contentRoutes.filter((route) => route.sourceType === 'article'),
+    ...nonSolutionContentRoutes.filter((route) => route.sourceType === 'article'),
     getRouteByPath(fixedRoutes, '/choose-between-two'),
-    ...contentRoutes.filter((route) => route.sourceType === 'case'),
+    ...nonSolutionContentRoutes.filter((route) => route.sourceType === 'case'),
   ];
 }
 
@@ -291,14 +318,139 @@ function countRoutesBySourceType(routes: RouteManifestItem[]): Record<RouteSourc
   );
 }
 
+function inferOutputPath(path: string): string {
+  if (path === '/') {
+    return 'index.html';
+  }
+
+  return `${path.replace(/^\/+/, '')}/index.html`;
+}
+
+function readSolutionScenes(): SolutionSceneSource[] {
+  const rawContent = readFileSync(solutionsDataPath, 'utf8');
+  const parsedContent = JSON.parse(rawContent) as unknown;
+
+  if (!Array.isArray(parsedContent)) {
+    throw new Error('Expected server/data/solutions.json to contain an array of solution scenes');
+  }
+
+  return parsedContent;
+}
+
+function getSolutionTemplateByPath(path: string): StaticRouteInput | undefined {
+  return solutionRouteTemplates.find((route) => route.path === path);
+}
+
+function getSourceText(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function getSourceNumber(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+}
+
+function toSkippedSolutionRoute(
+  scene: SolutionSceneSource,
+  slug: string,
+  path: string,
+  skipReason: string,
+  errors: string[],
+): RouteManifestItem {
+  return {
+    path,
+    outputPath: inferOutputPath(path),
+    sourceType: 'solution',
+    sourceId: slug,
+    slug,
+    title: getSourceText(scene.name) || `${slug} | NEED`,
+    description: getSourceText(scene.description),
+    canonicalPath: path,
+    requiredChecks: [],
+    published: true,
+    enabled: scene.enabled === true,
+    shouldGenerate: false,
+    skipReason,
+    errors,
+  };
+}
+
+function buildSolutionRoutesFromSource(): {
+  routes: StaticRouteInput[];
+  skippedRoutes: RouteManifestItem[];
+} {
+  const routes: StaticRouteInput[] = [];
+  const skippedRoutes: RouteManifestItem[] = [];
+
+  const scenes = readSolutionScenes().sort(
+    (left, right) => getSourceNumber(left.sortOrder) - getSourceNumber(right.sortOrder),
+  );
+
+  for (const scene of scenes) {
+    const slug = getSourceText(scene.slug);
+
+    if (!slug) {
+      skippedRoutes.push(
+        toSkippedSolutionRoute(scene, 'unknown-solution', '/solutions/unknown-solution', 'enabled solution has no React route mapping', [
+          'Enabled solution scene is missing a valid slug, so no React route mapping can be resolved',
+        ]),
+      );
+      continue;
+    }
+
+    const mappedPath = solutionSlugToReactPath[slug];
+    const fallbackPath = mappedPath || `/solutions/${slug}`;
+
+    if (scene.enabled === false) {
+      skippedRoutes.push(toSkippedSolutionRoute(scene, slug, fallbackPath, 'solution disabled', []));
+      continue;
+    }
+
+    if (!mappedPath) {
+      skippedRoutes.push(
+        toSkippedSolutionRoute(scene, slug, fallbackPath, 'enabled solution has no React route mapping', [
+          `Enabled solution "${slug}" has no React route mapping`,
+        ]),
+      );
+      continue;
+    }
+
+    const template = getSolutionTemplateByPath(mappedPath);
+
+    if (!template) {
+      skippedRoutes.push(
+        toSkippedSolutionRoute(scene, slug, mappedPath, 'enabled solution has no React route mapping', [
+          `Enabled solution "${slug}" maps to "${mappedPath}", but no verified React route manifest template exists`,
+        ]),
+      );
+      continue;
+    }
+
+    routes.push({
+      ...template,
+      path: mappedPath,
+      outputPath: inferOutputPath(mappedPath),
+      sourceId: slug,
+      slug,
+      description: getSourceText(scene.description) || template.description,
+      canonicalPath: mappedPath,
+    });
+  }
+
+  return {
+    routes,
+    skippedRoutes,
+  };
+}
+
 export function getStaticRouteManifest(siteBaseUrl: string): RouteManifest {
-  const routes = buildStaticRoutes().map(toManifestItem);
+  const { routes: solutionRoutes, skippedRoutes } = buildSolutionRoutesFromSource();
+  const routes = buildStaticRoutes(solutionRoutes).map(toManifestItem);
 
   return {
     generatedAt: new Date().toISOString(),
     siteBaseUrl,
     routes,
-    skippedRoutes: [],
+    skippedRoutes,
     sourceSummary: countRoutesBySourceType(routes),
   };
 }
