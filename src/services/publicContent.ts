@@ -18,6 +18,9 @@ export interface PublicArticle {
   excerpt: string;
   content?: string;
   category?: string;
+  sortOrder?: number;
+  seoTitle?: string;
+  seoDescription?: string;
 }
 
 export interface PublicCase {
@@ -51,6 +54,19 @@ function toStringValue(value: unknown): string {
 
 function toBooleanValue(value: unknown, fallback = false): boolean {
   return typeof value === 'boolean' ? value : fallback;
+}
+
+function toNumberValue(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+
+  return undefined;
 }
 
 function normalizeArrayPayload(value: unknown): unknown[] {
@@ -131,8 +147,11 @@ function adaptArticle(value: unknown): PublicArticle | null {
     slug,
     title,
     excerpt: toStringValue(value.summary) || toStringValue(value.excerpt) || toStringValue(value.seoDescription),
-    content: toStringValue(value.content),
+    content: toStringValue(value.content) || toStringValue(value.body) || toStringValue(value.contentText),
     category: toStringValue(value.category),
+    sortOrder: toNumberValue(value.sortOrder),
+    seoTitle: toStringValue(value.seoTitle),
+    seoDescription: toStringValue(value.seoDescription),
   };
 }
 

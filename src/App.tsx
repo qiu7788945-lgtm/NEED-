@@ -3,7 +3,7 @@ import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
 import { ArrowRight, ArrowDown, CheckCircle2, Users, Target, Zap, Menu, X, ChevronDown, Play, Pause, Volume2, VolumeX, Copy, Check } from 'lucide-react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import ContactAndAssetsPage from './pages/ContactAndAssetsPage';
-import { fetchHomeVideo, fetchPublishedArticles, fetchPublishedCases, fetchEnabledSolutions } from './services/publicContent';
+import { fetchHomeVideo, fetchPublishedArticles, fetchPublishedCases, fetchEnabledSolutions, type PublicArticle } from './services/publicContent';
 import gsap from 'gsap';
 import Markdown from 'react-markdown';
 
@@ -674,6 +674,43 @@ function CTASection() {
 
 // --- Home Page Sections ---
 
+const howToChooseCmsArticleIds: Record<string, string> = {
+  '01': 'public-how-05',
+  '02': 'public-how-06',
+  '03': 'public-how-07',
+  '04': 'public-how-08',
+};
+
+function getHowToChooseRouteIdForCmsArticle(article: PublicArticle): string | null {
+  const entry = Object.entries(howToChooseCmsArticleIds).find(([, cmsId]) => cmsId === article.id);
+
+  if (entry) {
+    return entry[0];
+  }
+
+  if (article.category === 'how_to_choose' && article.sortOrder && article.sortOrder >= 1 && article.sortOrder <= 4) {
+    return String(article.sortOrder).padStart(2, '0');
+  }
+
+  return null;
+}
+
+function findCmsHowToChooseArticle(articles: PublicArticle[], articleId?: string): PublicArticle | null {
+  if (!articleId) {
+    return null;
+  }
+
+  const cmsId = howToChooseCmsArticleIds[articleId];
+  const article = articles.find((item) => item.id === cmsId);
+
+  if (!article || article.category !== 'how_to_choose') {
+    return null;
+  }
+
+  const hasRequiredContent = article.title.trim() && article.excerpt.trim() && article.content?.trim();
+  return hasRequiredContent ? article : null;
+}
+
 function MethodsSection() {
   const [publicArticles, setPublicArticles] = useState<Array<{ id: string; title: string; excerpt: string }>>([]);
   const methodArticles = publicArticles.length > 0 ? publicArticles : articlesData;
@@ -681,9 +718,17 @@ function MethodsSection() {
   useEffect(() => {
     fetchPublishedArticles()
       .then((articles) => {
-        if (articles.length > 0) {
-          setPublicArticles(articles.map((article) => ({
-            id: article.id || article.slug,
+        const howToChooseArticles = articles
+          .map((article) => ({
+            article,
+            routeId: getHowToChooseRouteIdForCmsArticle(article),
+          }))
+          .filter((item): item is { article: PublicArticle; routeId: string } => Boolean(item.routeId))
+          .sort((a, b) => a.routeId.localeCompare(b.routeId));
+
+        if (howToChooseArticles.length > 0) {
+          setPublicArticles(howToChooseArticles.map(({ article, routeId }) => ({
+            id: routeId,
             title: article.title,
             excerpt: article.excerpt,
           })));
@@ -1853,12 +1898,50 @@ function ArticlePage() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [cmsArticle, setCmsArticle] = useState<PublicArticle | null>(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
 
-  const article = articlesData.find(a => a.id === articleId);
+  useEffect(() => {
+    let isActive = true;
+    setCmsArticle(null);
+
+    if (!articleId || !howToChooseCmsArticleIds[articleId]) {
+      return () => {
+        isActive = false;
+      };
+    }
+
+    fetchPublishedArticles()
+      .then((articles) => {
+        if (!isActive) {
+          return;
+        }
+
+        setCmsArticle(findCmsHowToChooseArticle(articles, articleId));
+      })
+      .catch(() => {
+        if (isActive) {
+          setCmsArticle(null);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [articleId]);
+
+  const legacyArticle = articlesData.find(a => a.id === articleId);
+  const article = cmsArticle
+    ? {
+        id: articleId,
+        title: cmsArticle.title,
+        excerpt: cmsArticle.excerpt,
+        content: cmsArticle.content ?? '',
+      }
+    : legacyArticle;
 
   if (!article) {
     return (
