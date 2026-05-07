@@ -54,9 +54,21 @@ interface ArticleSource {
   seoDescription?: unknown;
 }
 
+interface CaseSource {
+  id?: unknown;
+  title?: unknown;
+  slug?: unknown;
+  summary?: unknown;
+  sortOrder?: unknown;
+  status?: unknown;
+  seoTitle?: unknown;
+  seoDescription?: unknown;
+}
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const solutionsDataPath = join(scriptDir, '../../data/solutions.json');
 const articlesDataPath = join(scriptDir, '../../data/articles.json');
+const casesDataPath = join(scriptDir, '../../data/cases.json');
 
 const staticRoutes: StaticRouteInput[] = [
   {
@@ -281,9 +293,7 @@ const fixedRoutes = staticRoutes.filter((route) => fixedRoutePaths.has(route.pat
 const contentRoutes = staticRoutes.filter((route) => !fixedRoutePaths.has(route.path));
 const solutionRouteTemplates = contentRoutes.filter((route) => route.sourceType === 'solution');
 const articleRouteTemplates = contentRoutes.filter((route) => route.sourceType === 'article');
-const nonGeneratedContentRoutes = contentRoutes.filter(
-  (route) => route.sourceType !== 'solution' && route.sourceType !== 'article',
-);
+const caseRouteTemplates = contentRoutes.filter((route) => route.sourceType === 'case');
 
 function getRouteByPath(routes: StaticRouteInput[], path: string) {
   const route = routes.find((item) => item.path === path);
@@ -295,7 +305,11 @@ function getRouteByPath(routes: StaticRouteInput[], path: string) {
   return route;
 }
 
-function buildStaticRoutes(solutionRoutes: StaticRouteInput[], articleRoutes: StaticRouteInput[]): StaticRouteInput[] {
+function buildStaticRoutes(
+  solutionRoutes: StaticRouteInput[],
+  articleRoutes: StaticRouteInput[],
+  caseRoutes: StaticRouteInput[],
+): StaticRouteInput[] {
   return [
     getRouteByPath(fixedRoutes, '/'),
     getRouteByPath(fixedRoutes, '/solutions'),
@@ -304,7 +318,7 @@ function buildStaticRoutes(solutionRoutes: StaticRouteInput[], articleRoutes: St
     getRouteByPath(fixedRoutes, '/how-to-choose'),
     ...articleRoutes,
     getRouteByPath(fixedRoutes, '/choose-between-two'),
-    ...nonGeneratedContentRoutes.filter((route) => route.sourceType === 'case'),
+    ...caseRoutes,
   ];
 }
 
@@ -364,12 +378,27 @@ function readArticles(): ArticleSource[] {
   return parsedContent;
 }
 
+function readCases(): CaseSource[] {
+  const rawContent = readFileSync(casesDataPath, 'utf8');
+  const parsedContent = JSON.parse(rawContent) as unknown;
+
+  if (!Array.isArray(parsedContent)) {
+    throw new Error('Expected server/data/cases.json to contain an array of cases');
+  }
+
+  return parsedContent;
+}
+
 function getSolutionTemplateByPath(path: string): StaticRouteInput | undefined {
   return solutionRouteTemplates.find((route) => route.path === path);
 }
 
 function getArticleTemplateByPath(path: string): StaticRouteInput | undefined {
   return articleRouteTemplates.find((route) => route.path === path);
+}
+
+function getCaseTemplateByPath(path: string): StaticRouteInput | undefined {
+  return caseRouteTemplates.find((route) => route.path === path);
 }
 
 function getSourceText(value: unknown): string {
@@ -420,6 +449,28 @@ function toSkippedArticleRoute(article: ArticleSource, path: string, skipReason:
     canonicalPath: path,
     requiredChecks: [],
     published: article.status === 'published',
+    enabled: true,
+    shouldGenerate: false,
+    skipReason,
+    errors,
+  };
+}
+
+function toSkippedCaseRoute(caseItem: CaseSource, path: string, skipReason: string, errors: string[]): RouteManifestItem {
+  const id = getSourceText(caseItem.id) || 'unknown-case';
+  const slug = getSourceText(caseItem.slug) || id;
+
+  return {
+    path,
+    outputPath: inferOutputPath(path),
+    sourceType: 'case',
+    sourceId: id,
+    slug,
+    title: getSourceText(caseItem.seoTitle) || getSourceText(caseItem.title) || `${slug} | NEED`,
+    description: getSourceText(caseItem.seoDescription) || getSourceText(caseItem.summary),
+    canonicalPath: path,
+    requiredChecks: [],
+    published: caseItem.status === 'published',
     enabled: true,
     shouldGenerate: false,
     skipReason,
@@ -617,16 +668,97 @@ function buildArticleRoutesFromSource(): {
   };
 }
 
+const casePathBySlug: Record<string, string> = {
+  'hyundai-family-day': '/cases/hyundai-family-day',
+};
+
+const displayOnlyDuplicateCaseSlugs = new Set(['hyundai-family-day-2', 'hyundai-family-day-3']);
+
+function resolveCaseFallbackPath(caseItem: CaseSource): string {
+  const slug = getSourceText(caseItem.slug) || getSourceText(caseItem.id) || 'unknown-case';
+
+  return casePathBySlug[slug] || `/cases/${slug}`;
+}
+
+function buildCaseRoutesFromSource(): {
+  routes: StaticRouteInput[];
+  skippedRoutes: RouteManifestItem[];
+} {
+  const routes: StaticRouteInput[] = [];
+  const skippedRoutes: RouteManifestItem[] = [];
+
+  const cases = readCases()
+    .map((caseItem, index) => ({ caseItem, index }))
+    .sort(
+      (left, right) =>
+        getSourceNumber(left.caseItem.sortOrder) - getSourceNumber(right.caseItem.sortOrder) || left.index - right.index,
+    )
+    .map(({ caseItem }) => caseItem);
+
+  for (const caseItem of cases) {
+    const slug = getSourceText(caseItem.slug);
+    const path = resolveCaseFallbackPath(caseItem);
+
+    if (displayOnlyDuplicateCaseSlugs.has(slug)) {
+      skippedRoutes.push(toSkippedCaseRoute(caseItem, path, 'display-only duplicate case route', []));
+      continue;
+    }
+
+    if (caseItem.status !== 'published') {
+      skippedRoutes.push(toSkippedCaseRoute(caseItem, path, 'case not published', []));
+      continue;
+    }
+
+    const mappedPath = casePathBySlug[slug];
+
+    if (!mappedPath) {
+      skippedRoutes.push(
+        toSkippedCaseRoute(caseItem, path, 'published case has no React route mapping', [
+          `Published case "${getSourceText(caseItem.id) || slug || 'unknown-case'}" has no React route mapping`,
+        ]),
+      );
+      continue;
+    }
+
+    const template = getCaseTemplateByPath(mappedPath);
+
+    if (!template) {
+      skippedRoutes.push(
+        toSkippedCaseRoute(caseItem, mappedPath, 'published case has no React route mapping', [
+          `Published case "${getSourceText(caseItem.id) || slug || 'unknown-case'}" maps to "${mappedPath}", but no verified React route manifest template exists`,
+        ]),
+      );
+      continue;
+    }
+
+    routes.push({
+      ...template,
+      path: mappedPath,
+      outputPath: inferOutputPath(mappedPath),
+      sourceId: getSourceText(caseItem.id) || template.sourceId,
+      slug,
+      description: getSourceText(caseItem.seoDescription) || getSourceText(caseItem.summary) || template.description,
+      canonicalPath: mappedPath,
+    });
+  }
+
+  return {
+    routes: routes.length > 0 ? routes : caseRouteTemplates,
+    skippedRoutes,
+  };
+}
+
 export function getStaticRouteManifest(siteBaseUrl: string): RouteManifest {
   const { routes: solutionRoutes, skippedRoutes } = buildSolutionRoutesFromSource();
   const { routes: articleRoutes, skippedRoutes: skippedArticleRoutes } = buildArticleRoutesFromSource();
-  const routes = buildStaticRoutes(solutionRoutes, articleRoutes).map(toManifestItem);
+  const { routes: caseRoutes, skippedRoutes: skippedCaseRoutes } = buildCaseRoutesFromSource();
+  const routes = buildStaticRoutes(solutionRoutes, articleRoutes, caseRoutes).map(toManifestItem);
 
   return {
     generatedAt: new Date().toISOString(),
     siteBaseUrl,
     routes,
-    skippedRoutes: [...skippedRoutes, ...skippedArticleRoutes],
+    skippedRoutes: [...skippedRoutes, ...skippedArticleRoutes, ...skippedCaseRoutes],
     sourceSummary: countRoutesBySourceType(routes),
   };
 }
