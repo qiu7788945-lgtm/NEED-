@@ -7,6 +7,8 @@ import { getStaticRouteManifest, type RouteManifestItem } from './prerender-rout
 interface RouteConfig {
   path: string;
   outputFile: string;
+  sourceType: string;
+  canonicalPath: string;
   metadata: {
     title: string;
     description: string;
@@ -47,6 +49,8 @@ function toRouteConfig(route: RouteManifestItem): RouteConfig {
   return {
     path: route.path,
     outputFile: route.outputPath,
+    sourceType: route.sourceType,
+    canonicalPath: route.canonicalPath,
     metadata: {
       title: route.title,
       description: route.description,
@@ -59,8 +63,32 @@ const routes = manifest.routes
   .filter((route) => route.shouldGenerate)
   .map(toRouteConfig);
 
+function reportCheckFailure(message: string) {
+  console.error(message);
+  process.exitCode = 1;
+}
+
 function normalizeContent(value: string) {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function decodeHtmlEntities(value: string) {
+  return value
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function htmlToText(html: string) {
+  return decodeHtmlEntities(
+    html
+      .replace(/<script\b[\s\S]*?<\/script>/gi, ' ')
+      .replace(/<style\b[\s\S]*?<\/style>/gi, ' ')
+      .replace(/<[^>]+>/g, ' '),
+  );
 }
 
 function routeUrl(routePath: string) {
@@ -69,6 +97,15 @@ function routeUrl(routePath: string) {
 
 function canonicalUrl(routePath: string) {
   return new URL(routePath, `${SITE_BASE_URL.replace(/\/+$/, '')}/`).toString();
+}
+
+async function fileExists(filePath: string) {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function escapeHtml(value: string) {
@@ -122,8 +159,16 @@ function getMissingHeadChecks(html: string, route: RouteConfig) {
   const escapedCanonical = escapeHtml(canonicalUrl(route.path));
   const missingChecks: string[] = [];
 
+  if (!/<title\b[^>]*>[\s\S]*?<\/title>/i.test(html)) {
+    missingChecks.push('title tag');
+  }
+
   if (!html.includes(escapedTitle)) {
     missingChecks.push(`title: ${route.metadata.title}`);
+  }
+
+  if (!/<meta\b(?=[^>]*\bname=["']description["'])[^>]*>/i.test(html)) {
+    missingChecks.push('meta description');
   }
 
   if (!html.includes(escapedDescription)) {
@@ -139,6 +184,26 @@ function getMissingHeadChecks(html: string, route: RouteConfig) {
   }
 
   return missingChecks;
+}
+
+function getMissingHtmlFileChecks(html: string, route: RouteConfig) {
+  const normalizedBodyText = normalizeContent(htmlToText(html));
+  const normalizedHtml = normalizeContent(html);
+  const normalizedUpperBodyText = normalizedBodyText.toUpperCase();
+  const normalizedUpperHtml = normalizedHtml.toUpperCase();
+
+  return [
+    ...(!/<html\b/i.test(html) ? ['<html> element'] : []),
+    ...(!/<head\b/i.test(html) ? ['<head> element'] : []),
+    ...(!/<body\b/i.test(html) ? ['<body> element'] : []),
+    ...getMissingHeadChecks(html, route),
+    ...route.requiredChecks
+      .filter(
+        (check) =>
+          !check.test(normalizedBodyText, normalizedHtml) && !check.test(normalizedUpperBodyText, normalizedUpperHtml),
+      )
+      .map((check) => `required check: ${check.label}`),
+  ];
 }
 
 function renderSitemap() {
@@ -158,6 +223,78 @@ function renderRobots() {
 Allow: /
 Sitemap: ${canonicalUrl('/sitemap.xml')}
 `;
+}
+
+function validateManifestCompleteness() {
+  let hasFailedChecks = false;
+
+  if (!Array.isArray(manifest.routes)) {
+    reportCheckFailure('Route manifest check failed: manifest.routes must be an array.');
+    return false;
+  }
+
+  if (!Array.isArray(manifest.skippedRoutes)) {
+    reportCheckFailure('Route manifest check failed: manifest.skippedRoutes must be an array.');
+    return false;
+  }
+
+  const shouldGenerateRoutes = manifest.routes.filter((route) => route.shouldGenerate);
+
+  if (shouldGenerateRoutes.length !== routes.length) {
+    hasFailedChecks = true;
+    reportCheckFailure(
+      `Route manifest check failed: shouldGenerate routes count mismatch. Expected ${shouldGenerateRoutes.length}, got ${routes.length}.`,
+    );
+  }
+
+  for (const route of shouldGenerateRoutes) {
+    const missingFields: string[] = [];
+
+    if (!route.path) missingFields.push('path');
+    if (!route.outputPath) missingFields.push('outputPath');
+    if (!route.sourceType) missingFields.push('sourceType');
+    if (!route.title) missingFields.push('title');
+    if (!route.description) missingFields.push('description');
+    if (!route.canonicalPath) missingFields.push('canonicalPath');
+    if (!Array.isArray(route.requiredChecks)) {
+      missingFields.push('requiredChecks array');
+    } else if (route.requiredChecks.length === 0) {
+      missingFields.push('requiredChecks non-empty array');
+    }
+
+    if (missingFields.length > 0) {
+      hasFailedChecks = true;
+      reportCheckFailure(`Route manifest check failed for ${route.path || '(missing path)'}. Missing: ${missingFields.join(', ')}`);
+    }
+  }
+
+  return !hasFailedChecks;
+}
+
+function validateSkippedRoutes() {
+  let hasFailedChecks = false;
+
+  if (!Array.isArray(manifest.skippedRoutes)) {
+    reportCheckFailure('Skipped route check failed: manifest.skippedRoutes must be an array.');
+    return false;
+  }
+
+  for (const route of manifest.skippedRoutes) {
+    const routeLabel = route.path || route.slug || route.sourceId || '(unknown skipped route)';
+    const missingFields: string[] = [];
+
+    if (route.shouldGenerate !== false) missingFields.push('shouldGenerate=false');
+    if (!route.skipReason) missingFields.push('skipReason');
+    if (!route.sourceType) missingFields.push('sourceType');
+    if (!route.sourceId && !route.slug) missingFields.push('sourceId or slug');
+
+    if (missingFields.length > 0) {
+      hasFailedChecks = true;
+      reportCheckFailure(`Skipped route check failed for ${routeLabel}. Missing/invalid: ${missingFields.join(', ')}`);
+    }
+  }
+
+  return !hasFailedChecks;
 }
 
 async function writePrerenderIndexFiles() {
@@ -239,6 +376,117 @@ async function getMissingIndexFileChecks(sitemapFile: string, robotsFile: string
   return missingChecks;
 }
 
+async function validateGeneratedHtmlFiles() {
+  let checkedCount = 0;
+  let hasFailedChecks = false;
+
+  for (const route of routes) {
+    const outputFile = path.join(outputDir, route.outputFile);
+
+    if (!(await fileExists(outputFile))) {
+      hasFailedChecks = true;
+      reportCheckFailure(`HTML file check failed for ${route.path}. Output file: ${outputFile}. Reason: file does not exist.`);
+      continue;
+    }
+
+    const html = await fs.readFile(outputFile, 'utf8');
+    checkedCount += 1;
+
+    if (html.length === 0) {
+      hasFailedChecks = true;
+      reportCheckFailure(`HTML file check failed for ${route.path}. Output file: ${outputFile}. Reason: file is empty.`);
+      continue;
+    }
+
+    const missingChecks = getMissingHtmlFileChecks(html, route);
+
+    if (missingChecks.length > 0) {
+      hasFailedChecks = true;
+      reportCheckFailure(
+        `HTML file check failed for ${route.path}. Output file: ${outputFile}. Missing: ${missingChecks.join(', ')}`,
+      );
+    }
+  }
+
+  return {
+    checkedCount,
+    hasFailedChecks,
+  };
+}
+
+async function validateSitemapFile(sitemapFile: string) {
+  let checkedCount = 0;
+  let hasFailedChecks = false;
+
+  if (!(await fileExists(sitemapFile))) {
+    reportCheckFailure(`Sitemap check failed: sitemap.xml file does not exist: ${sitemapFile}`);
+    return {
+      checkedCount,
+      hasFailedChecks: true,
+    };
+  }
+
+  const sitemap = await fs.readFile(sitemapFile, 'utf8');
+  const generatedUrls = new Set(routes.map((route) => canonicalUrl(route.canonicalPath || route.path)));
+
+  for (const route of routes) {
+    checkedCount += 1;
+    const url = canonicalUrl(route.canonicalPath || route.path);
+
+    if (!sitemap.includes(escapeXml(url))) {
+      hasFailedChecks = true;
+      reportCheckFailure(`Missing sitemap URL for ${route.path}: ${url}`);
+    }
+  }
+
+  for (const skippedRoute of manifest.skippedRoutes) {
+    const skippedPath = skippedRoute.canonicalPath || skippedRoute.path;
+
+    if (!skippedPath) {
+      continue;
+    }
+
+    const skippedUrl = canonicalUrl(skippedPath);
+
+    if (generatedUrls.has(skippedUrl)) {
+      continue;
+    }
+
+    if (sitemap.includes(escapeXml(skippedUrl))) {
+      hasFailedChecks = true;
+      reportCheckFailure(`Unexpected skipped sitemap URL for ${skippedRoute.path || skippedRoute.slug}: ${skippedUrl}`);
+    }
+  }
+
+  return {
+    checkedCount,
+    hasFailedChecks,
+  };
+}
+
+async function validateRobotsFile(robotsFile: string) {
+  if (!(await fileExists(robotsFile))) {
+    reportCheckFailure(`Robots check failed: robots.txt file does not exist: ${robotsFile}`);
+    return true;
+  }
+
+  const robots = await fs.readFile(robotsFile, 'utf8');
+  const expectedSitemapLine = `Sitemap: ${canonicalUrl('/sitemap.xml')}`;
+  let hasFailedChecks = false;
+
+  if (!robots.includes('Sitemap:')) {
+    hasFailedChecks = true;
+    reportCheckFailure('Robots check failed: missing Sitemap line.');
+  }
+
+  if (!robots.includes(expectedSitemapLine)) {
+    hasFailedChecks = true;
+    reportCheckFailure(`Robots check failed: missing expected Sitemap URL line: ${expectedSitemapLine}`);
+  }
+
+  return hasFailedChecks;
+}
+
 async function isServiceReachable(url: string) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 5000);
@@ -274,6 +522,14 @@ async function checkRequiredServices() {
 
 async function main() {
   console.log(`Manifest routes loaded: ${routes.length}`);
+  console.log(`Manifest skipped routes: ${manifest.skippedRoutes.length}`);
+
+  const isManifestComplete = validateManifestCompleteness();
+  const areSkippedRoutesValid = validateSkippedRoutes();
+
+  if (!isManifestComplete || !areSkippedRoutesValid) {
+    return;
+  }
 
   if (routes.length === 0) {
     console.error('No routes with shouldGenerate=true found in route manifest.');
@@ -335,11 +591,22 @@ async function main() {
 
     const { sitemapFile, robotsFile, routeManifestFile } = await writePrerenderIndexFiles();
     const missingIndexFileChecks = await getMissingIndexFileChecks(sitemapFile, robotsFile, routeManifestFile);
+    const htmlFileCheckResult = await validateGeneratedHtmlFiles();
+    const sitemapCheckResult = await validateSitemapFile(sitemapFile);
+    const robotsHasFailedChecks = await validateRobotsFile(robotsFile);
 
     if (missingIndexFileChecks.length > 0) {
       hasFailedChecks = true;
       console.error(`Prerender index file check failed. Missing: ${missingIndexFileChecks.join(', ')}`);
     }
+
+    if (htmlFileCheckResult.hasFailedChecks || sitemapCheckResult.hasFailedChecks || robotsHasFailedChecks) {
+      hasFailedChecks = true;
+    }
+
+    console.log(`Generated HTML files checked: ${htmlFileCheckResult.checkedCount}`);
+    console.log(`Sitemap URLs checked: ${sitemapCheckResult.checkedCount}`);
+    console.log(`Skipped routes checked: ${manifest.skippedRoutes.length}`);
 
     if (hasFailedChecks) {
       process.exitCode = 1;
