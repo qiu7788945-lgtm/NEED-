@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +30,9 @@ interface PublishLogEntry {
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const publishLogsDir = path.join(serverRoot, 'data', 'publish-logs');
+const outputTailLength = 8000;
+
+let isPublishing = false;
 
 function createPublishError(message: string, statusCode: number, code: string) {
   return Object.assign(new Error(message), {
@@ -47,6 +51,11 @@ function asNumber(value: unknown, fallback = 0) {
 
 function arrayLength(value: unknown) {
   return Array.isArray(value) ? value.length : 0;
+}
+
+function appendOutputTail(currentValue: string, nextValue: Buffer | string) {
+  const combined = currentValue + nextValue.toString();
+  return combined.length > outputTailLength ? combined.slice(-outputTailLength) : combined;
 }
 
 function parseSortTime(log: PublishLogObject | null, mtimeMs: number) {
@@ -191,4 +200,97 @@ export async function getPublishLogById(id: string) {
   }
 
   return entry.log && !entry.error ? entry.log : createInvalidLog(entry);
+}
+
+export async function triggerPrerenderPublish() {
+  if (isPublishing) {
+    throw createPublishError('Publish is already running', 409, 'PUBLISH_ALREADY_RUNNING');
+  }
+
+  isPublishing = true;
+
+  try {
+    const isWindows = process.platform === 'win32';
+    const command = isWindows ? 'npm.cmd' : 'npm';
+    const args = ['run', 'build:prerender'];
+    const projectRoot = process.cwd();
+
+    const result = await new Promise<{
+      exitCode: number | null;
+      stdoutTail: string;
+      stderrTail: string;
+      spawnError?: string;
+    }>((resolve) => {
+      let stdoutTail = '';
+      let stderrTail = '';
+      let settled = false;
+      let child: ReturnType<typeof spawn>;
+
+      try {
+        child = spawn(command, args, {
+          cwd: projectRoot,
+          shell: isWindows,
+          windowsHide: isWindows,
+        });
+      } catch (error) {
+        resolve({
+          exitCode: null,
+          stdoutTail,
+          stderrTail,
+          spawnError: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
+
+      child.stdout?.on('data', (chunk) => {
+        stdoutTail = appendOutputTail(stdoutTail, chunk);
+      });
+
+      child.stderr?.on('data', (chunk) => {
+        stderrTail = appendOutputTail(stderrTail, chunk);
+      });
+
+      child.on('error', (error) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        resolve({
+          exitCode: null,
+          stdoutTail,
+          stderrTail,
+          spawnError: error.message,
+        });
+      });
+
+      child.on('close', (exitCode) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        resolve({
+          exitCode,
+          stdoutTail,
+          stderrTail,
+        });
+      });
+    });
+
+    const latestLog = await getLatestPublishLog();
+    const status = result.exitCode === 0 ? 'success' : 'failed';
+
+    return {
+      status,
+      exitCode: result.exitCode,
+      stdoutTail: result.stdoutTail,
+      stderrTail: result.spawnError
+        ? appendOutputTail(result.stderrTail, `\n${result.spawnError}`)
+        : result.stderrTail,
+      latestLog,
+    };
+  } finally {
+    isPublishing = false;
+  }
 }
