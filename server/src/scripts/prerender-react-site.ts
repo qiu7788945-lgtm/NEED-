@@ -19,12 +19,43 @@ interface RouteConfig {
   }>;
 }
 
+interface FailedRouteLog {
+  path: string;
+  errors: string[];
+}
+
+interface PublishLogContext {
+  publishId: string;
+  startedAt: string;
+  finishedAt: string;
+  status: 'success' | 'failed';
+  triggeredBy: 'cli';
+  totalRoutes: number;
+  generatedRoutes: string[];
+  failedRoutes: FailedRouteLog[];
+  skippedRoutes: Array<{
+    path?: string;
+    sourceType: string;
+    sourceId?: string;
+    slug?: string;
+    skipReason: string;
+    errors?: string[];
+  }>;
+  sitemapPath: string;
+  robotsPath: string;
+  manifestPath: string;
+  errors: string[];
+  manifestSnapshot: object;
+}
+
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const outputDir = path.join(projectRoot, 'dist-prerender');
+const publishLogDir = path.join(projectRoot, 'server', 'data', 'publish-logs');
 const baseUrl = process.env.PRERENDER_BASE_URL || 'http://localhost:3000';
 const SITE_BASE_URL = process.env.SITE_BASE_URL || 'http://localhost:3000';
 const manifest = getStaticRouteManifest(SITE_BASE_URL);
 const expectedRouteCount = 17;
+let publishLogContext: PublishLogContext | undefined;
 const serviceChecks = [
   {
     url: 'http://localhost:4000',
@@ -65,7 +96,85 @@ const routes = manifest.routes
 
 function reportCheckFailure(message: string) {
   console.error(message);
+  publishLogContext?.errors.push(message);
   process.exitCode = 1;
+}
+
+function formatPublishDate(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, '0');
+
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    '-',
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join('');
+}
+
+function createPublishLogContext(startedAtDate: Date): PublishLogContext {
+  const publishId = `publish-${formatPublishDate(startedAtDate)}`;
+
+  return {
+    publishId,
+    startedAt: startedAtDate.toISOString(),
+    finishedAt: '',
+    status: 'failed',
+    triggeredBy: 'cli',
+    totalRoutes: routes.length,
+    generatedRoutes: [],
+    failedRoutes: [],
+    skippedRoutes: manifest.skippedRoutes.map((route) => ({
+      path: route.path || undefined,
+      sourceType: route.sourceType,
+      sourceId: route.sourceId || undefined,
+      slug: route.slug || undefined,
+      skipReason: route.skipReason,
+      errors: route.errors,
+    })),
+    sitemapPath: path.join(outputDir, 'sitemap.xml'),
+    robotsPath: path.join(outputDir, 'robots.txt'),
+    manifestPath: path.join(outputDir, 'route-manifest.json'),
+    errors: [],
+    manifestSnapshot: manifest,
+  };
+}
+
+function addFailedRoute(pathName: string, errors: string[]) {
+  if (publishLogContext) {
+    publishLogContext.generatedRoutes = publishLogContext.generatedRoutes.filter((routePath) => routePath !== pathName);
+  }
+
+  const existingRoute = publishLogContext?.failedRoutes.find((route) => route.path === pathName);
+
+  if (existingRoute) {
+    existingRoute.errors.push(...errors);
+    return;
+  }
+
+  publishLogContext?.failedRoutes.push({
+    path: pathName,
+    errors,
+  });
+}
+
+async function writePublishLog() {
+  if (!publishLogContext) {
+    return;
+  }
+
+  publishLogContext.finishedAt = new Date().toISOString();
+  publishLogContext.status = process.exitCode === 1 ? 'failed' : 'success';
+
+  const publishLogFile = path.join(publishLogDir, `${publishLogContext.publishId}.json`);
+
+  await fs.mkdir(publishLogDir, { recursive: true });
+  await fs.writeFile(publishLogFile, JSON.stringify(publishLogContext, null, 2), 'utf8');
+
+  console.log(`Publish log file: ${publishLogFile}`);
+  console.log(`Publish status: ${publishLogContext.status}`);
 }
 
 function normalizeContent(value: string) {
@@ -264,7 +373,9 @@ function validateManifestCompleteness() {
 
     if (missingFields.length > 0) {
       hasFailedChecks = true;
-      reportCheckFailure(`Route manifest check failed for ${route.path || '(missing path)'}. Missing: ${missingFields.join(', ')}`);
+      const message = `Route manifest check failed for ${route.path || '(missing path)'}. Missing: ${missingFields.join(', ')}`;
+      reportCheckFailure(message);
+      addFailedRoute(route.path || '(missing path)', [message]);
     }
   }
 
@@ -385,7 +496,9 @@ async function validateGeneratedHtmlFiles() {
 
     if (!(await fileExists(outputFile))) {
       hasFailedChecks = true;
-      reportCheckFailure(`HTML file check failed for ${route.path}. Output file: ${outputFile}. Reason: file does not exist.`);
+      const error = `Output file: ${outputFile}. Reason: file does not exist.`;
+      addFailedRoute(route.path, [error]);
+      reportCheckFailure(`HTML file check failed for ${route.path}. ${error}`);
       continue;
     }
 
@@ -394,7 +507,9 @@ async function validateGeneratedHtmlFiles() {
 
     if (html.length === 0) {
       hasFailedChecks = true;
-      reportCheckFailure(`HTML file check failed for ${route.path}. Output file: ${outputFile}. Reason: file is empty.`);
+      const error = `Output file: ${outputFile}. Reason: file is empty.`;
+      addFailedRoute(route.path, [error]);
+      reportCheckFailure(`HTML file check failed for ${route.path}. ${error}`);
       continue;
     }
 
@@ -402,6 +517,7 @@ async function validateGeneratedHtmlFiles() {
 
     if (missingChecks.length > 0) {
       hasFailedChecks = true;
+      addFailedRoute(route.path, missingChecks);
       reportCheckFailure(
         `HTML file check failed for ${route.path}. Output file: ${outputFile}. Missing: ${missingChecks.join(', ')}`,
       );
@@ -435,6 +551,7 @@ async function validateSitemapFile(sitemapFile: string) {
 
     if (!sitemap.includes(escapeXml(url))) {
       hasFailedChecks = true;
+      addFailedRoute(route.path, [`Missing sitemap URL: ${url}`]);
       reportCheckFailure(`Missing sitemap URL for ${route.path}: ${url}`);
     }
   }
@@ -513,7 +630,7 @@ async function checkRequiredServices() {
   const unreachableServices = results.filter((result) => !result.isReachable);
 
   for (const { service } of unreachableServices) {
-    console.error(service.unavailableMessage);
+    reportCheckFailure(service.unavailableMessage);
     console.error(service.runCommand);
   }
 
@@ -521,104 +638,125 @@ async function checkRequiredServices() {
 }
 
 async function main() {
+  publishLogContext = createPublishLogContext(new Date());
+
   console.log(`Manifest routes loaded: ${routes.length}`);
   console.log(`Manifest skipped routes: ${manifest.skippedRoutes.length}`);
 
-  const isManifestComplete = validateManifestCompleteness();
-  const areSkippedRoutesValid = validateSkippedRoutes();
-
-  if (!isManifestComplete || !areSkippedRoutesValid) {
-    return;
-  }
-
-  if (routes.length === 0) {
-    console.error('No routes with shouldGenerate=true found in route manifest.');
-    process.exitCode = 1;
-    return;
-  }
-
-  if (routes.length !== expectedRouteCount) {
-    console.warn(`Warning: expected ${expectedRouteCount} manifest routes, but loaded ${routes.length}.`);
-  }
-
-  const canPrerender = await checkRequiredServices();
-
-  if (!canPrerender) {
-    process.exitCode = 1;
-    return;
-  }
-
-  const browser = await chromium.launch();
-  let hasFailedChecks = false;
-
   try {
-    const page = await browser.newPage();
+    const isManifestComplete = validateManifestCompleteness();
+    const areSkippedRoutesValid = validateSkippedRoutes();
 
-    for (const route of routes) {
-      const targetUrl = routeUrl(route.path);
-      const outputFile = path.join(outputDir, route.outputFile);
-
-      await page.goto(targetUrl, { waitUntil: 'networkidle' });
-      await page.waitForTimeout(2000);
-
-      const html = applyRouteHead(await page.content(), route);
-      const bodyText = await page.locator('body').innerText();
-
-      await fs.mkdir(path.dirname(outputFile), { recursive: true });
-      await fs.writeFile(outputFile, html, 'utf8');
-
-      console.log(`Visited URL: ${targetUrl}`);
-      console.log(`Output file: ${outputFile}`);
-      console.log(`HTML characters: ${html.length}`);
-      console.log(`Body text preview: ${normalizeContent(bodyText).slice(0, 300)}`);
-
-      const normalizedBodyText = normalizeContent(bodyText);
-      const normalizedHtml = normalizeContent(html);
-      const missingTexts = [
-        ...route.requiredChecks
-          .filter((check) => !check.test(normalizedBodyText, normalizedHtml))
-          .map((check) => check.label),
-        ...getMissingHeadChecks(html, route),
-      ];
-
-      if (missingTexts.length > 0) {
-        hasFailedChecks = true;
-        console.error(`Content check failed for ${route.path}. Missing: ${missingTexts.join(', ')}`);
-      } else {
-        console.log(`Content check passed for ${route.path}`);
-      }
+    if (!isManifestComplete || !areSkippedRoutesValid) {
+      return;
     }
 
-    const { sitemapFile, robotsFile, routeManifestFile } = await writePrerenderIndexFiles();
-    const missingIndexFileChecks = await getMissingIndexFileChecks(sitemapFile, robotsFile, routeManifestFile);
-    const htmlFileCheckResult = await validateGeneratedHtmlFiles();
-    const sitemapCheckResult = await validateSitemapFile(sitemapFile);
-    const robotsHasFailedChecks = await validateRobotsFile(robotsFile);
-
-    if (missingIndexFileChecks.length > 0) {
-      hasFailedChecks = true;
-      console.error(`Prerender index file check failed. Missing: ${missingIndexFileChecks.join(', ')}`);
+    if (routes.length === 0) {
+      reportCheckFailure('No routes with shouldGenerate=true found in route manifest.');
+      return;
     }
 
-    if (htmlFileCheckResult.hasFailedChecks || sitemapCheckResult.hasFailedChecks || robotsHasFailedChecks) {
-      hasFailedChecks = true;
+    if (routes.length !== expectedRouteCount) {
+      console.warn(`Warning: expected ${expectedRouteCount} manifest routes, but loaded ${routes.length}.`);
     }
 
-    console.log(`Generated HTML files checked: ${htmlFileCheckResult.checkedCount}`);
-    console.log(`Sitemap URLs checked: ${sitemapCheckResult.checkedCount}`);
-    console.log(`Skipped routes checked: ${manifest.skippedRoutes.length}`);
+    const canPrerender = await checkRequiredServices();
 
-    if (hasFailedChecks) {
+    if (!canPrerender) {
       process.exitCode = 1;
-    } else {
-      console.log('All prerender content checks passed');
+      return;
+    }
+
+    const browser = await chromium.launch();
+    let hasFailedChecks = false;
+
+    try {
+      const page = await browser.newPage();
+
+      for (const route of routes) {
+        const targetUrl = routeUrl(route.path);
+        const outputFile = path.join(outputDir, route.outputFile);
+
+        try {
+          await page.goto(targetUrl, { waitUntil: 'networkidle' });
+          await page.waitForTimeout(2000);
+
+          const html = applyRouteHead(await page.content(), route);
+          const bodyText = await page.locator('body').innerText();
+
+          await fs.mkdir(path.dirname(outputFile), { recursive: true });
+          await fs.writeFile(outputFile, html, 'utf8');
+
+          console.log(`Visited URL: ${targetUrl}`);
+          console.log(`Output file: ${outputFile}`);
+          console.log(`HTML characters: ${html.length}`);
+          console.log(`Body text preview: ${normalizeContent(bodyText).slice(0, 300)}`);
+
+          const normalizedBodyText = normalizeContent(bodyText);
+          const normalizedHtml = normalizeContent(html);
+          const missingTexts = [
+            ...route.requiredChecks
+              .filter((check) => !check.test(normalizedBodyText, normalizedHtml))
+              .map((check) => check.label),
+            ...getMissingHeadChecks(html, route),
+          ];
+
+          if (missingTexts.length > 0) {
+            hasFailedChecks = true;
+            addFailedRoute(route.path, missingTexts);
+            console.error(`Content check failed for ${route.path}. Missing: ${missingTexts.join(', ')}`);
+          } else {
+            publishLogContext.generatedRoutes.push(route.path);
+            console.log(`Content check passed for ${route.path}`);
+          }
+        } catch (error) {
+          hasFailedChecks = true;
+          const message = (error as Error).message;
+          addFailedRoute(route.path, [message]);
+          reportCheckFailure(`Prerender failed for ${route.path}. Output file: ${outputFile}. Error: ${message}`);
+        }
+      }
+
+      const { sitemapFile, robotsFile, routeManifestFile } = await writePrerenderIndexFiles();
+      publishLogContext.sitemapPath = sitemapFile;
+      publishLogContext.robotsPath = robotsFile;
+      publishLogContext.manifestPath = routeManifestFile;
+
+      const missingIndexFileChecks = await getMissingIndexFileChecks(sitemapFile, robotsFile, routeManifestFile);
+      const htmlFileCheckResult = await validateGeneratedHtmlFiles();
+      const sitemapCheckResult = await validateSitemapFile(sitemapFile);
+      const robotsHasFailedChecks = await validateRobotsFile(robotsFile);
+
+      if (missingIndexFileChecks.length > 0) {
+        hasFailedChecks = true;
+        publishLogContext.errors.push(`Prerender index file check failed. Missing: ${missingIndexFileChecks.join(', ')}`);
+        console.error(`Prerender index file check failed. Missing: ${missingIndexFileChecks.join(', ')}`);
+      }
+
+      if (htmlFileCheckResult.hasFailedChecks || sitemapCheckResult.hasFailedChecks || robotsHasFailedChecks) {
+        hasFailedChecks = true;
+      }
+
+      console.log(`Generated HTML files checked: ${htmlFileCheckResult.checkedCount}`);
+      console.log(`Sitemap URLs checked: ${sitemapCheckResult.checkedCount}`);
+      console.log(`Skipped routes checked: ${manifest.skippedRoutes.length}`);
+
+      if (hasFailedChecks) {
+        process.exitCode = 1;
+      } else {
+        console.log('All prerender content checks passed');
+      }
+    } finally {
+      await browser.close();
     }
   } finally {
-    await browser.close();
+    await writePublishLog();
   }
 }
 
 main().catch((error) => {
+  const message = `Failed to prerender React routes: ${(error as Error).message}`;
+  reportCheckFailure(message);
   console.error('Failed to prerender React routes:', error);
   process.exitCode = 1;
 });
