@@ -42,8 +42,21 @@ interface SolutionSceneSource {
   enabled?: unknown;
 }
 
+interface ArticleSource {
+  id?: unknown;
+  title?: unknown;
+  slug?: unknown;
+  category?: unknown;
+  summary?: unknown;
+  sortOrder?: unknown;
+  status?: unknown;
+  seoTitle?: unknown;
+  seoDescription?: unknown;
+}
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const solutionsDataPath = join(scriptDir, '../../data/solutions.json');
+const articlesDataPath = join(scriptDir, '../../data/articles.json');
 
 const staticRoutes: StaticRouteInput[] = [
   {
@@ -267,7 +280,10 @@ const fixedRoutePaths = new Set(['/', '/solutions', '/contact', '/how-to-choose'
 const fixedRoutes = staticRoutes.filter((route) => fixedRoutePaths.has(route.path));
 const contentRoutes = staticRoutes.filter((route) => !fixedRoutePaths.has(route.path));
 const solutionRouteTemplates = contentRoutes.filter((route) => route.sourceType === 'solution');
-const nonSolutionContentRoutes = contentRoutes.filter((route) => route.sourceType !== 'solution');
+const articleRouteTemplates = contentRoutes.filter((route) => route.sourceType === 'article');
+const nonGeneratedContentRoutes = contentRoutes.filter(
+  (route) => route.sourceType !== 'solution' && route.sourceType !== 'article',
+);
 
 function getRouteByPath(routes: StaticRouteInput[], path: string) {
   const route = routes.find((item) => item.path === path);
@@ -279,16 +295,16 @@ function getRouteByPath(routes: StaticRouteInput[], path: string) {
   return route;
 }
 
-function buildStaticRoutes(solutionRoutes: StaticRouteInput[]): StaticRouteInput[] {
+function buildStaticRoutes(solutionRoutes: StaticRouteInput[], articleRoutes: StaticRouteInput[]): StaticRouteInput[] {
   return [
     getRouteByPath(fixedRoutes, '/'),
     getRouteByPath(fixedRoutes, '/solutions'),
     ...solutionRoutes,
     getRouteByPath(fixedRoutes, '/contact'),
     getRouteByPath(fixedRoutes, '/how-to-choose'),
-    ...nonSolutionContentRoutes.filter((route) => route.sourceType === 'article'),
+    ...articleRoutes,
     getRouteByPath(fixedRoutes, '/choose-between-two'),
-    ...nonSolutionContentRoutes.filter((route) => route.sourceType === 'case'),
+    ...nonGeneratedContentRoutes.filter((route) => route.sourceType === 'case'),
   ];
 }
 
@@ -337,8 +353,23 @@ function readSolutionScenes(): SolutionSceneSource[] {
   return parsedContent;
 }
 
+function readArticles(): ArticleSource[] {
+  const rawContent = readFileSync(articlesDataPath, 'utf8');
+  const parsedContent = JSON.parse(rawContent) as unknown;
+
+  if (!Array.isArray(parsedContent)) {
+    throw new Error('Expected server/data/articles.json to contain an array of articles');
+  }
+
+  return parsedContent;
+}
+
 function getSolutionTemplateByPath(path: string): StaticRouteInput | undefined {
   return solutionRouteTemplates.find((route) => route.path === path);
+}
+
+function getArticleTemplateByPath(path: string): StaticRouteInput | undefined {
+  return articleRouteTemplates.find((route) => route.path === path);
 }
 
 function getSourceText(value: unknown): string {
@@ -368,6 +399,28 @@ function toSkippedSolutionRoute(
     requiredChecks: [],
     published: true,
     enabled: scene.enabled === true,
+    shouldGenerate: false,
+    skipReason,
+    errors,
+  };
+}
+
+function toSkippedArticleRoute(article: ArticleSource, path: string, skipReason: string, errors: string[]): RouteManifestItem {
+  const id = getSourceText(article.id) || 'unknown-article';
+  const slug = getSourceText(article.slug) || id;
+
+  return {
+    path,
+    outputPath: inferOutputPath(path),
+    sourceType: 'article',
+    sourceId: id,
+    slug,
+    title: getSourceText(article.seoTitle) || getSourceText(article.title) || `${slug} | NEED`,
+    description: getSourceText(article.seoDescription) || getSourceText(article.summary),
+    canonicalPath: path,
+    requiredChecks: [],
+    published: article.status === 'published',
+    enabled: true,
     shouldGenerate: false,
     skipReason,
     errors,
@@ -442,15 +495,138 @@ function buildSolutionRoutesFromSource(): {
   };
 }
 
+const howToChooseArticlePathById: Record<string, string> = {
+  'public-how-05': '/how-to-choose/01',
+  'public-how-06': '/how-to-choose/02',
+  'public-how-07': '/how-to-choose/03',
+  'public-how-08': '/how-to-choose/04',
+};
+
+const howToChooseArticlePathBySlug: Record<string, string> = {
+  'how-to-choose-understands-your-brief': '/how-to-choose/01',
+  'how-to-judge-event-agency-judgment': '/how-to-choose/02',
+  'why-good-event-cases-may-not-fit-you': '/how-to-choose/03',
+  'why-events-fail-in-execution-not-creative': '/how-to-choose/04',
+};
+
+const howToChooseArticlePathBySortOrder: Record<number, string> = {
+  1: '/how-to-choose/01',
+  2: '/how-to-choose/02',
+  3: '/how-to-choose/03',
+  4: '/how-to-choose/04',
+};
+
+function resolveHowToChooseArticlePath(article: ArticleSource): string {
+  const id = getSourceText(article.id);
+  const slug = getSourceText(article.slug);
+  const sortOrder = getSourceNumber(article.sortOrder);
+
+  return howToChooseArticlePathById[id] || howToChooseArticlePathBySlug[slug] || howToChooseArticlePathBySortOrder[sortOrder] || '';
+}
+
+function resolveArticleFallbackPath(article: ArticleSource): string {
+  const category = getSourceText(article.category);
+  const sortOrder = getSourceNumber(article.sortOrder);
+  const slug = getSourceText(article.slug) || getSourceText(article.id) || 'unknown-article';
+
+  if (category === 'choose_between_two' && Number.isInteger(sortOrder) && sortOrder >= 1) {
+    return `/choose-between-two/${String(sortOrder).padStart(2, '0')}`;
+  }
+
+  if (category === 'how_to_choose') {
+    return resolveHowToChooseArticlePath(article) || `/how-to-choose/${slug}`;
+  }
+
+  return `/articles/${slug}`;
+}
+
+function buildArticleRoutesFromSource(): {
+  routes: StaticRouteInput[];
+  skippedRoutes: RouteManifestItem[];
+} {
+  const routes: StaticRouteInput[] = [];
+  const skippedRoutes: RouteManifestItem[] = [];
+
+  const articles = readArticles()
+    .map((article, index) => ({ article, index }))
+    .sort(
+      (left, right) =>
+        getSourceNumber(left.article.sortOrder) - getSourceNumber(right.article.sortOrder) || left.index - right.index,
+    )
+    .map(({ article }) => article);
+
+  for (const article of articles) {
+    const category = getSourceText(article.category);
+    const path = resolveArticleFallbackPath(article);
+
+    if (article.status !== 'published') {
+      skippedRoutes.push(toSkippedArticleRoute(article, path, 'article not published', []));
+      continue;
+    }
+
+    if (category === 'choose_between_two') {
+      skippedRoutes.push(
+        toSkippedArticleRoute(article, path, 'article content too weak for GEO prerender', [
+          'intentionally skipped until content is completed',
+        ]),
+      );
+      continue;
+    }
+
+    if (category !== 'how_to_choose') {
+      skippedRoutes.push(toSkippedArticleRoute(article, path, 'unsupported article category', []));
+      continue;
+    }
+
+    const mappedPath = resolveHowToChooseArticlePath(article);
+
+    if (!mappedPath) {
+      skippedRoutes.push(
+        toSkippedArticleRoute(article, path, 'published how_to_choose article has no React route mapping', [
+          `Published article "${getSourceText(article.id) || getSourceText(article.slug) || 'unknown-article'}" has no verified React route mapping`,
+        ]),
+      );
+      continue;
+    }
+
+    const template = getArticleTemplateByPath(mappedPath);
+
+    if (!template) {
+      skippedRoutes.push(
+        toSkippedArticleRoute(article, mappedPath, 'published how_to_choose article has no React route mapping', [
+          `Published article maps to "${mappedPath}", but no verified React route manifest template exists`,
+        ]),
+      );
+      continue;
+    }
+
+    routes.push({
+      ...template,
+      path: mappedPath,
+      outputPath: inferOutputPath(mappedPath),
+      sourceId: getSourceText(article.id) || template.sourceId,
+      slug: getSourceText(article.slug) || getSourceText(article.id) || template.slug,
+      description: getSourceText(article.seoDescription) || getSourceText(article.summary) || template.description,
+      canonicalPath: mappedPath,
+    });
+  }
+
+  return {
+    routes: routes.length > 0 ? routes : articleRouteTemplates,
+    skippedRoutes,
+  };
+}
+
 export function getStaticRouteManifest(siteBaseUrl: string): RouteManifest {
   const { routes: solutionRoutes, skippedRoutes } = buildSolutionRoutesFromSource();
-  const routes = buildStaticRoutes(solutionRoutes).map(toManifestItem);
+  const { routes: articleRoutes, skippedRoutes: skippedArticleRoutes } = buildArticleRoutesFromSource();
+  const routes = buildStaticRoutes(solutionRoutes, articleRoutes).map(toManifestItem);
 
   return {
     generatedAt: new Date().toISOString(),
     siteBaseUrl,
     routes,
-    skippedRoutes,
+    skippedRoutes: [...skippedRoutes, ...skippedArticleRoutes],
     sourceSummary: countRoutesBySourceType(routes),
   };
 }
