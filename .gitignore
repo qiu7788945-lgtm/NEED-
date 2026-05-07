@@ -34,3 +34,4 @@ server/data/media-library.corrupt-*.json
 
 dist-static/
 dist-prerender/
+server/data/publish-logs/
