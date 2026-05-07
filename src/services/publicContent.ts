@@ -32,6 +32,11 @@ export interface PublicCase {
   coverImg?: string;
   tags: string[];
   content?: string;
+  clientType?: string;
+  eventType?: string;
+  location?: string;
+  seoTitle?: string;
+  seoDescription?: string;
 }
 
 export interface PublicSolution {
@@ -177,11 +182,16 @@ function adaptCase(value: unknown): PublicCase | null {
     id: toStringValue(value.id) || slug,
     slug,
     title,
-    subtitle: eventType || clientType,
+    subtitle: [clientType, eventType].filter(Boolean).join(' | '),
     excerpt: toStringValue(value.summary) || toStringValue(value.seoDescription),
     coverImg: resolvePublicAssetUrl(coverUrl),
     tags,
     content: toStringValue(value.contentText) || toStringValue(value.contentHtml),
+    clientType,
+    eventType,
+    location,
+    seoTitle: toStringValue(value.seoTitle),
+    seoDescription: toStringValue(value.seoDescription),
   };
 }
 

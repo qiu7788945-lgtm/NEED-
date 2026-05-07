@@ -3,7 +3,7 @@ import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
 import { ArrowRight, ArrowDown, CheckCircle2, Users, Target, Zap, Menu, X, ChevronDown, Play, Pause, Volume2, VolumeX, Copy, Check } from 'lucide-react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import ContactAndAssetsPage from './pages/ContactAndAssetsPage';
-import { fetchHomeVideo, fetchPublishedArticles, fetchPublishedCases, fetchEnabledSolutions, type PublicArticle } from './services/publicContent';
+import { fetchHomeVideo, fetchPublishedArticles, fetchPublishedCases, fetchEnabledSolutions, type PublicArticle, type PublicCase } from './services/publicContent';
 import gsap from 'gsap';
 import Markdown from 'react-markdown';
 
@@ -681,6 +681,10 @@ const howToChooseCmsArticleIds: Record<string, string> = {
   '04': 'public-how-08',
 };
 
+const caseCmsIdsByRoute: Record<string, string> = {
+  'hyundai-family-day': 'legacy-hyundai-family-day',
+};
+
 function getHowToChooseRouteIdForCmsArticle(article: PublicArticle): string | null {
   const entry = Object.entries(howToChooseCmsArticleIds).find(([, cmsId]) => cmsId === article.id);
 
@@ -709,6 +713,26 @@ function findCmsHowToChooseArticle(articles: PublicArticle[], articleId?: string
 
   const hasRequiredContent = article.title.trim() && article.excerpt.trim() && article.content?.trim();
   return hasRequiredContent ? article : null;
+}
+
+function getCaseRouteIdForCmsCase(caseStudy: PublicCase): string {
+  return caseStudy.slug || caseStudy.id;
+}
+
+function findCmsCaseForRoute(cases: PublicCase[], routeId?: string): PublicCase | null {
+  if (!routeId) {
+    return null;
+  }
+
+  const cmsId = caseCmsIdsByRoute[routeId];
+  const caseStudy = cases.find((item) => item.slug === routeId || item.id === cmsId);
+
+  if (!caseStudy) {
+    return null;
+  }
+
+  const hasRequiredContent = caseStudy.title.trim() && caseStudy.excerpt.trim() && caseStudy.content?.trim();
+  return hasRequiredContent ? caseStudy : null;
 }
 
 function MethodsSection() {
@@ -795,7 +819,7 @@ function CasesPreviewSection() {
       .then((cases) => {
         if (cases.length > 0) {
           setPublicCases(cases.map((caseStudy) => ({
-            id: caseStudy.id || caseStudy.slug,
+            id: getCaseRouteIdForCmsCase(caseStudy),
             title: caseStudy.title,
             excerpt: caseStudy.excerpt,
             coverImg: caseStudy.coverImg || caseStudiesData[0].coverImg,
@@ -1649,12 +1673,62 @@ function CaseStudyPage() {
   const { id } = useParams();
   const { pathname } = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [cmsCaseStudy, setCmsCaseStudy] = useState<PublicCase | null>(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
 
-  const caseStudy = caseStudiesData.find(c => c.id === id) || caseStudiesData[0];
+  useEffect(() => {
+    let isActive = true;
+    setCmsCaseStudy(null);
+
+    if (!id || !caseCmsIdsByRoute[id]) {
+      return () => {
+        isActive = false;
+      };
+    }
+
+    fetchPublishedCases()
+      .then((cases) => {
+        if (!isActive) {
+          return;
+        }
+
+        setCmsCaseStudy(findCmsCaseForRoute(cases, id));
+      })
+      .catch(() => {
+        if (isActive) {
+          setCmsCaseStudy(null);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [id]);
+
+  const legacyCaseStudy = caseStudiesData.find(c => c.id === id);
+  const caseStudy = cmsCaseStudy
+    ? {
+        id: id ?? cmsCaseStudy.slug,
+        title: cmsCaseStudy.title,
+        subtitle: cmsCaseStudy.subtitle || [cmsCaseStudy.clientType, cmsCaseStudy.eventType, cmsCaseStudy.location].filter(Boolean).join(' | '),
+        excerpt: cmsCaseStudy.excerpt,
+        coverImg: cmsCaseStudy.coverImg || caseStudiesData[0].coverImg,
+        tags: cmsCaseStudy.tags.length > 0 ? cmsCaseStudy.tags : caseStudiesData[0].tags,
+        content: cmsCaseStudy.content ?? '',
+      }
+    : legacyCaseStudy;
+
+  if (!caseStudy) {
+    return (
+      <div className="min-h-screen pt-32 px-6 text-center flex flex-col items-center justify-center">
+        <h1 className="text-2xl font-bold mb-4">案例不存在</h1>
+        <Link to="/#cases" className="text-[#ccff00] hover:underline">返回案例列表</Link>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white">
