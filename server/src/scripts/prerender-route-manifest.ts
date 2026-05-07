@@ -19,6 +19,7 @@ export interface RouteManifestItem {
   shouldGenerate: boolean;
   skipReason: string;
   errors: string[];
+  reason?: string;
 }
 
 export interface RouteManifest {
@@ -33,6 +34,19 @@ type StaticRouteInput = Omit<
   RouteManifestItem,
   'published' | 'enabled' | 'shouldGenerate' | 'skipReason' | 'errors'
 >;
+
+const SKIP_REASONS = {
+  solutionDisabled: 'solution disabled',
+  enabledSolutionNoReactRouteMapping: 'enabled solution has no React route mapping',
+  articleNotPublished: 'article not published',
+  articleContentTooWeak: 'article content too weak for GEO prerender',
+  unsupportedArticleCategory: 'unsupported article category',
+  publishedArticleNoReactRouteMapping: 'published article has no React route mapping',
+  caseNotPublished: 'case not published',
+  publishedCaseNoReactRouteMapping: 'published case has no React route mapping',
+  displayOnlyDuplicateCaseRoute: 'display-only duplicate case route',
+  legacyVerifiedRoute: 'legacy verified route kept until CMS content takeover',
+} as const;
 
 interface SolutionSceneSource {
   slug?: unknown;
@@ -333,6 +347,13 @@ function toManifestItem(route: StaticRouteInput): RouteManifestItem {
   };
 }
 
+function markLegacyVerifiedRoute(route: StaticRouteInput): StaticRouteInput {
+  return {
+    ...route,
+    reason: SKIP_REASONS.legacyVerifiedRoute,
+  };
+}
+
 function countRoutesBySourceType(routes: RouteManifestItem[]): Record<RouteSourceType, number> {
   return routes.reduce<Record<RouteSourceType, number>>(
     (summary, route) => ({
@@ -494,7 +515,7 @@ function buildSolutionRoutesFromSource(): {
 
     if (!slug) {
       skippedRoutes.push(
-        toSkippedSolutionRoute(scene, 'unknown-solution', '/solutions/unknown-solution', 'enabled solution has no React route mapping', [
+        toSkippedSolutionRoute(scene, 'unknown-solution', '/solutions/unknown-solution', SKIP_REASONS.enabledSolutionNoReactRouteMapping, [
           'Enabled solution scene is missing a valid slug, so no React route mapping can be resolved',
         ]),
       );
@@ -505,13 +526,13 @@ function buildSolutionRoutesFromSource(): {
     const fallbackPath = mappedPath || `/solutions/${slug}`;
 
     if (scene.enabled === false) {
-      skippedRoutes.push(toSkippedSolutionRoute(scene, slug, fallbackPath, 'solution disabled', []));
+      skippedRoutes.push(toSkippedSolutionRoute(scene, slug, fallbackPath, SKIP_REASONS.solutionDisabled, []));
       continue;
     }
 
     if (!mappedPath) {
       skippedRoutes.push(
-        toSkippedSolutionRoute(scene, slug, fallbackPath, 'enabled solution has no React route mapping', [
+        toSkippedSolutionRoute(scene, slug, fallbackPath, SKIP_REASONS.enabledSolutionNoReactRouteMapping, [
           `Enabled solution "${slug}" has no React route mapping`,
         ]),
       );
@@ -522,7 +543,7 @@ function buildSolutionRoutesFromSource(): {
 
     if (!template) {
       skippedRoutes.push(
-        toSkippedSolutionRoute(scene, slug, mappedPath, 'enabled solution has no React route mapping', [
+        toSkippedSolutionRoute(scene, slug, mappedPath, SKIP_REASONS.enabledSolutionNoReactRouteMapping, [
           `Enabled solution "${slug}" maps to "${mappedPath}", but no verified React route manifest template exists`,
         ]),
       );
@@ -611,13 +632,13 @@ function buildArticleRoutesFromSource(): {
     const path = resolveArticleFallbackPath(article);
 
     if (article.status !== 'published') {
-      skippedRoutes.push(toSkippedArticleRoute(article, path, 'article not published', []));
+      skippedRoutes.push(toSkippedArticleRoute(article, path, SKIP_REASONS.articleNotPublished, []));
       continue;
     }
 
     if (category === 'choose_between_two') {
       skippedRoutes.push(
-        toSkippedArticleRoute(article, path, 'article content too weak for GEO prerender', [
+        toSkippedArticleRoute(article, path, SKIP_REASONS.articleContentTooWeak, [
           'intentionally skipped until content is completed',
         ]),
       );
@@ -625,7 +646,7 @@ function buildArticleRoutesFromSource(): {
     }
 
     if (category !== 'how_to_choose') {
-      skippedRoutes.push(toSkippedArticleRoute(article, path, 'unsupported article category', []));
+      skippedRoutes.push(toSkippedArticleRoute(article, path, SKIP_REASONS.unsupportedArticleCategory, []));
       continue;
     }
 
@@ -633,7 +654,7 @@ function buildArticleRoutesFromSource(): {
 
     if (!mappedPath) {
       skippedRoutes.push(
-        toSkippedArticleRoute(article, path, 'published how_to_choose article has no React route mapping', [
+        toSkippedArticleRoute(article, path, SKIP_REASONS.publishedArticleNoReactRouteMapping, [
           `Published article "${getSourceText(article.id) || getSourceText(article.slug) || 'unknown-article'}" has no verified React route mapping`,
         ]),
       );
@@ -644,7 +665,7 @@ function buildArticleRoutesFromSource(): {
 
     if (!template) {
       skippedRoutes.push(
-        toSkippedArticleRoute(article, mappedPath, 'published how_to_choose article has no React route mapping', [
+        toSkippedArticleRoute(article, mappedPath, SKIP_REASONS.publishedArticleNoReactRouteMapping, [
           `Published article maps to "${mappedPath}", but no verified React route manifest template exists`,
         ]),
       );
@@ -663,7 +684,7 @@ function buildArticleRoutesFromSource(): {
   }
 
   return {
-    routes: routes.length > 0 ? routes : articleRouteTemplates,
+    routes: routes.length > 0 ? routes : articleRouteTemplates.map(markLegacyVerifiedRoute),
     skippedRoutes,
   };
 }
@@ -700,12 +721,12 @@ function buildCaseRoutesFromSource(): {
     const path = resolveCaseFallbackPath(caseItem);
 
     if (displayOnlyDuplicateCaseSlugs.has(slug)) {
-      skippedRoutes.push(toSkippedCaseRoute(caseItem, path, 'display-only duplicate case route', []));
+      skippedRoutes.push(toSkippedCaseRoute(caseItem, path, SKIP_REASONS.displayOnlyDuplicateCaseRoute, []));
       continue;
     }
 
     if (caseItem.status !== 'published') {
-      skippedRoutes.push(toSkippedCaseRoute(caseItem, path, 'case not published', []));
+      skippedRoutes.push(toSkippedCaseRoute(caseItem, path, SKIP_REASONS.caseNotPublished, []));
       continue;
     }
 
@@ -713,7 +734,7 @@ function buildCaseRoutesFromSource(): {
 
     if (!mappedPath) {
       skippedRoutes.push(
-        toSkippedCaseRoute(caseItem, path, 'published case has no React route mapping', [
+        toSkippedCaseRoute(caseItem, path, SKIP_REASONS.publishedCaseNoReactRouteMapping, [
           `Published case "${getSourceText(caseItem.id) || slug || 'unknown-case'}" has no React route mapping`,
         ]),
       );
@@ -724,7 +745,7 @@ function buildCaseRoutesFromSource(): {
 
     if (!template) {
       skippedRoutes.push(
-        toSkippedCaseRoute(caseItem, mappedPath, 'published case has no React route mapping', [
+        toSkippedCaseRoute(caseItem, mappedPath, SKIP_REASONS.publishedCaseNoReactRouteMapping, [
           `Published case "${getSourceText(caseItem.id) || slug || 'unknown-case'}" maps to "${mappedPath}", but no verified React route manifest template exists`,
         ]),
       );
@@ -743,7 +764,7 @@ function buildCaseRoutesFromSource(): {
   }
 
   return {
-    routes: routes.length > 0 ? routes : caseRouteTemplates,
+    routes: routes.length > 0 ? routes : caseRouteTemplates.map(markLegacyVerifiedRoute),
     skippedRoutes,
   };
 }
