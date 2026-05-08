@@ -1,0 +1,341 @@
+# Scenario Detail Page Model V21
+
+## 1. 总体判断
+
+第21-6A-4 只读盘点确认，场景解决方案三级页不应继续默认作为普通文章页处理。
+
+`/solutions/family-day` 当前已经体现出更适合 NEED 官网的方向：它不是长文型 solution article，而是以项目、案例、图库、现场氛围和 CTA 组成的展示型页面。后续 `salon`、`annual`、`exhibition`、`forum`、`other` 等三级页，也应优先向这种“项目 / 案例展示型页面”靠拢。
+
+因此，本轮建议将未来场景三级页抽象为两类：
+
+- `scenarioShowcasePage`：普通场景展示型页面，用于承载项目图库、案例入口、策略说明和执行重点。
+- `mediaShowcasePage`：视频与数字资产特殊媒体页，用于承载视频、图片、封面、截图、成片资产和分发场景说明。
+
+当前 `pages` takeover 能力只证明了路由接管、manifest 去重、sitemap 唯一和 fallback 可行，不代表当前 `Page.sections` 模型已经适合正式业务内容。
+
+## 2. 页面类型
+
+建议未来新增页面模型层面的页面类型，而不是把所有内容继续塞进通用 `Page`。
+
+```ts
+export type ScenarioDetailPageType =
+  | 'scenarioShowcasePage'
+  | 'mediaShowcasePage';
+```
+
+`scenarioShowcasePage` 面向普通活动场景。它强调项目展示、现场图片、案例卡片、策略说明和 CTA。
+
+`mediaShowcasePage` 面向视频与数字资产。它强调视频播放、poster / cover、数字资产截图、成片类型、案例短片和分发渠道。
+
+## 3. 普通场景展示型页面适用范围
+
+`scenarioShowcasePage` 建议适用于：
+
+- `/solutions/family-day`
+- `/solutions/salon`
+- `/solutions/annual`
+- `/solutions/exhibition`
+- `/solutions/forum`
+- `/solutions/other`
+
+其中 `/solutions/family-day` 当前已有独立 legacy 结构，即 `FamilyDayPage` + 硬编码 `projectsData`。后续不应直接用新模型粗暴覆盖它，而应单独设计 adapter，把 legacy 数据逐步映射到统一模型，确保现有展示不被破坏。
+
+各页面未来内容重心建议：
+
+- `/solutions/salon`：客户答谢、精品沙龙项目图、现场氛围图、空间图。
+- `/solutions/annual`：舞台、流程、员工参与、年会现场图。
+- `/solutions/exhibition`：美陈、展览、空间装置、视觉物料图。
+- `/solutions/forum`：论坛会场、嘉宾、签到、流程、主视觉图。
+- `/solutions/other`：特殊场景案例组合图和跨界项目展示。
+
+## 4. 视频与数字资产特殊页适用范围
+
+`mediaShowcasePage` 建议适用于：
+
+- `/solutions/video`
+
+该页面不能只按普通图片页处理。它未来需要同时支持：
+
+- `video`
+- `image`
+- `poster / cover`
+- `thumbnail`
+- `caseFilm`
+- `recap`
+- `screenshot`
+- `finalAsset`
+- `distribution channel / 使用场景说明`
+
+视频与数字资产页还应支持对资产类型进行解释，例如活动回顾片、宣传片成片、案例短片、短视频切条、数字资产截图、传播渠道版本等。
+
+## 5. 建议数据结构
+
+以下 TypeScript interface 仅作为第21-6A-5 设计草案，不代表本轮需要改代码。
+
+```ts
+export type ScenarioDetailStatus = 'draft' | 'published' | 'archived';
+
+export type ScenarioDetailPageType =
+  | 'scenarioShowcasePage'
+  | 'mediaShowcasePage';
+
+export type ScenarioMediaFileType = 'image' | 'video';
+
+export type ScenarioMediaUsage =
+  | 'hero'
+  | 'cover'
+  | 'gallery'
+  | 'projectGallery'
+  | 'caseCard'
+  | 'poster'
+  | 'thumbnail'
+  | 'caseFilm'
+  | 'recap'
+  | 'promo'
+  | 'screenshot'
+  | 'finalAsset'
+  | 'other';
+
+export type ScenarioCaseRelationType =
+  | 'featured'
+  | 'related'
+  | 'sourceCase'
+  | 'similarScene';
+
+export type VideoAssetType =
+  | 'recap'
+  | 'promo'
+  | 'caseFilm'
+  | 'shortClip'
+  | 'screenshot'
+  | 'other';
+
+export interface ScenarioDetailPage {
+  id: string;
+  path: string;
+  pageType: ScenarioDetailPageType;
+  status: ScenarioDetailStatus;
+  title: string;
+  seoTitle: string;
+  seoDescription: string;
+  heroTitle: string;
+  heroSubtitle: string;
+  heroMedia: ScenarioMediaItem | null;
+  intro: string;
+  audience: string[];
+  goals: string[];
+  projectItems: ScenarioProjectItem[];
+  mediaGallery: ScenarioMediaItem[];
+  caseRefs: ScenarioCaseRef[];
+  strategySections: ScenarioSection[];
+  executionPoints: ScenarioSection[];
+  faqItems: ScenarioFaqItem[];
+  cta: ScenarioCta | null;
+  shouldIndex: boolean;
+  sortOrder: number;
+}
+
+export interface ScenarioProjectItem {
+  id: string;
+  title: string;
+  slogan: string;
+  summary: string;
+  tags: string[];
+  location: string;
+  clientType: string;
+  eventType: string;
+  dateText: string;
+  coverMediaId: string;
+  mediaItems: ScenarioMediaItem[];
+  caseRefId: string;
+  sortOrder: number;
+  enabled: boolean;
+}
+
+export interface ScenarioMediaItem {
+  id: string;
+  mediaId: string;
+  url: string;
+  fileType: ScenarioMediaFileType;
+  usage: ScenarioMediaUsage;
+  alt: string;
+  caption: string;
+  posterMediaId: string;
+  posterUrl: string;
+  thumbnailUrl: string;
+  duration: number | null;
+  projectId: string;
+  sortOrder: number;
+  enabled: boolean;
+}
+
+export interface ScenarioCaseRef {
+  id: string;
+  title: string;
+  path: string;
+  summary: string;
+  coverMediaId: string;
+  relationType: ScenarioCaseRelationType;
+  sortOrder: number;
+  enabled: boolean;
+}
+
+export interface ScenarioSection {
+  id: string;
+  type:
+    | 'intro'
+    | 'strategy'
+    | 'execution'
+    | 'audience'
+    | 'goal'
+    | 'caseGrid'
+    | 'mediaShowcase'
+    | 'projectGallery'
+    | 'cta'
+    | 'other';
+  title: string;
+  subtitle: string;
+  body: string;
+  items: string[];
+  mediaItems: ScenarioMediaItem[];
+  sortOrder: number;
+  enabled: boolean;
+}
+
+export interface ScenarioFaqItem {
+  id: string;
+  question: string;
+  answer: string;
+  sortOrder: number;
+  enabled: boolean;
+}
+
+export interface ScenarioCta {
+  title: string;
+  description: string;
+  buttonText: string;
+  href: string;
+}
+
+export interface VideoShowcaseBlock {
+  id: string;
+  title: string;
+  description: string;
+  videoMediaId: string;
+  posterMediaId: string;
+  thumbnailUrl: string;
+  assetType: VideoAssetType;
+  distributionChannels: string[];
+  relatedProjectId: string;
+  sortOrder: number;
+  enabled: boolean;
+}
+```
+
+`mediaShowcasePage` 可以在 `ScenarioDetailPage` 基础上扩展：
+
+```ts
+export interface MediaShowcasePage extends ScenarioDetailPage {
+  pageType: 'mediaShowcasePage';
+  videoBlocks: VideoShowcaseBlock[];
+}
+```
+
+## 6. 与当前 pages 模型的差距
+
+当前 `Page` / `sections` / `mediaRefs` 不足以承接场景三级页的正式目标。
+
+主要差距：
+
+- 缺少 `projectItems`，无法表达多个项目展示。
+- 缺少项目级图库，无法把图片归属到具体项目。
+- 缺少 `caseRefs`，无法结构化关联案例详情入口。
+- 缺少 `videoBlocks`，无法表达视频与数字资产页面。
+- 缺少 media type，`mediaRefs` 无法判断 image / video。
+- 缺少 poster / thumbnail / video role。
+- 缺少项目、block、case 级归属关系。
+- `PageEditorPage` 当前不能结构化编辑项目图库。
+- `PageEditorPage` 当前 mediaRefs 偏手填 URL，不是完整媒体库选择与绑定。
+- `DynamicPage` 是通用白底文字模板，不是最终场景展示模板。
+
+因此，不建议继续把正式场景三级页内容强行塞进 `sections.body` 或 Markdown。
+
+## 7. 与 media-library 的关系
+
+当前 media-library 已经比较接近素材库。它具备：
+
+- image / video 文件类型
+- url
+- width / height
+- duration
+- thumbnailUrl
+- alt
+- caption
+- category
+- ownerType / ownerSlug
+- groupKey
+- slotNo
+- sortOrder
+- enabled
+
+但 `pages.mediaRefs` 太薄，只能表达简单引用，无法稳定承载正式页面的项目图库和视频资产。
+
+建议未来 media 引用从“手填 URL”升级为：
+
+- 从 media-library asset 中选择素材。
+- 页面保存 `mediaId`，不要只保存 URL。
+- 自动带出 `url`、`fileType`、`width`、`height`、`duration`、`thumbnailUrl`。
+- 页面级允许覆盖 `usage`、`alt`、`caption`。
+- 支持 `projectId`、`blockId`、`caseRefId` 等归属关系。
+- 支持视频 poster 的显式绑定：`posterMediaId` / `posterUrl`。
+- 支持同一素材在不同页面位置有不同说明文案。
+
+这样 media-library 继续作为资产源，scenario detail page 作为展示编排层。
+
+## 8. 后续实施路线
+
+建议第21-6A 后续拆分为：
+
+- 第21-6A-5：数据模型设计文档，即本文档。
+- 第21-6A-6：新增 scenario detail 类型定义与后端 JSON 数据骨架。
+- 第21-6A-7：后台编辑器支持 `projectItems` / `mediaGallery` 基础编辑。
+- 第21-6A-8：前台新建 `ScenarioShowcasePage` 模板，先不覆盖 family-day。
+- 第21-6A-9：选择一个页面试点，例如 `/solutions/salon` 或 `/solutions/annual`，使用展示型模板接管。
+- 第21-6A-10：`/solutions/video` 特殊媒体页单独设计。
+- 第21-6A-11：再考虑 family-day legacy adapter。
+
+这个顺序可以避免把现有 `family-day` 展示破坏掉，也能避免 route manifest 先行正确但页面模型仍然错误。
+
+## 9. 风险点
+
+- 不要把三级页做成普通文章页，否则会偏离未来官网展示目标。
+- 不要破坏 `/solutions/family-day` 当前展示，它是现阶段最接近目标的 legacy 样板。
+- `/solutions/video` 不要只按图片页处理，它需要视频、poster、截图、成片资产和分发说明。
+- 不要让 route manifest 正确但页面价值不足。
+- 不要让后台字段看似完整但前台无法真实渲染。
+- 不要把临时验收 `pages.json` 提交。
+- 不要为了 sitemap 唯一而忽略内容结构质量。
+- 不要把 salon / annual 的 takeover 技术试点误判为最终页面模型。
+
+## 10. 本轮禁令
+
+第21-6A-5 只允许新增或更新设计文档。
+
+本轮不修改：
+
+- `src/App.tsx`
+- `src/services/publicContent.ts`
+- `server/src/scripts/prerender-route-manifest.ts`
+- `server/src/services/pages/pages.service.ts`
+- `admin/src/pages/PageEditorPage.tsx`
+- `server/data/pages.json`
+- `server/data/solutions.json`
+- `dist-prerender`
+- `server/data/publish-logs`
+
+本轮不运行：
+
+- `build:prerender`
+- MySQL 相关命令
+- 登录、安全、权限、部署相关操作
+
