@@ -430,6 +430,31 @@ export function adaptSolutionGroupsToShowcaseProjects(solution: PublicSolution |
   };
 }
 
+export function adaptSolutionGroupsToMediaShowcaseProjects(solution: PublicSolution | null): ScenarioShowcaseData {
+  const showcase = adaptSolutionGroupsToShowcaseProjects(solution);
+
+  if (!solution) {
+    return showcase;
+  }
+
+  const validGroupIds = new Set(
+    solution.groups
+      .filter((group) => group.enabled)
+      .filter((group) => normalizePublicDisplayText(group.title) && normalizePublicDisplayText(group.summary))
+      .filter((group) => group.items.some((item) => (
+        item.enabled
+        && item.mediaUrl
+        && (item.fileType === 'image' || item.fileType === 'video')
+      )))
+      .map((group) => group.id || group.slug),
+  );
+
+  return {
+    ...showcase,
+    projects: showcase.projects.filter((project) => validGroupIds.has(project.id)),
+  };
+}
+
 function adaptPage(value: unknown): Page | null {
   if (!isRecord(value)) {
     return null;

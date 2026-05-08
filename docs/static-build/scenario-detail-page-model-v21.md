@@ -518,3 +518,11 @@ fallback legacy 分支继续使用各 route template 原有 requiredChecks，不
 `adaptSolutionGroupsToShowcaseProjects` 继续保留 `group.id` 和 `group.slug` 作为内部识别字段，但前台主要标题只使用清洗后的 `group.title`。`group.summary` 仍可作为公开说明展示，但会在展示层将 tab、多空格、换行规整为普通空格。
 
 三级详情页不再把 `group.slug`、`group.id`、`GROUP-*` 或其他内部编号渲染为项目小标题。legacy fallback 的手写 slogan 保持可用；route manifest 的 requiredChecks 不重新加入 raw summary，`/solutions` 列表页公开路径映射和 prerender networkidle 软等待逻辑保持不变。
+
+## 20. 第21-6B-3B `/solutions/video` media showcase 接入
+
+第21-6B-3B 将 `/solutions/video` 接入 `SolutionManagementPage` 中真实 source slug `video-digital-assets`，但保持它是独立 `mediaShowcasePage`，不并入 6 个图片型 `scenarioShowcasePage` 模板。
+
+第一阶段复用现有 `fileType`、`mediaUrl`、`title`、`summary`、`caption`、`alt`、`enabled` 字段：`fileType=video` 渲染为可控视频，`fileType=image` 渲染为封面、截图或辅助图片。当前不新增 `posterUrl`、`coverUrl` 或 media role 字段；如果后续需要视频与封面显式绑定，再扩展 poster / cover / role 能力。
+
+当 `video-digital-assets` 存在 enabled group、group title、group summary 和有效 image/video media 时，前台使用独立 media showcase；数据不可用时继续 fallback legacy video solution article。route manifest 后台数据分支只检查 `视频与数字资产`、enabled group title 和 `联系我们探讨项目`，不检查 raw summary、slug、id、mediaUrl 或内部文件名。

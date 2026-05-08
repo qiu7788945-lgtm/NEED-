@@ -13,9 +13,11 @@ import {
   fetchEnabledSolutions,
   fetchEnabledSolutionBySlug,
   fetchPageByPath,
+  adaptSolutionGroupsToMediaShowcaseProjects,
   adaptSolutionGroupsToShowcaseProjects,
   getSolutionPublicPath,
   getSolutionSourceSlugByPublicSlug,
+  type ScenarioShowcaseData,
   type PublicArticle,
   type PublicCase,
 } from './services/publicContent';
@@ -2871,6 +2873,113 @@ function ScenarioShowcasePage({
   );
 }
 
+function MediaShowcasePage({
+  showcase,
+  isModalOpen,
+  onModalClose,
+}: {
+  showcase: ScenarioShowcaseData;
+  isModalOpen: boolean;
+  onModalClose: () => void;
+}) {
+  const sceneTitle = showcase.sceneTitle || '视频与数字资产';
+
+  return (
+    <div className="min-h-screen bg-black text-white">
+      <div className="pt-32 px-6 md:px-12 lg:px-24 border-b border-white/10 pb-10">
+        <button onClick={() => window.history.back()} className="inline-flex items-center text-sm font-bold tracking-widest uppercase text-gray-400 hover:text-[#ccff00] transition-colors w-fit group">
+          <ArrowRight className="w-4 h-4 mr-3 rotate-180 group-hover:-translate-x-1 transition-transform" /> 返回上一页
+        </button>
+      </div>
+
+      <main className="max-w-7xl mx-auto px-6 md:px-12 pt-16 pb-32">
+        <header className="mb-20 max-w-5xl">
+          <p className="text-sm font-mono tracking-widest text-[#ccff00] mb-5 uppercase">Media Showcase</p>
+          <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter mb-8">
+            {sceneTitle}
+          </h1>
+          {showcase.sceneDesc ? (
+            <p className="text-xl text-gray-300 font-light leading-relaxed max-w-4xl">
+              {showcase.sceneDesc}
+            </p>
+          ) : null}
+        </header>
+
+        <div className="space-y-28">
+          {showcase.projects.map((project, projectIndex) => (
+            <section key={project.id} className="border-t border-white/10 pt-12">
+              <div className="mb-10 max-w-4xl">
+                <p className="text-sm font-mono text-gray-500 mb-4">0{projectIndex + 1}</p>
+                <h2 className="text-4xl md:text-6xl font-black tracking-tight mb-6">
+                  {project.title}
+                </h2>
+                <p className="text-lg md:text-xl text-gray-300 font-light leading-relaxed">
+                  {project.summary}
+                </p>
+              </div>
+
+              {project.videoMedia.length > 0 ? (
+                <div className="space-y-8 mb-10">
+                  {project.videoMedia.map((media) => (
+                    <figure key={media.id} className="overflow-hidden rounded-3xl border border-white/10 bg-white/5">
+                      <video
+                        src={media.url}
+                        controls
+                        playsInline
+                        preload="metadata"
+                        className="w-full aspect-video bg-black object-contain"
+                      />
+                      {media.caption ? (
+                        <figcaption className="px-6 py-4 text-sm text-gray-300 border-t border-white/10">
+                          {media.caption}
+                        </figcaption>
+                      ) : null}
+                    </figure>
+                  ))}
+                </div>
+              ) : null}
+
+              {project.imageMedia.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                  {project.imageMedia.map((media) => (
+                    <figure key={media.id} className="overflow-hidden rounded-3xl border border-white/10 bg-white/5">
+                      <img
+                        loading="lazy"
+                        src={media.url}
+                        alt={media.alt || project.title}
+                        className="w-full aspect-[16/10] object-cover"
+                      />
+                      {media.caption ? (
+                        <figcaption className="px-5 py-4 text-sm text-gray-300 border-t border-white/10">
+                          {media.caption}
+                        </figcaption>
+                      ) : null}
+                    </figure>
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          ))}
+        </div>
+      </main>
+
+      <div className="max-w-7xl mx-auto px-6 md:px-12 pb-32">
+        <div className="border-t border-white/10 pt-12 flex flex-col sm:flex-row items-center justify-between gap-6 bg-white/5 p-8 md:p-10 rounded-2xl">
+          <div>
+            <h4 className="text-xl font-bold text-white mb-2">需要更完整的视频与数字资产方案？</h4>
+            <p className="text-gray-400">联系我们，获取拍摄、剪辑、封面、截图与分发节奏建议。</p>
+          </div>
+          <Link to="/contact" className="px-6 py-3 bg-[#ccff00] text-black font-bold rounded-full hover:bg-white transition-colors whitespace-nowrap inline-block text-center">
+            联系我们探讨项目
+          </Link>
+        </div>
+      </div>
+
+      <QRCodeModal isOpen={isModalOpen} onClose={onModalClose} />
+    </div>
+  );
+}
+
 function FamilyDayPage() {
   const { pathname } = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -2993,6 +3102,7 @@ function SolutionArticlePage() {
   const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showcaseProjects, setShowcaseProjects] = useState<FamilyDayProject[]>([]);
+  const [videoShowcase, setVideoShowcase] = useState<ScenarioShowcaseData | null>(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -3000,6 +3110,28 @@ function SolutionArticlePage() {
 
   useEffect(() => {
     let isMounted = true;
+    setShowcaseProjects([]);
+    setVideoShowcase(null);
+
+    if (articleId === 'video') {
+      fetchEnabledSolutionBySlug(getSolutionSourceSlugByPublicSlug(articleId))
+        .then((solution) => {
+          const showcase = adaptSolutionGroupsToMediaShowcaseProjects(solution);
+          if (isMounted && showcase.projects.length > 0) {
+            setVideoShowcase(showcase);
+          }
+        })
+        .catch(() => {
+          if (isMounted) {
+            setVideoShowcase(null);
+          }
+        });
+
+      return () => {
+        isMounted = false;
+      };
+    }
+
     const sourceSlug = articleId && solutionShowcaseArticleIds.has(articleId)
       ? getSolutionSourceSlugByPublicSlug(articleId)
       : undefined;
@@ -3030,6 +3162,16 @@ function SolutionArticlePage() {
 
   if (articleId === 'family-day') {
     return <FamilyDayPage />;
+  }
+
+  if (articleId === 'video' && videoShowcase && videoShowcase.projects.length > 0) {
+    return (
+      <MediaShowcasePage
+        showcase={videoShowcase}
+        isModalOpen={isModalOpen}
+        onModalClose={() => setIsModalOpen(false)}
+      />
+    );
   }
 
   if (articleId && solutionShowcaseArticleIds.has(articleId) && showcaseProjects.length > 0) {

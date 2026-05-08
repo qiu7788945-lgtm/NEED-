@@ -336,6 +336,7 @@ const solutionShowcaseRoutePaths = new Set([
   '/solutions/forum',
   '/solutions/other',
 ]);
+const solutionMediaShowcaseRoutePaths = new Set(['/solutions/video']);
 
 const fixedRoutes = staticRoutes.filter((route) => fixedRoutePaths.has(route.path));
 const contentRoutes = staticRoutes.filter((route) => !fixedRoutePaths.has(route.path));
@@ -476,6 +477,19 @@ function getEnabledImageItems(group: SolutionGroupSource): SolutionItemSource[] 
     : [];
 }
 
+function getEnabledMediaItems(group: SolutionGroupSource): SolutionItemSource[] {
+  return Array.isArray(group.items)
+    ? (group.items as SolutionItemSource[])
+      .filter((item) => {
+        const fileType = getSourceText(item.fileType);
+        return item.enabled !== false
+          && (fileType === 'image' || fileType === 'video')
+          && Boolean(getSourceText(item.mediaUrl));
+      })
+      .sort((left, right) => getSourceNumber(left.sortOrder) - getSourceNumber(right.sortOrder))
+    : [];
+}
+
 function getSolutionShowcaseRouteRequiredChecks(scene: SolutionSceneSource, template: StaticRouteInput): string[] {
   const groupsWithImages = getEnabledSolutionGroups(scene)
     .map((group) => ({
@@ -490,6 +504,25 @@ function getSolutionShowcaseRouteRequiredChecks(scene: SolutionSceneSource, temp
 
   return [
     ...groupsWithImages.map(({ group }) => group.title),
+    '联系我们探讨项目',
+  ].map(getSourceText).filter(Boolean);
+}
+
+function getSolutionMediaShowcaseRouteRequiredChecks(scene: SolutionSceneSource, template: StaticRouteInput): string[] {
+  const groupsWithMedia = getEnabledSolutionGroups(scene)
+    .map((group) => ({
+      group,
+      media: getEnabledMediaItems(group),
+    }))
+    .filter(({ group, media }) => getSourceText(group.title) && getSourceText(group.summary) && media.length > 0);
+
+  if (groupsWithMedia.length === 0) {
+    return template.requiredChecks;
+  }
+
+  return [
+    '视频与数字资产',
+    ...groupsWithMedia.map(({ group }) => group.title),
     '联系我们探讨项目',
   ].map(getSourceText).filter(Boolean);
 }
@@ -765,9 +798,11 @@ function buildSolutionRoutesFromSource(takenOverPaths = new Set<string>()): {
       slug,
       description: getSourceText(scene.description) || template.description,
       canonicalPath: mappedPath,
-      requiredChecks: solutionShowcaseRoutePaths.has(mappedPath)
-        ? getSolutionShowcaseRouteRequiredChecks(scene, template)
-        : template.requiredChecks,
+      requiredChecks: solutionMediaShowcaseRoutePaths.has(mappedPath)
+        ? getSolutionMediaShowcaseRouteRequiredChecks(scene, template)
+        : solutionShowcaseRoutePaths.has(mappedPath)
+          ? getSolutionShowcaseRouteRequiredChecks(scene, template)
+          : template.requiredChecks,
     });
   }
 
