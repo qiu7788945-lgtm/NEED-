@@ -2740,6 +2740,10 @@ interface FamilyDayProject {
 
 const solutionShowcaseSourceSlugByArticleId: Record<string, string> = {
   salon: 'client-appreciation',
+  annual: 'annual-meeting',
+  exhibition: 'commercial-display',
+  forum: 'academic-forum',
+  other: 'other',
 };
 
 function toFamilyDayGalleryItem(value: string | FamilyDayGalleryItem, projectTitle: string): FamilyDayGalleryItem {
@@ -3020,7 +3024,7 @@ function SolutionArticlePage() {
     return <FamilyDayPage />;
   }
 
-  if (articleId === 'salon' && showcaseProjects.length > 0) {
+  if (articleId && solutionShowcaseSourceSlugByArticleId[articleId] && showcaseProjects.length > 0) {
     return (
       <ScenarioShowcasePage
         projects={showcaseProjects}

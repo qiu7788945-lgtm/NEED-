@@ -473,3 +473,21 @@ export interface MediaShowcasePage extends ScenarioDetailPage {
 - 本轮不接管 `annual`、`exhibition`、`forum`、`other`，不处理 `/solutions/video`。
 
 `/solutions/video` 仍保留后续单独增强方向，需要围绕 video showcase、poster、thumbnail、duration、图片 / 视频混合媒体排版继续设计。
+
+## 16. 第21-6A-13 图片型标准场景扩展
+
+第21-6A-13 将第21-6A-12 已验证的 `SolutionManagementPage` 数据消费能力扩展到四个图片型标准场景页：
+
+- `/solutions/annual` 使用 `annual-meeting`
+- `/solutions/exhibition` 使用 `commercial-display`
+- `/solutions/forum` 使用 `academic-forum`
+- `/solutions/other` 使用 `other`
+
+这些页面与 `/solutions/salon` 一样，优先读取 `/api/solutions` 中对应场景的 enabled 案例组和 enabled image media。当存在有效 group title、group summary 和图片素材时，前台渲染为展示型项目 / 图库页面；当接口失败、找不到场景、无有效案例组、无有效图片素材或字段不足时，继续 fallback 到 legacy solution article，避免页面白屏。
+
+维护入口边界保持不变：
+
+- 场景解决方案由 `SolutionManagementPage` 维护。
+- `PageEditor` 不负责场景解决方案内容。
+- 不使用 `pages.json` 或 `scenario-detail-pages.json` 维护这些业务路径。
+- `/solutions/video` 暂不纳入图片型标准场景扩展，后续单独设计视频、poster、thumbnail、duration、截图和成片资产等能力。

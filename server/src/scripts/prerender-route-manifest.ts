@@ -328,6 +328,14 @@ const solutionSlugToReactPath: Record<string, string> = {
 const fixedRoutePaths = new Set(['/', '/solutions', '/contact', '/how-to-choose', '/choose-between-two']);
 const reservedStaticRoutePaths = new Set(staticRoutes.map((route) => route.path));
 const solutionDetailPageTakeoverPaths = new Set<string>();
+const solutionShowcaseRoutePaths = new Set([
+  '/solutions/family-day',
+  '/solutions/salon',
+  '/solutions/annual',
+  '/solutions/exhibition',
+  '/solutions/forum',
+  '/solutions/other',
+]);
 
 const fixedRoutes = staticRoutes.filter((route) => fixedRoutePaths.has(route.path));
 const contentRoutes = staticRoutes.filter((route) => !fixedRoutePaths.has(route.path));
@@ -760,7 +768,7 @@ function buildSolutionRoutesFromSource(takenOverPaths = new Set<string>()): {
       slug,
       description: getSourceText(scene.description) || template.description,
       canonicalPath: mappedPath,
-      requiredChecks: mappedPath === '/solutions/family-day' || mappedPath === '/solutions/salon'
+      requiredChecks: solutionShowcaseRoutePaths.has(mappedPath)
         ? getSolutionShowcaseRouteRequiredChecks(scene, template)
         : template.requiredChecks,
     });
