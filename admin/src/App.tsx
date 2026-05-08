@@ -6,6 +6,7 @@ import { CaseManagementPage } from './pages/CaseManagementPage';
 import { SolutionManagementPage } from './pages/SolutionManagementPage';
 import { QualityCheckPage } from './pages/QualityCheckPage';
 import { PublishManagementPage } from './pages/PublishManagementPage';
+import { PageEditorPage } from './pages/PageEditorPage';
 
 const homeMenu = '首页管理';
 const mediaMenu = '媒体库';
@@ -14,10 +15,11 @@ const caseMenu = '案例解析';
 const solutionMenu = '场景解决方案';
 const qualityMenu = 'GEO 检查';
 const publishMenu = '发布管理';
+const pageEditorMenu = '页面编辑器';
 
 const menuItems = [
   homeMenu,
-  '页面编辑器',
+  pageEditorMenu,
   caseMenu,
   articleMenu,
   solutionMenu,
@@ -55,6 +57,8 @@ export default function App() {
       <section className="admin-content">
         {activeMenu === homeMenu ? (
           <HomeManagementPage />
+        ) : activeMenu === pageEditorMenu ? (
+          <PageEditorPage />
         ) : activeMenu === articleMenu ? (
           <ArticleManagementPage />
         ) : activeMenu === caseMenu ? (

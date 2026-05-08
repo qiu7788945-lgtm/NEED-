@@ -422,7 +422,8 @@ button {
 .admin-article-page,
 .admin-case-page,
 .admin-solution-page,
-.admin-quality-page {
+.admin-quality-page,
+.admin-page-editor-page {
   width: min(1080px, 100%);
   display: grid;
   gap: 22px;
@@ -1364,6 +1365,91 @@ button {
 
 .article-full-row {
   grid-column: 1 / -1;
+}
+
+.page-editor-notice {
+  border-left: 6px solid #ccff00;
+}
+
+.page-editor-layout {
+  grid-template-columns: minmax(360px, 0.95fr) minmax(0, 1.35fr);
+}
+
+.page-list-item {
+  grid-template-columns: minmax(0, 1fr) 90px;
+}
+
+.page-status-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.page-status-actions button,
+.page-editor-card-actions button {
+  border: 0;
+  border-radius: 999px;
+  padding: 9px 13px;
+  background: #e5e7eb;
+  color: #111;
+  font-weight: 900;
+}
+
+.page-status-actions button.is-active {
+  background: #090909;
+  color: #fff;
+}
+
+.page-status-actions span {
+  flex: 1 1 260px;
+  color: #52525b;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.5;
+}
+
+.page-inline-check {
+  display: flex !important;
+  align-items: center;
+  gap: 8px !important;
+  align-self: end;
+  min-height: 42px;
+}
+
+.page-inline-check input {
+  width: auto !important;
+}
+
+.page-editor-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.page-editor-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 14px;
+  background: #fff;
+}
+
+.page-editor-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.page-editor-card-actions button.is-danger {
+  background: #b91c1c;
+  color: #fff;
 }
 
 .article-content-textarea {
