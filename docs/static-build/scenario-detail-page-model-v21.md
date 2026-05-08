@@ -510,3 +510,11 @@ fallback legacy 分支继续使用各 route template 原有 requiredChecks，不
 第21-6B-1 将 `build:prerender` 的页面访问门槛调整为先等待 `domcontentloaded`，再以较短超时尝试等待 `networkidle`。如果 `networkidle` 因图片较多等资源稳定判断偶发超时，只记录 warning 并继续读取 HTML、body text 和执行 requiredChecks。
 
 `domcontentloaded` 失败、HTML / body text 读取失败、body text 为空、requiredChecks 缺失等内容不可用问题仍然判定为 route failed；requiredChecks 不放松、不跳过。
+
+## 19. 第21-6B-2 前台展示字段清洗
+
+第21-6B-2 只在“场景解决方案”前台展示适配层清洗公开字段，不修改 `server/data/solutions.json` 原始正式数据。
+
+`adaptSolutionGroupsToShowcaseProjects` 继续保留 `group.id` 和 `group.slug` 作为内部识别字段，但前台主要标题只使用清洗后的 `group.title`。`group.summary` 仍可作为公开说明展示，但会在展示层将 tab、多空格、换行规整为普通空格。
+
+三级详情页不再把 `group.slug`、`group.id`、`GROUP-*` 或其他内部编号渲染为项目小标题。legacy fallback 的手写 slogan 保持可用；route manifest 的 requiredChecks 不重新加入 raw summary，`/solutions` 列表页公开路径映射和 prerender networkidle 软等待逻辑保持不变。

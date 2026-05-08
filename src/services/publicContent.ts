@@ -157,6 +157,10 @@ function toStringValue(value: unknown): string {
   return typeof value === 'string' ? value : '';
 }
 
+function normalizePublicDisplayText(value: unknown): string {
+  return toStringValue(value).replace(/\s+/g, ' ').trim();
+}
+
 function toBooleanValue(value: unknown, fallback = false): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
@@ -388,6 +392,8 @@ export function adaptSolutionGroupsToShowcaseProjects(solution: PublicSolution |
   const projects = solution.groups
     .filter((group) => group.enabled)
     .map((group) => {
+      const title = normalizePublicDisplayText(group.title);
+      const summary = normalizePublicDisplayText(group.summary || solution.desc);
       const media = group.items
         .filter((item) => item.enabled && item.mediaUrl)
         .map((item) => ({
@@ -395,9 +401,9 @@ export function adaptSolutionGroupsToShowcaseProjects(solution: PublicSolution |
           type: item.fileType,
           url: item.mediaUrl,
           fileName: item.mediaFileName,
-          displayName: item.mediaDisplayName,
-          alt: item.alt || item.mediaDisplayName || group.title,
-          caption: item.caption,
+          displayName: normalizePublicDisplayText(item.mediaDisplayName),
+          alt: normalizePublicDisplayText(item.alt || item.mediaDisplayName || title),
+          caption: normalizePublicDisplayText(item.caption),
           sortOrder: item.sortOrder,
         }))
         .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0));
@@ -405,8 +411,8 @@ export function adaptSolutionGroupsToShowcaseProjects(solution: PublicSolution |
       return {
         id: group.id || group.slug,
         slug: group.slug || group.id,
-        title: group.title,
-        summary: group.summary || solution.desc,
+        title,
+        summary,
         sortOrder: group.sortOrder,
         media,
         imageMedia: media.filter((item) => item.type === 'image'),

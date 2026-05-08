@@ -2742,7 +2742,7 @@ interface FamilyDayGalleryItem {
 interface FamilyDayProject {
   id: string;
   title: string;
-  slogan: string;
+  slogan?: string;
   shortIntro: string;
   gallery: FamilyDayGalleryItem[];
 }
@@ -2778,7 +2778,6 @@ function mapShowcaseProjectsToFamilyDayProjects(solutionSlug: string): Promise<F
         .map((project) => ({
           id: project.id,
           title: project.title,
-          slogan: project.slug,
           shortIntro: project.summary,
           gallery: project.imageMedia.map((item) => ({
             src: item.url,
@@ -2811,10 +2810,12 @@ function ScenarioShowcasePage({
         {projects.map((project, index) => (
           <section key={project.id} className="mb-[120px] last:mb-0 relative">
             <div className="mb-12 max-w-4xl">
-              <h2 className="text-sm font-mono tracking-widest text-[#ccff00] mb-4 uppercase flex items-center gap-4">
-                <span className="w-8 h-[1px] bg-[#ccff00]" />
-                {project.slogan}
-              </h2>
+              {project.slogan && (
+                <h2 className="text-sm font-mono tracking-widest text-[#ccff00] mb-4 uppercase flex items-center gap-4">
+                  <span className="w-8 h-[1px] bg-[#ccff00]" />
+                  {project.slogan}
+                </h2>
+              )}
               <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter mb-8 text-gray-950">
                 {project.title}
               </h1>
@@ -2919,10 +2920,12 @@ function FamilyDayPage() {
              <section key={project.id} className="mb-[120px] last:mb-0 relative">
                 {/* 文本区 */}
                 <div className="mb-12 max-w-4xl">
-                   <h2 className="text-sm font-mono tracking-widest text-[#ccff00] mb-4 uppercase flex items-center gap-4">
-                     <span className="w-8 h-[1px] bg-[#ccff00]/50" />
-                     {project.slogan}
-                   </h2>
+                   {project.slogan && (
+                     <h2 className="text-sm font-mono tracking-widest text-[#ccff00] mb-4 uppercase flex items-center gap-4">
+                       <span className="w-8 h-[1px] bg-[#ccff00]/50" />
+                       {project.slogan}
+                     </h2>
+                   )}
                    <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter mb-8 bg-clip-text text-transparent bg-gradient-to-br from-white via-gray-100 to-gray-600">
                      {project.title}
                    </h1>
