@@ -72,6 +72,35 @@ export interface PublicSolutionItem {
   enabled: boolean;
 }
 
+export interface ScenarioShowcaseMedia {
+  id: string;
+  type: 'image' | 'video';
+  url: string;
+  fileName: string;
+  displayName: string;
+  alt: string;
+  caption: string;
+  sortOrder?: number;
+}
+
+export interface ScenarioShowcaseProject {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  sortOrder?: number;
+  media: ScenarioShowcaseMedia[];
+  imageMedia: ScenarioShowcaseMedia[];
+  videoMedia: ScenarioShowcaseMedia[];
+}
+
+export interface ScenarioShowcaseData {
+  sceneSlug: string;
+  sceneTitle: string;
+  sceneDesc: string;
+  projects: ScenarioShowcaseProject[];
+}
+
 type UnknownRecord = Record<string, unknown>;
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -295,6 +324,55 @@ function adaptSolutionItem(value: unknown): PublicSolutionItem | null {
     caption: toStringValue(value.caption),
     sortOrder: toNumberValue(value.sortOrder),
     enabled: true,
+  };
+}
+
+export function adaptSolutionGroupsToShowcaseProjects(solution: PublicSolution | null): ScenarioShowcaseData {
+  if (!solution) {
+    return {
+      sceneSlug: '',
+      sceneTitle: '',
+      sceneDesc: '',
+      projects: [],
+    };
+  }
+
+  const projects = solution.groups
+    .filter((group) => group.enabled)
+    .map((group) => {
+      const media = group.items
+        .filter((item) => item.enabled && item.mediaUrl)
+        .map((item) => ({
+          id: item.id,
+          type: item.fileType,
+          url: item.mediaUrl,
+          fileName: item.mediaFileName,
+          displayName: item.mediaDisplayName,
+          alt: item.alt || item.mediaDisplayName || group.title,
+          caption: item.caption,
+          sortOrder: item.sortOrder,
+        }))
+        .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0));
+
+      return {
+        id: group.id || group.slug,
+        slug: group.slug || group.id,
+        title: group.title,
+        summary: group.summary || solution.desc,
+        sortOrder: group.sortOrder,
+        media,
+        imageMedia: media.filter((item) => item.type === 'image'),
+        videoMedia: media.filter((item) => item.type === 'video'),
+      };
+    })
+    .filter((project) => project.id && project.slug && project.title && project.summary && project.media.length > 0)
+    .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0));
+
+  return {
+    sceneSlug: solution.slug,
+    sceneTitle: solution.title,
+    sceneDesc: solution.desc,
+    projects,
   };
 }
 

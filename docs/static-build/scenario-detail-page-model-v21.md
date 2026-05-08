@@ -417,3 +417,27 @@ export interface MediaShowcasePage extends ScenarioDetailPage {
 - `scenario-detail` API 骨架暂时冻结，不接 UI、不接前台、不接 route manifest、不接 sitemap。
 
 这意味着 scenario detail 页面即使创建为 `published`，也不会影响当前 17 个正式页面，不会进入 sitemap，也不会接管 `/solutions/*` 路径。下一步才考虑后台编辑器或模板试点。
+
+## 13. 第21-6A-10 通用场景展示适配层
+
+第21-6A-10 不新增正式内容、不改 `solutions.json`，只把第21-6A-9 中 `/solutions/family-day` 已验证的后台案例组消费逻辑沉淀为前台通用展示适配层。
+
+本轮新增前台轻量模型：
+
+- `ScenarioShowcaseData`
+- `ScenarioShowcaseProject`
+- `ScenarioShowcaseMedia`
+
+核心适配函数为 `adaptSolutionGroupsToShowcaseProjects`，输入仍来自 `SolutionManagementPage` 对应的 `/api/solutions` 数据，输出用于展示型“项目 / 案例 / 图库”页面。它保留 scene slug、scene title、scene description、enabled groups、group title、group summary、group slug、group sortOrder，以及组内 enabled media 的 `image` / `video` 类型、url、alt、caption 等字段。
+
+当前 `/solutions/family-day` 只消费适配结果中的图片素材，继续使用既有 `FamilyDayPage` 展示型视觉；当后台数据不可用、没有有效案例组或没有可展示图片时，仍 fallback 到 legacy `projectsData`。
+
+边界保持不变：
+
+- 维护入口仍是后台“场景解决方案”模块 `SolutionManagementPage`。
+- `PageEditor` 不负责场景方案内容。
+- 不使用 `pages.json` 维护场景案例内容。
+- `scenario-detail` API 骨架暂时冻结，不接前台、不接 UI、不接 route manifest、不接 sitemap。
+- 本轮不正式接管 `salon`、`annual`、`exhibition`、`forum`、`other` 等其他场景三级页。
+
+`/solutions/video` 保留特殊性：当前通用适配层会识别并保留 video media 字段，但不会在 family-day 播放视频。后续 video 页需要单独增强 `videoShowcase`、poster、thumbnail、duration、图片 / 视频混合媒体排版等能力。

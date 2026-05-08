@@ -13,9 +13,9 @@ import {
   fetchEnabledSolutions,
   fetchEnabledSolutionBySlug,
   fetchPageByPath,
+  adaptSolutionGroupsToShowcaseProjects,
   type PublicArticle,
   type PublicCase,
-  type PublicSolution,
 } from './services/publicContent';
 import gsap from 'gsap';
 import Markdown from 'react-markdown';
@@ -2758,39 +2758,6 @@ function getFamilyDayImageSrc(item: FamilyDayGalleryItem, index: number) {
       : `https://images.unsplash.com/photo-${1500000000000 + index}?q=80&w=800&auto=format&fit=crop`;
 }
 
-function mapSolutionToFamilyDayProjects(solution: PublicSolution | null): FamilyDayProject[] {
-  if (!solution) {
-    return [];
-  }
-
-  return solution.groups
-    .filter((group) => group.enabled)
-    .map((group) => {
-      const gallery = group.items
-        .filter((item) => item.enabled && item.fileType === 'image' && item.mediaUrl)
-        .map((item) => ({
-          src: item.mediaUrl,
-          alt: item.alt || item.mediaDisplayName || group.title,
-          caption: item.caption,
-        }));
-
-      return {
-        id: group.id || group.slug,
-        title: group.title,
-        slogan: group.slug,
-        shortIntro: group.summary || solution.desc,
-        gallery,
-      };
-    })
-    .filter((project) => project.title && project.shortIntro && project.gallery.length > 0)
-    .sort((left, right) => {
-      const leftGroup = solution.groups.find((group) => group.id === left.id || group.slug === left.id);
-      const rightGroup = solution.groups.find((group) => group.id === right.id || group.slug === right.id);
-
-      return (leftGroup?.sortOrder ?? 0) - (rightGroup?.sortOrder ?? 0);
-    });
-}
-
 function FamilyDayPage() {
   const { pathname } = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -2806,7 +2773,20 @@ function FamilyDayPage() {
     fetchEnabledSolutionBySlug('family-day')
       .then((solution) => {
         if (isMounted) {
-          setCmsProjects(mapSolutionToFamilyDayProjects(solution));
+          const showcase = adaptSolutionGroupsToShowcaseProjects(solution);
+          setCmsProjects(showcase.projects
+            .map((project) => ({
+              id: project.id,
+              title: project.title,
+              slogan: project.slug,
+              shortIntro: project.summary,
+              gallery: project.imageMedia.map((item) => ({
+                src: item.url,
+                alt: item.alt,
+                caption: item.caption,
+              })),
+            }))
+            .filter((project) => project.title && project.shortIntro && project.gallery.length > 0));
         }
       })
       .catch(() => {
