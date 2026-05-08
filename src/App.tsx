@@ -2890,41 +2890,10 @@ function SolutionArticlePage() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [takeoverPage, setTakeoverPage] = useState<Page | null>(null);
-  const solutionTakeoverPath = articleId === 'salon' || articleId === 'annual'
-    ? `/solutions/${articleId}`
-    : null;
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    if (!solutionTakeoverPath) {
-      setTakeoverPage(null);
-      return () => {
-        isMounted = false;
-      };
-    }
-
-    fetchPageByPath(solutionTakeoverPath)
-      .then((page) => {
-        if (isMounted) {
-          setTakeoverPage(page);
-        }
-      })
-      .catch(() => {
-        if (isMounted) {
-          setTakeoverPage(null);
-        }
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [solutionTakeoverPath]);
 
   if (articleId === 'family-day') {
     return <FamilyDayPage />;
@@ -2941,30 +2910,6 @@ function SolutionArticlePage() {
     );
   }
 
-  const pageSections = takeoverPage?.sections
-    .filter((section) => section.enabled)
-    .sort((left, right) => left.sortOrder - right.sortOrder) ?? [];
-  const pageFaqItems = takeoverPage?.faqItems
-    .filter((item) => item.enabled && (item.question || item.answer))
-    .sort((left, right) => left.sortOrder - right.sortOrder) ?? [];
-  const pageContent = takeoverPage
-    ? [
-        ...pageSections.map((section) => [
-          section.title ? `### ${section.title}` : '',
-          section.subtitle,
-          section.body,
-          ...section.items.map((item) => `* ${item}`),
-        ].filter(Boolean).join('\n\n')),
-        pageFaqItems.length ? '### 常见问题' : '',
-        ...pageFaqItems.map((item) => [
-          item.question ? `**${item.question}**` : '',
-          item.answer,
-        ].filter(Boolean).join('\n\n')),
-      ].filter(Boolean).join('\n\n')
-    : article.content;
-  const displayTitle = takeoverPage?.heroTitle || takeoverPage?.title || article.title;
-  const displaySubtitle = takeoverPage?.heroSubtitle || takeoverPage?.summary || article.subtitle;
-
   return (
     <main className="bg-white min-h-screen pt-32 pb-24">
       <article className="max-w-3xl mx-auto px-6 md:px-12">
@@ -2972,12 +2917,12 @@ function SolutionArticlePage() {
           &larr; 返回上一页
         </button>
         <h1 className="text-3xl md:text-5xl font-black tracking-tight text-gray-900 mb-6 leading-tight">
-          {displayTitle}
+          {article.title}
         </h1>
-        <p className="text-xl text-gray-500 mb-8 font-medium">{displaySubtitle}</p>
+        <p className="text-xl text-gray-500 mb-8 font-medium">{article.subtitle}</p>
         <div className="w-16 h-1 bg-[#ccff00] mb-12" />
         <div className="prose prose-lg md:prose-xl text-gray-700 max-w-none leading-relaxed prose-h3:text-2xl prose-h3:font-bold prose-h3:text-gray-900 prose-h3:mt-12 prose-h3:mb-6 prose-li:marker:text-[#ccff00]">
-          <Markdown>{pageContent}</Markdown>
+          <Markdown>{article.content}</Markdown>
         </div>
         
         {/* CTA section in article */}

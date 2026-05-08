@@ -207,3 +207,21 @@ Page 模型包含以下检查项：
 第21-5 建议做端到端验收和发布前检查。
 
 第21-6 才开始正式补官网页面资料。
+
+## 10. 第21-6A-11 冻结 solution pages takeover
+
+第21-6A-11 起，`/solutions/salon` 与 `/solutions/annual` 的 PageEditor pages takeover 视为历史技术试点，已冻结 / 移除。
+
+当前边界：
+
+- 场景解决方案路径统一归后台“场景解决方案”模块 `SolutionManagementPage` 管理。
+- `PageEditor` 不负责已有业务模块路径，不接管首页、文章、案例解析、场景解决方案、媒体库、发布管理等已有专属后台内容。
+- `PageEditor` 继续用于普通页面、专题页、GEO 长尾页、补充页面，以及没有专属后台的页面。
+- `pages.json` 中即使未来出现 `/solutions/salon` 或 `/solutions/annual`，pages service 与 route manifest 也应按 reserved static / business route 规则跳过，不允许 page 接管这些路径。
+
+route manifest 预期保持：
+
+- `/solutions/salon` 为 `sourceType: 'solution'`
+- `/solutions/annual` 为 `sourceType: 'solution'`
+- `/solutions/family-day` 为 `sourceType: 'solution'`
+- pages takeover 不再从 solution detail routes 中扣除上述路径

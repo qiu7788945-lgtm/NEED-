@@ -327,7 +327,7 @@ const solutionSlugToReactPath: Record<string, string> = {
 
 const fixedRoutePaths = new Set(['/', '/solutions', '/contact', '/how-to-choose', '/choose-between-two']);
 const reservedStaticRoutePaths = new Set(staticRoutes.map((route) => route.path));
-const solutionDetailPageTakeoverPaths = new Set(['/solutions/salon', '/solutions/annual']);
+const solutionDetailPageTakeoverPaths = new Set<string>();
 
 const fixedRoutes = staticRoutes.filter((route) => fixedRoutePaths.has(route.path));
 const contentRoutes = staticRoutes.filter((route) => !fixedRoutePaths.has(route.path));

@@ -441,3 +441,21 @@ export interface MediaShowcasePage extends ScenarioDetailPage {
 - 本轮不正式接管 `salon`、`annual`、`exhibition`、`forum`、`other` 等其他场景三级页。
 
 `/solutions/video` 保留特殊性：当前通用适配层会识别并保留 video media 字段，但不会在 family-day 播放视频。后续 video 页需要单独增强 `videoShowcase`、poster、thumbnail、duration、图片 / 视频混合媒体排版等能力。
+
+## 14. 第21-6A-11 冻结旧 pages takeover
+
+第21-6A-11 明确收回 `/solutions/salon` 与 `/solutions/annual` 的 PageEditor pages takeover 能力。该能力只作为第21-6A-2 / 第21-6A-3 的历史技术试点保留记录，不作为场景解决方案的正式业务路线。
+
+后续归属：
+
+- `/solutions/family-day`
+- `/solutions/salon`
+- `/solutions/annual`
+- `/solutions/exhibition`
+- `/solutions/video`
+- `/solutions/forum`
+- `/solutions/other`
+
+上述场景解决方案路径统一归 `SolutionManagementPage` 管理。`PageEditor` 不负责已有业务模块路径，只负责普通页面、专题页、GEO 长尾页、补充页面等没有专属后台的内容。
+
+`scenario-detail` API 骨架继续冻结，不接前台、不接 UI、不接 route manifest、不接 sitemap。
