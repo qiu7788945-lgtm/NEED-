@@ -2806,6 +2806,9 @@ function SolutionArticlePage() {
   const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [takeoverPage, setTakeoverPage] = useState<Page | null>(null);
+  const solutionTakeoverPath = articleId === 'salon' || articleId === 'annual'
+    ? `/solutions/${articleId}`
+    : null;
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -2814,14 +2817,14 @@ function SolutionArticlePage() {
   useEffect(() => {
     let isMounted = true;
 
-    if (articleId !== 'salon') {
+    if (!solutionTakeoverPath) {
       setTakeoverPage(null);
       return () => {
         isMounted = false;
       };
     }
 
-    fetchPageByPath('/solutions/salon')
+    fetchPageByPath(solutionTakeoverPath)
       .then((page) => {
         if (isMounted) {
           setTakeoverPage(page);
@@ -2836,7 +2839,7 @@ function SolutionArticlePage() {
     return () => {
       isMounted = false;
     };
-  }, [articleId]);
+  }, [solutionTakeoverPath]);
 
   if (articleId === 'family-day') {
     return <FamilyDayPage />;

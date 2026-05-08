@@ -62,7 +62,7 @@ const reservedStaticRoutePaths = new Set([
   '/choose-between-two',
   '/cases/hyundai-family-day',
 ]);
-const solutionDetailPageTakeoverPaths = new Set(['/solutions/salon']);
+const solutionDetailPageTakeoverPaths = new Set(['/solutions/salon', '/solutions/annual']);
 
 function isValidPagePathForPrerender(pagePath: string) {
   return Boolean(pagePath)
