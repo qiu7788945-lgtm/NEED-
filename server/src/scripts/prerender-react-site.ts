@@ -50,6 +50,7 @@ interface PublishLogContext {
   robotsPath: string;
   manifestPath: string;
   errors: string[];
+  warnings: string[];
   manifestSnapshot: object;
 }
 
@@ -161,8 +162,14 @@ function createPublishLogContext(startedAtDate: Date): PublishLogContext {
     robotsPath: path.join(outputDir, 'robots.txt'),
     manifestPath: path.join(outputDir, 'route-manifest.json'),
     errors: [],
+    warnings: [],
     manifestSnapshot: manifest,
   };
+}
+
+function reportPrerenderWarning(message: string) {
+  console.warn(message);
+  publishLogContext?.warnings.push(message);
 }
 
 function addFailedRoute(pathName: string, errors: string[]) {
@@ -701,8 +708,16 @@ async function main() {
         const outputFile = path.join(outputDir, route.outputFile);
 
         try {
-          await page.goto(targetUrl, { waitUntil: 'networkidle' });
-          await page.waitForTimeout(2000);
+          await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+
+          try {
+            await page.waitForLoadState('networkidle', { timeout: 8000 });
+          } catch (error) {
+            const message = (error as Error).message;
+            reportPrerenderWarning(`Network idle wait timed out for ${route.path}. Continuing with content checks. Error: ${message}`);
+          }
+
+          await page.waitForTimeout(1000);
 
           const html = applyRouteHead(await page.content(), route);
           const bodyText = await page.locator('body').innerText();
@@ -718,6 +733,7 @@ async function main() {
           const normalizedBodyText = normalizeContent(bodyText);
           const normalizedHtml = normalizeContent(html);
           const missingTexts = [
+            ...(normalizedBodyText ? [] : ['body text non-empty']),
             ...route.requiredChecks
               .filter((check) => !check.test(normalizedBodyText, normalizedHtml))
               .map((check) => check.label),

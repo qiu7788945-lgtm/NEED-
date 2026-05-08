@@ -491,3 +491,22 @@ export interface MediaShowcasePage extends ScenarioDetailPage {
 - `PageEditor` 不负责场景解决方案内容。
 - 不使用 `pages.json` 或 `scenario-detail-pages.json` 维护这些业务路径。
 - `/solutions/video` 暂不纳入图片型标准场景扩展，后续单独设计视频、poster、thumbnail、duration、截图和成片资产等能力。
+
+## 17. 第21-6B-1 prerender requiredChecks 稳定化
+
+第21-6B-1 修复正式场景内容在 `build:prerender` 中因 `group.summary` 原始空白格式导致 requiredChecks 过度敏感的问题。
+
+当 `/solutions/family-day`、`/solutions/salon`、`/solutions/annual`、`/solutions/exhibition`、`/solutions/forum`、`/solutions/other` 使用“场景解决方案”后台 enabled group 且存在有效图片素材时，route manifest 仍要求 `group.summary` 参与“后台数据可用”判断，但不再把 raw `group.summary` 放入 requiredChecks。
+
+当前后台数据分支 requiredChecks 只检查稳定且实际渲染的字段：
+
+- enabled group title
+- `联系我们探讨项目`
+
+fallback legacy 分支继续使用各 route template 原有 requiredChecks，不改变固定页、文章页、案例页、普通 page 路由，也不影响 `/solutions/video`。
+
+## 18. 第21-6B-1 prerender networkidle 软等待
+
+第21-6B-1 将 `build:prerender` 的页面访问门槛调整为先等待 `domcontentloaded`，再以较短超时尝试等待 `networkidle`。如果 `networkidle` 因图片较多等资源稳定判断偶发超时，只记录 warning 并继续读取 HTML、body text 和执行 requiredChecks。
+
+`domcontentloaded` 失败、HTML / body text 读取失败、body text 为空、requiredChecks 缺失等内容不可用问题仍然判定为 route failed；requiredChecks 不放松、不跳过。

@@ -44,6 +44,8 @@ export interface PublicCase {
 export interface PublicSolution {
   id: string;
   slug: string;
+  publicSlug: string;
+  publicPath: string;
   title: string;
   desc: string;
   enabled: boolean;
@@ -102,6 +104,50 @@ export interface ScenarioShowcaseData {
 }
 
 type UnknownRecord = Record<string, unknown>;
+
+export const solutionPublicPathBySourceSlug: Record<string, string> = {
+  'family-day': '/solutions/family-day',
+  'client-appreciation': '/solutions/salon',
+  'annual-meeting': '/solutions/annual',
+  'commercial-display': '/solutions/exhibition',
+  'video-digital-assets': '/solutions/video',
+  'academic-forum': '/solutions/forum',
+  other: '/solutions/other',
+};
+
+export const solutionSourceSlugByPublicSlug: Record<string, string> = {
+  'family-day': 'family-day',
+  salon: 'client-appreciation',
+  annual: 'annual-meeting',
+  exhibition: 'commercial-display',
+  video: 'video-digital-assets',
+  forum: 'academic-forum',
+  other: 'other',
+};
+
+function normalizeSolutionSlug(value: string): string {
+  return value.trim().replace(/^\/?solutions\//, '').replace(/^\/+|\/+$/g, '');
+}
+
+export function getSolutionPublicPath(sourceSlugOrId: string): string {
+  const slug = normalizeSolutionSlug(sourceSlugOrId);
+
+  if (!slug) {
+    return '/solutions';
+  }
+
+  return solutionPublicPathBySourceSlug[slug] ?? `/solutions/${slug}`;
+}
+
+export function getSolutionPublicSlug(sourceSlugOrId: string): string {
+  return normalizeSolutionSlug(getSolutionPublicPath(sourceSlugOrId));
+}
+
+export function getSolutionSourceSlugByPublicSlug(publicSlugOrPath: string): string {
+  const publicSlug = normalizeSolutionSlug(publicSlugOrPath);
+
+  return solutionSourceSlugByPublicSlug[publicSlug] ?? publicSlug;
+}
 
 function isRecord(value: unknown): value is UnknownRecord {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -264,6 +310,8 @@ function adaptSolution(value: unknown): PublicSolution | null {
   return {
     id: slug,
     slug,
+    publicSlug: getSolutionPublicSlug(slug),
+    publicPath: getSolutionPublicPath(slug),
     title,
     desc: toStringValue(value.description) || toStringValue(value.desc),
     enabled: true,
@@ -465,8 +513,9 @@ export async function fetchEnabledSolutions(): Promise<PublicSolution[]> {
 
 export async function fetchEnabledSolutionBySlug(slug: string): Promise<PublicSolution | null> {
   const solutions = await fetchEnabledSolutions();
+  const sourceSlug = getSolutionSourceSlugByPublicSlug(slug);
 
-  return solutions.find((solution) => solution.slug === slug || solution.id === slug) ?? null;
+  return solutions.find((solution) => solution.slug === sourceSlug || solution.id === sourceSlug) ?? null;
 }
 
 export async function fetchPublishedPages(): Promise<Page[]> {

@@ -14,6 +14,8 @@ import {
   fetchEnabledSolutionBySlug,
   fetchPageByPath,
   adaptSolutionGroupsToShowcaseProjects,
+  getSolutionPublicPath,
+  getSolutionSourceSlugByPublicSlug,
   type PublicArticle,
   type PublicCase,
 } from './services/publicContent';
@@ -2475,19 +2477,22 @@ function QRCodeModal({ isOpen, onClose }: { isOpen: boolean, onClose: () => void
 
   return null;
 }
-
-
-
+interface SolutionListItem {
+  id: string;
+  path: string;
+  title: string;
+  desc: string;
+}
 
 function SolutionsPage() {
   const { pathname } = useLocation();
-  const [publicSolutions, setPublicSolutions] = useState<Array<{ id: string; title: string; desc: string }>>([]);
+  const [publicSolutions, setPublicSolutions] = useState<SolutionListItem[]>([]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
 
-  const solutionsList = [
+  const solutionsList: SolutionListItem[] = [
     { title: '企业家庭日/开放日', desc: '传递企业温度，增强员工归属与家属认同', id: 'family-day' },
     { title: '客户答谢&精品沙龙', desc: '深度互动，建立高净值客户长期信任', id: 'salon' },
     { title: '年会活动与企业文化', desc: '不只是热闹，更是企业向心力的凝聚场', id: 'annual' },
@@ -2495,7 +2500,10 @@ function SolutionsPage() {
     { title: '视频与数字资产', desc: '长效复用，沉淀活动背后的核心价值', id: 'video' },
     { title: '学术与专业论坛', desc: '汇聚行业智慧，打造高规格思想交锋平台', id: 'forum' },
     { title: '其他', desc: '灵活定制，满足更多元、更复杂的特殊场景需求', id: 'other' },
-  ];
+  ].map((solution) => ({
+    ...solution,
+    path: getSolutionPublicPath(solution.id),
+  }));
   const visibleSolutions = publicSolutions.length > 0 ? publicSolutions : solutionsList;
 
   useEffect(() => {
@@ -2504,6 +2512,7 @@ function SolutionsPage() {
         if (solutions.length > 0) {
           setPublicSolutions(solutions.map((solution) => ({
             id: solution.id || solution.slug,
+            path: solution.publicPath || getSolutionPublicPath(solution.slug || solution.id),
             title: solution.title,
             desc: solution.desc,
           })));
@@ -2531,7 +2540,7 @@ function SolutionsPage() {
           {visibleSolutions.map((solution, idx) => (
             <Link 
               key={idx} 
-              to={`/solutions/${solution.id}`}
+              to={solution.path}
               className={`group relative overflow-hidden bg-[#f4f4f5] rounded-3xl p-10 md:p-12 transition-all duration-500 hover:bg-[#ccff00] hover:shadow-2xl hover:-translate-y-1 flex flex-col justify-between min-h-[360px] ${idx === 0 || idx === 6 ? 'md:col-span-2 lg:col-span-2' : ''}`}
             >
               <div className="relative z-10">
@@ -2738,13 +2747,7 @@ interface FamilyDayProject {
   gallery: FamilyDayGalleryItem[];
 }
 
-const solutionShowcaseSourceSlugByArticleId: Record<string, string> = {
-  salon: 'client-appreciation',
-  annual: 'annual-meeting',
-  exhibition: 'commercial-display',
-  forum: 'academic-forum',
-  other: 'other',
-};
+const solutionShowcaseArticleIds = new Set(['salon', 'annual', 'exhibition', 'forum', 'other']);
 
 function toFamilyDayGalleryItem(value: string | FamilyDayGalleryItem, projectTitle: string): FamilyDayGalleryItem {
   if (typeof value !== 'string') {
@@ -2994,7 +2997,9 @@ function SolutionArticlePage() {
 
   useEffect(() => {
     let isMounted = true;
-    const sourceSlug = articleId ? solutionShowcaseSourceSlugByArticleId[articleId] : undefined;
+    const sourceSlug = articleId && solutionShowcaseArticleIds.has(articleId)
+      ? getSolutionSourceSlugByPublicSlug(articleId)
+      : undefined;
 
     if (!sourceSlug) {
       setShowcaseProjects([]);
@@ -3024,7 +3029,7 @@ function SolutionArticlePage() {
     return <FamilyDayPage />;
   }
 
-  if (articleId && solutionShowcaseSourceSlugByArticleId[articleId] && showcaseProjects.length > 0) {
+  if (articleId && solutionShowcaseArticleIds.has(articleId) && showcaseProjects.length > 0) {
     return (
       <ScenarioShowcasePage
         projects={showcaseProjects}

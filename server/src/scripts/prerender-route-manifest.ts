@@ -489,10 +489,7 @@ function getSolutionShowcaseRouteRequiredChecks(scene: SolutionSceneSource, temp
   }
 
   return [
-    ...groupsWithImages.flatMap(({ group }) => [
-      group.title,
-      group.summary,
-    ]),
+    ...groupsWithImages.map(({ group }) => group.title),
     '联系我们探讨项目',
   ].map(getSourceText).filter(Boolean);
 }
