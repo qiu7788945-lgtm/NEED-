@@ -3,6 +3,7 @@ import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
 import { ArrowRight, ArrowDown, CheckCircle2, Users, Target, Zap, Menu, X, ChevronDown, Play, Pause, Volume2, VolumeX, Copy, Check } from 'lucide-react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import ContactAndAssetsPage from './pages/ContactAndAssetsPage';
+import { PagePreviewPage } from './pages/PagePreviewPage';
 import { fetchHomeVideo, fetchPublishedArticles, fetchPublishedCases, fetchEnabledSolutions, type PublicArticle, type PublicCase } from './services/publicContent';
 import gsap from 'gsap';
 import Markdown from 'react-markdown';
@@ -2892,6 +2893,7 @@ export default function App() {
         {!splashVisible && <Navbar />}
 
         <Routes>
+          <Route path="/preview/pages/:id" element={<PagePreviewPage />} />
           <Route path="/contact" element={<ContactAndAssetsPage />} />
           <Route path="/solutions" element={<SolutionsPage />} />
           <Route path="/solutions/:articleId" element={<SolutionArticlePage />} />

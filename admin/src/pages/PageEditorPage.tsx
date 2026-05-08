@@ -271,6 +271,10 @@ export function PageEditorPage() {
     }
   }
 
+  function openPagePreview(page: Page) {
+    window.open(`http://localhost:3000/preview/pages/${encodeURIComponent(page.id)}`, '_blank', 'noopener,noreferrer');
+  }
+
   async function handleDeletePage(page: Page) {
     const confirmed = window.confirm(`确认删除《${page.title}》吗？测试页删除后会从 pages.json 移除。`);
     if (!confirmed) {
@@ -517,6 +521,9 @@ export function PageEditorPage() {
                   </button>
                   <button type="button" onClick={() => void handleDuplicatePage(page)}>
                     复制
+                  </button>
+                  <button type="button" onClick={() => openPagePreview(page)}>
+                    预览
                   </button>
                   <button type="button" onClick={() => void handleSetStatusFromList(page, 'draft')}>
                     draft

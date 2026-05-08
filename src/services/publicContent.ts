@@ -1,3 +1,5 @@
+import type { Page } from '../../shared/types/pages';
+
 const viteEnv = (import.meta as ImportMeta & {
   env?: {
     VITE_PUBLIC_API_BASE_URL?: string;
@@ -216,6 +218,23 @@ function adaptSolution(value: unknown): PublicSolution | null {
   };
 }
 
+function adaptPage(value: unknown): Page | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = toStringValue(value.id);
+  const title = toStringValue(value.title);
+  const path = toStringValue(value.path);
+  const slug = toStringValue(value.slug);
+
+  if (!id || !title || !path || !slug) {
+    return null;
+  }
+
+  return value as unknown as Page;
+}
+
 export function resolvePublicAssetUrl(url: unknown): string {
   const value = toStringValue(url).trim();
 
@@ -278,4 +297,31 @@ export async function fetchEnabledSolutions(): Promise<PublicSolution[]> {
   return normalizeArrayPayload(payload)
     .map(adaptSolution)
     .filter((item): item is PublicSolution => item !== null);
+}
+
+export async function fetchPublishedPages(): Promise<Page[]> {
+  const payload = await safeFetchJson('/api/pages?status=published');
+  return normalizeArrayPayload(payload)
+    .map(adaptPage)
+    .filter((item): item is Page => item !== null && item.status === 'published');
+}
+
+export async function fetchPageByPath(path: string): Promise<Page | null> {
+  const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+  const pages = await fetchPublishedPages();
+
+  return pages.find((page) => page.path === normalizedPath) ?? null;
+}
+
+export async function fetchPageById(id: string): Promise<Page | null> {
+  const payload = await safeFetchJson(`/api/pages/${encodeURIComponent(id)}`);
+  const page = adaptPage(normalizeObjectPayload(payload));
+
+  return page?.status === 'published' ? page : null;
+}
+
+export async function fetchPreviewPageById(id: string): Promise<Page | null> {
+  const payload = await safeFetchJson(`/api/pages/${encodeURIComponent(id)}`);
+
+  return adaptPage(normalizeObjectPayload(payload));
 }
