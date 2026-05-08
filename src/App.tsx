@@ -2,9 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { motion, useScroll, useTransform, AnimatePresence } from 'motion/react';
 import { ArrowRight, ArrowDown, CheckCircle2, Users, Target, Zap, Menu, X, ChevronDown, Play, Pause, Volume2, VolumeX, Copy, Check } from 'lucide-react';
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import type { Page } from '../shared/types/pages';
 import ContactAndAssetsPage from './pages/ContactAndAssetsPage';
 import { PagePreviewPage } from './pages/PagePreviewPage';
-import { fetchHomeVideo, fetchPublishedArticles, fetchPublishedCases, fetchEnabledSolutions, type PublicArticle, type PublicCase } from './services/publicContent';
+import { DynamicPage } from './pages/DynamicPage';
+import { fetchHomeVideo, fetchPublishedArticles, fetchPublishedCases, fetchEnabledSolutions, fetchPageByPath, type PublicArticle, type PublicCase } from './services/publicContent';
 import gsap from 'gsap';
 import Markdown from 'react-markdown';
 
@@ -2869,6 +2871,48 @@ function NotFoundPage() {
   );
 }
 
+function DynamicPageRoute() {
+  const { pathname } = useLocation();
+  const [page, setPage] = useState<Page | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    setIsLoading(true);
+    fetchPageByPath(pathname)
+      .then((nextPage) => {
+        if (isMounted) {
+          setPage(nextPage);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setPage(null);
+        }
+      })
+      .finally(() => {
+        if (isMounted) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [pathname]);
+
+  if (isLoading) {
+    return (
+      <main className="min-h-screen bg-white text-black pt-32 px-6 flex items-center justify-center">
+        <p className="text-lg text-gray-500">页面加载中...</p>
+      </main>
+    );
+  }
+
+  return page ? <DynamicPage page={page} /> : <NotFoundPage />;
+}
+
 export default function App() {
   const [splashVisible, setSplashVisible] = useState(true);
 
@@ -2903,7 +2947,7 @@ export default function App() {
           <Route path="/choose-between-two/:articleId" element={<ChooseArticlePage />} />
           <Route path="/how-to-choose/:articleId" element={<ArticlePage />} />
           <Route path="/cases/:id" element={<CaseStudyPage />} />
-          <Route path="*" element={<NotFoundPage />} />
+          <Route path="*" element={<DynamicPageRoute />} />
         </Routes>
       </div>
     </Router>

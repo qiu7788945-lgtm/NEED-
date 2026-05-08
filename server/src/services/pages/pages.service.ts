@@ -31,7 +31,37 @@ const allowedPageTypes = new Set<PageType>([
   'home_section',
 ]);
 const allowedStatuses = new Set<PageStatus>(['draft', 'published', 'archived']);
-const placeholderPatterns = [/placeholder/i, /lorem ipsum/i, /test page/i, /todo/i, /待补充/, /占位/];
+const placeholderPatterns = [
+  /测试/,
+  /占位/,
+  /待补充/,
+  /待完善/,
+  /示例/,
+  /TODO/i,
+  /placeholder/i,
+  /lorem ipsum/i,
+  /test page/i,
+  /\btest\b/i,
+];
+const reservedStaticRoutePaths = new Set([
+  '/',
+  '/solutions',
+  '/solutions/family-day',
+  '/solutions/salon',
+  '/solutions/annual',
+  '/solutions/exhibition',
+  '/solutions/video',
+  '/solutions/forum',
+  '/solutions/other',
+  '/contact',
+  '/how-to-choose',
+  '/how-to-choose/01',
+  '/how-to-choose/02',
+  '/how-to-choose/03',
+  '/how-to-choose/04',
+  '/choose-between-two',
+  '/cases/hyundai-family-day',
+]);
 
 export interface PageListFilters {
   pageType?: string;
@@ -224,26 +254,48 @@ function normalizeRequiredChecks(value: unknown): PageRequiredChecks {
   };
 }
 
-function collectMeaningfulText(page: Pick<Page, 'title' | 'heroTitle' | 'heroSubtitle' | 'summary' | 'sections'>) {
+function collectMeaningfulText(page: Pick<Page, 'title' | 'heroTitle' | 'heroSubtitle' | 'summary' | 'sections' | 'faqItems'>) {
   return [
     page.title,
     page.heroTitle,
     page.heroSubtitle,
     page.summary,
     ...page.sections.flatMap((section) => [section.title, section.subtitle, section.body, ...section.items]),
+    ...page.faqItems.flatMap((item) => [item.question, item.answer]),
   ].join('\n');
+}
+
+function getCompactTextLength(value: string) {
+  return value.replace(/\s/g, '').length;
 }
 
 export function validatePageReadiness(page: Page): PageValidationResult {
   const meaningfulText = collectMeaningfulText(page);
+  const meaningfulTextLength = getCompactTextLength(meaningfulText);
+  const hasRenderablePath = Boolean(page.path)
+    && page.path.startsWith('/')
+    && !page.path.startsWith('/preview')
+    && !page.path.includes('//')
+    && !reservedStaticRoutePaths.has(page.path);
+  const hasStrongSummary = getCompactTextLength(page.summary) >= 30;
+  const hasStrongSectionBody = page.sections.some((section) => (
+    section.enabled && getCompactTextLength(section.body) >= 50
+  ));
+  const hasStrongFaq = page.faqItems.some((item) => (
+    item.enabled && Boolean(item.question.trim()) && getCompactTextLength(item.answer) >= 40
+  ));
+  const hasNoPlaceholder = !placeholderPatterns.some((pattern) => pattern.test(meaningfulText));
+  const hasMeaningfulContent = hasNoPlaceholder
+    && meaningfulTextLength >= 80
+    && (hasStrongSummary || hasStrongSectionBody || hasStrongFaq);
   const checks: PageRequiredChecks = {
     hasTitle: Boolean(page.title),
     hasSeoTitle: Boolean(page.seoTitle),
     hasSeoDescription: Boolean(page.seoDescription),
-    hasRenderablePath: false,
-    hasMeaningfulContent: meaningfulText.replace(/\s/g, '').length >= 80,
-    hasNoPlaceholder: !placeholderPatterns.some((pattern) => pattern.test(meaningfulText)),
-    canPrerender: false,
+    hasRenderablePath,
+    hasMeaningfulContent,
+    hasNoPlaceholder,
+    canPrerender: hasRenderablePath,
   };
   const errors = Object.entries(checks)
     .filter(([, passed]) => !passed)

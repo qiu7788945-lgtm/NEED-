@@ -41,6 +41,11 @@ interface PublishLogContext {
     skipReason: string;
     errors?: string[];
   }>;
+  sourceStats: Record<string, {
+    discovered: number;
+    generated: number;
+    skipped: number;
+  }>;
   sitemapPath: string;
   robotsPath: string;
   manifestPath: string;
@@ -116,6 +121,23 @@ function formatPublishDate(date: Date) {
 
 function createPublishLogContext(startedAtDate: Date): PublishLogContext {
   const publishId = `publish-${formatPublishDate(startedAtDate)}`;
+  const sourceTypes = new Set([
+    ...manifest.routes.map((route) => route.sourceType),
+    ...manifest.skippedRoutes.map((route) => route.sourceType),
+  ]);
+  const sourceStats = Array.from(sourceTypes).reduce<PublishLogContext['sourceStats']>((stats, sourceType) => {
+    const generated = manifest.routes.filter((route) => route.sourceType === sourceType && route.shouldGenerate).length;
+    const skipped = manifest.skippedRoutes.filter((route) => route.sourceType === sourceType).length;
+
+    return {
+      ...stats,
+      [sourceType]: {
+        discovered: generated + skipped,
+        generated,
+        skipped,
+      },
+    };
+  }, {});
 
   return {
     publishId,
@@ -134,6 +156,7 @@ function createPublishLogContext(startedAtDate: Date): PublishLogContext {
       skipReason: route.skipReason,
       errors: route.errors,
     })),
+    sourceStats,
     sitemapPath: path.join(outputDir, 'sitemap.xml'),
     robotsPath: path.join(outputDir, 'robots.txt'),
     manifestPath: path.join(outputDir, 'route-manifest.json'),

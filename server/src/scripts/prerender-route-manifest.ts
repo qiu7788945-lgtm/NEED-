@@ -1,8 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Page, PageRequiredChecks } from '../../../shared/types/pages.js';
 
-export type RouteSourceType = 'fixed' | 'solution' | 'article' | 'case';
+export type RouteSourceType = 'fixed' | 'solution' | 'article' | 'case' | 'page';
 
 export interface RouteManifestItem {
   path: string;
@@ -46,6 +47,10 @@ const SKIP_REASONS = {
   publishedCaseNoReactRouteMapping: 'published case has no React route mapping',
   displayOnlyDuplicateCaseRoute: 'display-only duplicate case route',
   legacyVerifiedRoute: 'legacy verified route kept until CMS content takeover',
+  pageNotPublished: 'page not published',
+  pageShouldIndexDisabled: 'page shouldIndex disabled',
+  pageInvalidPath: 'page path is invalid or reserved',
+  pageRequiredChecksFailed: 'page required checks failed',
 } as const;
 
 interface SolutionSceneSource {
@@ -83,6 +88,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const solutionsDataPath = join(scriptDir, '../../data/solutions.json');
 const articlesDataPath = join(scriptDir, '../../data/articles.json');
 const casesDataPath = join(scriptDir, '../../data/cases.json');
+const pagesDataPath = join(scriptDir, '../../data/pages.json');
 
 const staticRoutes: StaticRouteInput[] = [
   {
@@ -302,6 +308,7 @@ const solutionSlugToReactPath: Record<string, string> = {
 };
 
 const fixedRoutePaths = new Set(['/', '/solutions', '/contact', '/how-to-choose', '/choose-between-two']);
+const reservedStaticRoutePaths = new Set(staticRoutes.map((route) => route.path));
 
 const fixedRoutes = staticRoutes.filter((route) => fixedRoutePaths.has(route.path));
 const contentRoutes = staticRoutes.filter((route) => !fixedRoutePaths.has(route.path));
@@ -365,6 +372,7 @@ function countRoutesBySourceType(routes: RouteManifestItem[]): Record<RouteSourc
       solution: 0,
       article: 0,
       case: 0,
+      page: 0,
     },
   );
 }
@@ -410,6 +418,17 @@ function readCases(): CaseSource[] {
   return parsedContent;
 }
 
+function readPages(): Page[] {
+  const rawContent = readFileSync(pagesDataPath, 'utf8');
+  const parsedContent = JSON.parse(rawContent) as unknown;
+
+  if (!Array.isArray(parsedContent)) {
+    throw new Error('Expected server/data/pages.json to contain an array of pages');
+  }
+
+  return parsedContent as Page[];
+}
+
 function getSolutionTemplateByPath(path: string): StaticRouteInput | undefined {
   return solutionRouteTemplates.find((route) => route.path === path);
 }
@@ -428,6 +447,87 @@ function getSourceText(value: unknown): string {
 
 function getSourceNumber(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER;
+}
+
+const pagePlaceholderPatterns = [
+  /测试/,
+  /占位/,
+  /待补充/,
+  /待完善/,
+  /示例/,
+  /TODO/i,
+  /placeholder/i,
+  /lorem ipsum/i,
+  /test page/i,
+  /\btest\b/i,
+];
+
+function isValidPagePath(pagePath: string) {
+  return Boolean(pagePath)
+    && pagePath.startsWith('/')
+    && !pagePath.startsWith('/preview')
+    && !pagePath.includes('//')
+    && pagePath !== '/preview';
+}
+
+function collectPageText(page: Page) {
+  return [
+    page.title,
+    page.seoTitle,
+    page.seoDescription,
+    page.heroTitle,
+    page.heroSubtitle,
+    page.summary,
+    ...page.sections.flatMap((section) => [section.title, section.subtitle, section.body, ...section.items]),
+    ...page.faqItems.flatMap((item) => [item.question, item.answer]),
+  ].join('\n');
+}
+
+function getCompactTextLength(value: string) {
+  return value.replace(/\s/g, '').length;
+}
+
+function getPageRequiredChecks(page: Page): PageRequiredChecks {
+  const pageText = collectPageText(page);
+  const meaningfulTextLength = getCompactTextLength(pageText);
+  const hasRenderablePath = isValidPagePath(page.path) && !reservedStaticRoutePaths.has(page.path);
+  const hasStrongSummary = getCompactTextLength(page.summary) >= 30;
+  const hasStrongSectionBody = page.sections.some((section) => (
+    section.enabled && getCompactTextLength(section.body) >= 50
+  ));
+  const hasStrongFaq = page.faqItems.some((item) => (
+    item.enabled && Boolean(getSourceText(item.question)) && getCompactTextLength(item.answer) >= 40
+  ));
+  const hasNoPlaceholder = !pagePlaceholderPatterns.some((pattern) => pattern.test(pageText));
+  const hasMeaningfulContent = hasNoPlaceholder
+    && meaningfulTextLength >= 80
+    && (hasStrongSummary || hasStrongSectionBody || hasStrongFaq);
+
+  return {
+    hasTitle: Boolean(getSourceText(page.title)),
+    hasSeoTitle: Boolean(getSourceText(page.seoTitle)),
+    hasSeoDescription: Boolean(getSourceText(page.seoDescription)),
+    hasRenderablePath,
+    hasMeaningfulContent,
+    hasNoPlaceholder,
+    canPrerender: hasRenderablePath,
+  };
+}
+
+function getFailedPageRequiredChecks(page: Page) {
+  return Object.entries(getPageRequiredChecks(page))
+    .filter(([, passed]) => !passed)
+    .map(([checkName]) => checkName);
+}
+
+function getPageRouteRequiredTextChecks(page: Page) {
+  return [
+    page.title,
+    page.seoTitle,
+    page.seoDescription,
+    page.heroTitle,
+    page.summary,
+  ].map(getSourceText).filter(Boolean);
 }
 
 function toSkippedSolutionRoute(
@@ -493,6 +593,29 @@ function toSkippedCaseRoute(caseItem: CaseSource, path: string, skipReason: stri
     requiredChecks: [],
     published: caseItem.status === 'published',
     enabled: true,
+    shouldGenerate: false,
+    skipReason,
+    errors,
+  };
+}
+
+function toSkippedPageRoute(page: Page, skipReason: string, errors: string[]): RouteManifestItem {
+  const fallbackPath = getSourceText(page.path) || `/pages/${getSourceText(page.slug) || getSourceText(page.id) || 'unknown-page'}`;
+  const sourceId = getSourceText(page.id) || getSourceText(page.slug) || 'unknown-page';
+  const slug = getSourceText(page.slug) || sourceId;
+
+  return {
+    path: fallbackPath,
+    outputPath: inferOutputPath(fallbackPath),
+    sourceType: 'page',
+    sourceId,
+    slug,
+    title: getSourceText(page.seoTitle) || getSourceText(page.title) || `${slug} | NEED`,
+    description: getSourceText(page.seoDescription) || getSourceText(page.summary),
+    canonicalPath: fallbackPath,
+    requiredChecks: getPageRouteRequiredTextChecks(page),
+    published: page.status === 'published',
+    enabled: page.shouldIndex !== false,
     shouldGenerate: false,
     skipReason,
     errors,
@@ -769,17 +892,72 @@ function buildCaseRoutesFromSource(): {
   };
 }
 
+function buildPageRoutesFromSource(): {
+  routes: StaticRouteInput[];
+  skippedRoutes: RouteManifestItem[];
+} {
+  const routes: StaticRouteInput[] = [];
+  const skippedRoutes: RouteManifestItem[] = [];
+  const pages = readPages().sort((left, right) => (
+    left.sortOrder - right.sortOrder || String(left.updatedAt).localeCompare(String(right.updatedAt))
+  ));
+
+  for (const page of pages) {
+    if (page.status !== 'published') {
+      skippedRoutes.push(toSkippedPageRoute(page, SKIP_REASONS.pageNotPublished, ['Only published pages can enter route manifest generation']));
+      continue;
+    }
+
+    if (page.shouldIndex === false) {
+      skippedRoutes.push(toSkippedPageRoute(page, SKIP_REASONS.pageShouldIndexDisabled, ['Page shouldIndex is false']));
+      continue;
+    }
+
+    if (!isValidPagePath(page.path) || reservedStaticRoutePaths.has(page.path)) {
+      skippedRoutes.push(toSkippedPageRoute(page, SKIP_REASONS.pageInvalidPath, [
+        `Page path "${page.path}" is invalid, reserved, or starts with /preview`,
+      ]));
+      continue;
+    }
+
+    const failedChecks = getFailedPageRequiredChecks(page);
+
+    if (failedChecks.length > 0) {
+      skippedRoutes.push(toSkippedPageRoute(page, SKIP_REASONS.pageRequiredChecksFailed, failedChecks));
+      continue;
+    }
+
+    routes.push({
+      path: page.path,
+      outputPath: inferOutputPath(page.path),
+      sourceType: 'page',
+      sourceId: page.id,
+      slug: page.slug,
+      title: page.seoTitle || page.title,
+      description: page.seoDescription || page.summary,
+      canonicalPath: page.path,
+      requiredChecks: getPageRouteRequiredTextChecks(page),
+    });
+  }
+
+  return {
+    routes,
+    skippedRoutes,
+  };
+}
+
 export function getStaticRouteManifest(siteBaseUrl: string): RouteManifest {
   const { routes: solutionRoutes, skippedRoutes } = buildSolutionRoutesFromSource();
   const { routes: articleRoutes, skippedRoutes: skippedArticleRoutes } = buildArticleRoutesFromSource();
   const { routes: caseRoutes, skippedRoutes: skippedCaseRoutes } = buildCaseRoutesFromSource();
-  const routes = buildStaticRoutes(solutionRoutes, articleRoutes, caseRoutes).map(toManifestItem);
+  const { routes: pageRoutes, skippedRoutes: skippedPageRoutes } = buildPageRoutesFromSource();
+  const routes = [...buildStaticRoutes(solutionRoutes, articleRoutes, caseRoutes), ...pageRoutes].map(toManifestItem);
 
   return {
     generatedAt: new Date().toISOString(),
     siteBaseUrl,
     routes,
-    skippedRoutes: [...skippedRoutes, ...skippedArticleRoutes, ...skippedCaseRoutes],
+    skippedRoutes: [...skippedRoutes, ...skippedArticleRoutes, ...skippedCaseRoutes, ...skippedPageRoutes],
     sourceSummary: countRoutesBySourceType(routes),
   };
 }

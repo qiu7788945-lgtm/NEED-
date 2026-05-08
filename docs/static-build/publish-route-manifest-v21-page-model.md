@@ -1,10 +1,12 @@
-# NEED 官网第21轮页面模型与 API 骨架说明
+# NEED 官网第21轮页面模型与发布链路说明
 
 ## 1. 本步目标
 
-第21-2 只建立 pages / 页面编辑器 V1 的数据模型与 API 骨架，作为后续接入后台页面编辑器、前台真实渲染、route manifest 和 sitemap 的基础。
+第21-2 建立 pages / 页面编辑器 V1 的数据模型与 API 骨架，作为后续接入后台页面编辑器、前台真实渲染、route manifest 和 sitemap 的基础。
 
-本步不接前台渲染，不接 route manifest，不接 sitemap，不触发 build:prerender，不进入 MySQL，也不补正式官网资料。
+第21-4A 已加入 `/preview/pages/:id` 安全预览渲染。第21-4B 开始让合格 pages 具备进入 route manifest、prerender HTML、sitemap 与 publish log 的能力。
+
+本阶段不进入 MySQL，不补正式官网资料，不做登录、安全、权限，也不做腾讯云部署。
 
 ## 2. 当前新增范围
 
@@ -108,9 +110,9 @@ Page 字段包括：
 - `usage`
 - `sortOrder`
 
-## 5. requiredChecks 预留
+## 5. requiredChecks
 
-Page 模型预留以下检查项：
+Page 模型包含以下检查项：
 
 - `hasTitle`
 - `hasSeoTitle`
@@ -120,7 +122,11 @@ Page 模型预留以下检查项：
 - `hasNoPlaceholder`
 - `canPrerender`
 
-第21-2 只在 service 层提供基础校验函数，不让这些检查影响 route manifest。后续只有当页面具备 React 真实渲染能力、requiredChecks 通过并完成发布验收后，才允许进入 HTML 与 sitemap。
+第21-4B 起，route manifest 会使用这些检查项判断页面是否具备进入正式发布链路的资格。不能为了让页面进入 sitemap 而放松 requiredChecks。
+
+`hasMeaningfulContent` 要求 `heroTitle` / `summary` / enabled `sections` / enabled `faqItems` 至少有一类具备有效内容；只有空标题、空 section、空 FAQ 不算有效内容。
+
+`hasNoPlaceholder` 会过滤 placeholder、lorem ipsum、test page、test、TODO、待补充、占位、测试等占位内容。
 
 ## 6. API 清单
 
@@ -148,25 +154,44 @@ Page 模型预留以下检查项：
 
 ## 7. 发布边界
 
-`server/data/pages.json` 初始为空数组。第21-2 不新增 published 页面，不接 route manifest，不让任何 page 自动进入 sitemap。
+`server/data/pages.json` 初始为空数组。本项目不新增测试 published 页面，不为了验收补正式官网资料。
 
-后续任何 page 即使改为 `published`，也必须同时满足：
+任何 page 即使改为 `published`，也必须同时满足以下条件才允许进入 `shouldGenerate`：
 
-1. React 能真实渲染该 path。
-2. route manifest 能发现并识别来源。
-3. requiredChecks 通过。
-4. build:prerender 成功。
-5. sitemap 正确包含。
-6. publish log 记录成功。
+1. `status === 'published'`
+2. `shouldIndex !== false`
+3. `path` 有效、以 `/` 开头、不以 `/preview` 开头
+4. `path` 不与现有固定 17 个正式页面冲突
+5. `hasTitle` 通过
+6. `hasSeoTitle` 通过
+7. `hasSeoDescription` 通过
+8. `hasRenderablePath` 通过
+9. `hasMeaningfulContent` 通过
+10. `hasNoPlaceholder` 通过
+11. `canPrerender` 通过
 
-不能为了让页面进入 sitemap 而放松 requiredChecks，也不能把 draft、placeholder 或无法真实渲染的页面硬塞进 HTML。
+不合格 page 会进入 `skippedRoutes`，并记录 `skipReason` 与 `errors`。`draft`、`archived`、`preview`、placeholder、测试、TODO、占位内容和 requiredChecks 未通过页面都不会进入 `shouldGenerate`，也不会进入 sitemap。
 
-## 8. 后续衔接
+`/preview/pages/:id` 只用于后台安全预览，永远不进入 route manifest 和 sitemap。
 
-建议第21-3 实现后台页面编辑器 V1 的最小 UI，先支持列表、创建、编辑基础字段、状态切换、复制、删除和排序。
+## 8. route manifest / sitemap / publish log
 
-第21-4 再接前台 `publicContent` 与 React 渲染。
+第21-4B 起，route manifest 支持 `sourceType: 'page'`：
 
-第21-5 再接 route manifest、prerender 校验和 sitemap。
+- 合格 page 进入 `routes`，并参与 prerender HTML。
+- 不合格 page 进入 `skippedRoutes`。
+- sitemap 只来自 `manifest.routes.filter(route => route.shouldGenerate)`。
+- preview 路由不进入 sitemap。
+- publish log 会记录各 sourceType 的 `discovered` / `generated` / `skipped` 数量，并保留 skipped page 的 `skipReason`。
+
+## 9. 后续衔接
+
+第21-3 已实现后台页面编辑器 V1 的最小 UI，支持列表、创建、编辑基础字段、状态切换、复制、删除和排序。
+
+第21-4A 已接前台 `publicContent` 与 React 预览渲染。
+
+第21-4B 已接 route manifest、prerender 校验、sitemap 与 publish log 统计能力。
+
+第21-5 建议做端到端验收和发布前检查。
 
 第21-6 才开始正式补官网页面资料。
