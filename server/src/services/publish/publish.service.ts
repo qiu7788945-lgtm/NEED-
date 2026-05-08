@@ -16,6 +16,12 @@ export interface PublishLogSummary {
   failedCount: number;
   skippedCount: number;
   triggeredBy: string;
+  sourceStats?: Record<string, {
+    discovered: number;
+    generated: number;
+    skipped: number;
+    failed?: number;
+  }>;
   error?: string;
 }
 
@@ -47,6 +53,27 @@ function asText(value: unknown, fallback = '') {
 
 function asNumber(value: unknown, fallback = 0) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function asSourceStats(value: unknown): PublishLogSummary['sourceStats'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined;
+  }
+
+  return Object.entries(value).reduce<NonNullable<PublishLogSummary['sourceStats']>>((stats, [sourceType, rawStat]) => {
+    if (!rawStat || typeof rawStat !== 'object' || Array.isArray(rawStat)) {
+      return stats;
+    }
+
+    const stat = rawStat as Record<string, unknown>;
+    stats[sourceType] = {
+      discovered: asNumber(stat.discovered),
+      generated: asNumber(stat.generated),
+      skipped: asNumber(stat.skipped),
+      failed: typeof stat.failed === 'number' ? asNumber(stat.failed) : undefined,
+    };
+    return stats;
+  }, {});
 }
 
 function arrayLength(value: unknown) {
@@ -150,6 +177,7 @@ function createSummary(entry: PublishLogEntry): PublishLogSummary {
     failedCount: arrayLength(entry.log.failedRoutes),
     skippedCount: arrayLength(entry.log.skippedRoutes),
     triggeredBy: asText(entry.log.triggeredBy),
+    sourceStats: asSourceStats(entry.log.sourceStats),
   };
 }
 

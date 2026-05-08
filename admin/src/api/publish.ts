@@ -18,6 +18,33 @@ export interface PublishLogSummary {
   failedCount: number;
   skippedCount: number;
   triggeredBy: string;
+  sourceStats?: PublishSourceStats;
+  error?: string;
+}
+
+export interface PublishSourceStat {
+  discovered: number;
+  generated: number;
+  skipped: number;
+  failed?: number;
+}
+
+export type PublishSourceStats = Record<string, PublishSourceStat>;
+
+export interface PublishSkippedRoute {
+  path?: string;
+  sourceType: string;
+  sourceId?: string;
+  slug?: string;
+  skipReason: string;
+  errors?: string[];
+}
+
+export interface PublishFailedRoute {
+  path: string;
+  sourceType?: string;
+  sourceId?: string;
+  errors?: string[];
   error?: string;
 }
 
@@ -29,8 +56,9 @@ export interface PublishLog {
   triggeredBy: string;
   totalRoutes: number;
   generatedRoutes?: unknown[];
-  failedRoutes?: unknown[];
-  skippedRoutes?: unknown[];
+  failedRoutes?: PublishFailedRoute[];
+  skippedRoutes?: PublishSkippedRoute[];
+  sourceStats?: PublishSourceStats;
   sitemapPath?: string;
   robotsPath?: string;
   manifestPath?: string;
