@@ -62,6 +62,24 @@ const reservedStaticRoutePaths = new Set([
   '/choose-between-two',
   '/cases/hyundai-family-day',
 ]);
+const solutionDetailPageTakeoverPaths = new Set(['/solutions/salon']);
+
+function isValidPagePathForPrerender(pagePath: string) {
+  return Boolean(pagePath)
+    && pagePath.startsWith('/')
+    && !pagePath.startsWith('/preview')
+    && !pagePath.includes('//')
+    && pagePath !== '/preview';
+}
+
+function isAllowedSolutionDetailTakeoverPath(pagePath: string) {
+  return solutionDetailPageTakeoverPaths.has(pagePath);
+}
+
+function canRenderPagePath(pagePath: string) {
+  return isValidPagePathForPrerender(pagePath)
+    && (!reservedStaticRoutePaths.has(pagePath) || isAllowedSolutionDetailTakeoverPath(pagePath));
+}
 
 export interface PageListFilters {
   pageType?: string;
@@ -272,11 +290,7 @@ function getCompactTextLength(value: string) {
 export function validatePageReadiness(page: Page): PageValidationResult {
   const meaningfulText = collectMeaningfulText(page);
   const meaningfulTextLength = getCompactTextLength(meaningfulText);
-  const hasRenderablePath = Boolean(page.path)
-    && page.path.startsWith('/')
-    && !page.path.startsWith('/preview')
-    && !page.path.includes('//')
-    && !reservedStaticRoutePaths.has(page.path);
+  const hasRenderablePath = canRenderPagePath(page.path);
   const hasStrongSummary = getCompactTextLength(page.summary) >= 30;
   const hasStrongSectionBody = page.sections.some((section) => (
     section.enabled && getCompactTextLength(section.body) >= 50

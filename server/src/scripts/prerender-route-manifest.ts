@@ -309,6 +309,7 @@ const solutionSlugToReactPath: Record<string, string> = {
 
 const fixedRoutePaths = new Set(['/', '/solutions', '/contact', '/how-to-choose', '/choose-between-two']);
 const reservedStaticRoutePaths = new Set(staticRoutes.map((route) => route.path));
+const solutionDetailPageTakeoverPaths = new Set(['/solutions/salon']);
 
 const fixedRoutes = staticRoutes.filter((route) => fixedRoutePaths.has(route.path));
 const contentRoutes = staticRoutes.filter((route) => !fixedRoutePaths.has(route.path));
@@ -490,7 +491,8 @@ function getCompactTextLength(value: string) {
 function getPageRequiredChecks(page: Page): PageRequiredChecks {
   const pageText = collectPageText(page);
   const meaningfulTextLength = getCompactTextLength(pageText);
-  const hasRenderablePath = isValidPagePath(page.path) && !reservedStaticRoutePaths.has(page.path);
+  const isAllowedTakeoverPath = solutionDetailPageTakeoverPaths.has(page.path);
+  const hasRenderablePath = isValidPagePath(page.path) && (!reservedStaticRoutePaths.has(page.path) || isAllowedTakeoverPath);
   const hasStrongSummary = getCompactTextLength(page.summary) >= 30;
   const hasStrongSectionBody = page.sections.some((section) => (
     section.enabled && getCompactTextLength(section.body) >= 50
@@ -521,6 +523,24 @@ function getFailedPageRequiredChecks(page: Page) {
 }
 
 function getPageRouteRequiredTextChecks(page: Page) {
+  if (solutionDetailPageTakeoverPaths.has(page.path)) {
+    return [
+      getSourceText(page.heroTitle) || getSourceText(page.title),
+      getSourceText(page.heroSubtitle) || getSourceText(page.summary),
+      ...page.sections
+        .filter((section) => section.enabled)
+        .flatMap((section) => [
+          section.title,
+          section.subtitle,
+          section.body,
+          ...section.items,
+        ]),
+      ...page.faqItems
+        .filter((item) => item.enabled && (getSourceText(item.question) || getSourceText(item.answer)))
+        .flatMap((item) => [item.question, item.answer]),
+    ].map(getSourceText).filter(Boolean);
+  }
+
   return [
     page.title,
     page.seoTitle,
@@ -622,7 +642,7 @@ function toSkippedPageRoute(page: Page, skipReason: string, errors: string[]): R
   };
 }
 
-function buildSolutionRoutesFromSource(): {
+function buildSolutionRoutesFromSource(takenOverPaths = new Set<string>()): {
   routes: StaticRouteInput[];
   skippedRoutes: RouteManifestItem[];
 } {
@@ -659,6 +679,10 @@ function buildSolutionRoutesFromSource(): {
           `Enabled solution "${slug}" has no React route mapping`,
         ]),
       );
+      continue;
+    }
+
+    if (takenOverPaths.has(mappedPath)) {
       continue;
     }
 
@@ -913,7 +937,9 @@ function buildPageRoutesFromSource(): {
       continue;
     }
 
-    if (!isValidPagePath(page.path) || reservedStaticRoutePaths.has(page.path)) {
+    const isAllowedTakeoverPath = solutionDetailPageTakeoverPaths.has(page.path);
+
+    if (!isValidPagePath(page.path) || (reservedStaticRoutePaths.has(page.path) && !isAllowedTakeoverPath)) {
       skippedRoutes.push(toSkippedPageRoute(page, SKIP_REASONS.pageInvalidPath, [
         `Page path "${page.path}" is invalid, reserved, or starts with /preview`,
       ]));
@@ -947,10 +973,11 @@ function buildPageRoutesFromSource(): {
 }
 
 export function getStaticRouteManifest(siteBaseUrl: string): RouteManifest {
-  const { routes: solutionRoutes, skippedRoutes } = buildSolutionRoutesFromSource();
+  const { routes: pageRoutes, skippedRoutes: skippedPageRoutes } = buildPageRoutesFromSource();
+  const takenOverPaths = new Set(pageRoutes.map((route) => route.path));
+  const { routes: solutionRoutes, skippedRoutes } = buildSolutionRoutesFromSource(takenOverPaths);
   const { routes: articleRoutes, skippedRoutes: skippedArticleRoutes } = buildArticleRoutesFromSource();
   const { routes: caseRoutes, skippedRoutes: skippedCaseRoutes } = buildCaseRoutesFromSource();
-  const { routes: pageRoutes, skippedRoutes: skippedPageRoutes } = buildPageRoutesFromSource();
   const routes = [...buildStaticRoutes(solutionRoutes, articleRoutes, caseRoutes), ...pageRoutes].map(toManifestItem);
 
   return {

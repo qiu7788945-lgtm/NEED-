@@ -161,7 +161,7 @@ Page 模型包含以下检查项：
 1. `status === 'published'`
 2. `shouldIndex !== false`
 3. `path` 有效、以 `/` 开头、不以 `/preview` 开头
-4. `path` 不与现有固定 17 个正式页面冲突
+4. `path` 不与现有固定 17 个正式页面冲突，除非属于受控 takeover 白名单
 5. `hasTitle` 通过
 6. `hasSeoTitle` 通过
 7. `hasSeoDescription` 通过
@@ -173,6 +173,15 @@ Page 模型包含以下检查项：
 不合格 page 会进入 `skippedRoutes`，并记录 `skipReason` 与 `errors`。`draft`、`archived`、`preview`、placeholder、测试、TODO、占位内容和 requiredChecks 未通过页面都不会进入 `shouldGenerate`，也不会进入 sitemap。
 
 `/preview/pages/:id` 只用于后台安全预览，永远不进入 route manifest 和 sitemap。
+
+### Solution detail takeover 试点
+
+第21-6A-2 起，solution detail page 的 pages takeover 只开放 `/solutions/salon` 一个试点路径。
+
+- 当 `pages.json` 中存在 path 为 `/solutions/salon` 的合格 published page，且通过 requiredChecks 时，route manifest 由该 page 接管 `/solutions/salon`，`sourceType` 为 `page`。
+- `/solutions/salon` 被 page 接管时，legacy solution route 不再同时进入 `routes`，避免同一路径重复生成 HTML 或 sitemap。
+- 当 `/solutions/salon` page 不存在、不是 published、`shouldIndex=false` 或 requiredChecks 未通过时，page 会进入 `skippedRoutes` 或不参与生成，前台与 route manifest 均 fallback 到 legacy solution 详情页。
+- 当前不开放 `/solutions/annual`、`/solutions/exhibition`、`/solutions/video`、`/solutions/forum`、`/solutions/other`、`/solutions/family-day` 的 pages takeover。后续需通过单页验收后再扩展。
 
 ## 8. route manifest / sitemap / publish log
 

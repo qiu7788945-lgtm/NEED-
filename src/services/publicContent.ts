@@ -235,6 +235,12 @@ function adaptPage(value: unknown): Page | null {
   return value as unknown as Page;
 }
 
+function isPublicRenderablePage(page: Page) {
+  return page.status === 'published'
+    && page.shouldIndex !== false
+    && Object.values(page.requiredChecks).every(Boolean);
+}
+
 export function resolvePublicAssetUrl(url: unknown): string {
   const value = toStringValue(url).trim();
 
@@ -303,7 +309,7 @@ export async function fetchPublishedPages(): Promise<Page[]> {
   const payload = await safeFetchJson('/api/pages?status=published');
   return normalizeArrayPayload(payload)
     .map(adaptPage)
-    .filter((item): item is Page => item !== null && item.status === 'published');
+    .filter((item): item is Page => item !== null && isPublicRenderablePage(item));
 }
 
 export async function fetchPageByPath(path: string): Promise<Page | null> {
@@ -317,7 +323,7 @@ export async function fetchPageById(id: string): Promise<Page | null> {
   const payload = await safeFetchJson(`/api/pages/${encodeURIComponent(id)}`);
   const page = adaptPage(normalizeObjectPayload(payload));
 
-  return page?.status === 'published' ? page : null;
+  return page && isPublicRenderablePage(page) ? page : null;
 }
 
 export async function fetchPreviewPageById(id: string): Promise<Page | null> {
