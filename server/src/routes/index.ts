@@ -8,6 +8,7 @@ import { qualityCheckRouter } from './quality-check.routes.js';
 import { solutionsRouter } from './solutions.routes.js';
 import { publishRouter } from './publish.routes.js';
 import { pagesRouter } from './pages.routes.js';
+import { scenarioDetailRouter } from './scenario-detail.routes.js';
 
 const apiRouter = Router();
 
@@ -18,6 +19,7 @@ apiRouter.use('/api/articles', articlesRouter);
 apiRouter.use('/api/cases', casesRouter);
 apiRouter.use('/api/solutions', solutionsRouter);
 apiRouter.use('/api/pages', pagesRouter);
+apiRouter.use('/api/scenario-detail-pages', scenarioDetailRouter);
 apiRouter.use('/api/quality-check', qualityCheckRouter);
 apiRouter.use('/api/publish', publishRouter);
 

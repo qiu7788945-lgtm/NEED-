@@ -339,3 +339,62 @@ export interface MediaShowcasePage extends ScenarioDetailPage {
 - MySQL 相关命令
 - 登录、安全、权限、部署相关操作
 
+## 11. 第21-6A-6 类型与 API 骨架
+
+第21-6A-6 新增 scenario detail 的类型定义、空 JSON 数据文件和后端 CRUD API 骨架。
+
+新增类型文件：
+
+- `shared/types/scenario-detail.ts`
+
+新增数据文件：
+
+- `server/data/scenario-detail-pages.json`
+
+该文件初始内容必须保持为空数组：
+
+```json
+[]
+```
+
+新增后端骨架：
+
+- `server/src/services/scenario-detail/scenario-detail.service.ts`
+- `server/src/controllers/scenario-detail.controller.ts`
+- `server/src/routes/scenario-detail.routes.ts`
+
+后端 API 挂载到：
+
+- `/api/scenario-detail-pages`
+
+当前提供的接口：
+
+- `GET /api/scenario-detail-pages`
+- `GET /api/scenario-detail-pages/:id`
+- `POST /api/scenario-detail-pages`
+- `PUT /api/scenario-detail-pages/:id`
+- `PATCH /api/scenario-detail-pages/:id/status`
+- `DELETE /api/scenario-detail-pages/:id`
+- `POST /api/scenario-detail-pages/:id/duplicate`
+- `POST /api/scenario-detail-pages/reorder`
+
+当前 validation 仅用于 scenario detail 自身校验，字段包括：
+
+- `hasTitle`
+- `hasSeoTitle`
+- `hasSeoDescription`
+- `hasValidPath`
+- `hasMeaningfulIntro`
+- `hasProjectOrMediaContent`
+- `hasNoPlaceholder`
+- `canPublish`
+
+第21-6A-6 仍未接入：
+
+- 前台渲染
+- 后台 UI
+- route manifest
+- sitemap
+- prerender HTML
+
+这意味着 scenario detail 页面即使创建为 `published`，也不会影响当前 17 个正式页面，不会进入 sitemap，也不会接管 `/solutions/*` 路径。下一步才考虑后台编辑器或模板试点。
