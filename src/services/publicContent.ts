@@ -47,6 +47,29 @@ export interface PublicSolution {
   title: string;
   desc: string;
   enabled: boolean;
+  groups: PublicSolutionGroup[];
+}
+
+export interface PublicSolutionGroup {
+  id: string;
+  slug: string;
+  title: string;
+  summary: string;
+  sortOrder?: number;
+  enabled: boolean;
+  items: PublicSolutionItem[];
+}
+
+export interface PublicSolutionItem {
+  id: string;
+  fileType: 'image' | 'video';
+  mediaUrl: string;
+  mediaFileName: string;
+  mediaDisplayName: string;
+  alt: string;
+  caption: string;
+  sortOrder?: number;
+  enabled: boolean;
 }
 
 type UnknownRecord = Record<string, unknown>;
@@ -215,6 +238,63 @@ function adaptSolution(value: unknown): PublicSolution | null {
     title,
     desc: toStringValue(value.description) || toStringValue(value.desc),
     enabled: true,
+    groups: normalizeArrayPayload(value.groups)
+      .map(adaptSolutionGroup)
+      .filter((item): item is PublicSolutionGroup => item !== null)
+      .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0)),
+  };
+}
+
+function adaptSolutionGroup(value: unknown): PublicSolutionGroup | null {
+  if (!isRecord(value) || !isEnabled(value)) {
+    return null;
+  }
+
+  const id = toStringValue(value.id) || toStringValue(value.slug);
+  const slug = toStringValue(value.slug) || id;
+  const title = toStringValue(value.title);
+
+  if (!id || !slug || !title) {
+    return null;
+  }
+
+  return {
+    id,
+    slug,
+    title,
+    summary: toStringValue(value.summary),
+    sortOrder: toNumberValue(value.sortOrder),
+    enabled: true,
+    items: normalizeArrayPayload(value.items)
+      .map(adaptSolutionItem)
+      .filter((item): item is PublicSolutionItem => item !== null)
+      .sort((left, right) => (left.sortOrder ?? 0) - (right.sortOrder ?? 0)),
+  };
+}
+
+function adaptSolutionItem(value: unknown): PublicSolutionItem | null {
+  if (!isRecord(value) || !isEnabled(value)) {
+    return null;
+  }
+
+  const id = toStringValue(value.id);
+  const mediaUrl = resolvePublicAssetUrl(value.mediaUrl);
+  const fileType = value.fileType === 'video' ? 'video' : 'image';
+
+  if (!id || !mediaUrl) {
+    return null;
+  }
+
+  return {
+    id,
+    fileType,
+    mediaUrl,
+    mediaFileName: toStringValue(value.mediaFileName),
+    mediaDisplayName: toStringValue(value.mediaDisplayName),
+    alt: toStringValue(value.alt),
+    caption: toStringValue(value.caption),
+    sortOrder: toNumberValue(value.sortOrder),
+    enabled: true,
   };
 }
 
@@ -303,6 +383,12 @@ export async function fetchEnabledSolutions(): Promise<PublicSolution[]> {
   return normalizeArrayPayload(payload)
     .map(adaptSolution)
     .filter((item): item is PublicSolution => item !== null);
+}
+
+export async function fetchEnabledSolutionBySlug(slug: string): Promise<PublicSolution | null> {
+  const solutions = await fetchEnabledSolutions();
+
+  return solutions.find((solution) => solution.slug === slug || solution.id === slug) ?? null;
 }
 
 export async function fetchPublishedPages(): Promise<Page[]> {

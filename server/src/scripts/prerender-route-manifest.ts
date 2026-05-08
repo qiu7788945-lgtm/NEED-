@@ -59,6 +59,24 @@ interface SolutionSceneSource {
   description?: unknown;
   sortOrder?: unknown;
   enabled?: unknown;
+  groups?: unknown;
+}
+
+interface SolutionGroupSource {
+  id?: unknown;
+  slug?: unknown;
+  title?: unknown;
+  summary?: unknown;
+  sortOrder?: unknown;
+  enabled?: unknown;
+  items?: unknown;
+}
+
+interface SolutionItemSource {
+  fileType?: unknown;
+  mediaUrl?: unknown;
+  sortOrder?: unknown;
+  enabled?: unknown;
 }
 
 interface ArticleSource {
@@ -434,6 +452,43 @@ function getSolutionTemplateByPath(path: string): StaticRouteInput | undefined {
   return solutionRouteTemplates.find((route) => route.path === path);
 }
 
+function getEnabledSolutionGroups(scene: SolutionSceneSource): SolutionGroupSource[] {
+  return Array.isArray(scene.groups)
+    ? (scene.groups as SolutionGroupSource[])
+      .filter((group) => group.enabled !== false)
+      .sort((left, right) => getSourceNumber(left.sortOrder) - getSourceNumber(right.sortOrder))
+    : [];
+}
+
+function getEnabledImageItems(group: SolutionGroupSource): SolutionItemSource[] {
+  return Array.isArray(group.items)
+    ? (group.items as SolutionItemSource[])
+      .filter((item) => item.enabled !== false && item.fileType !== 'video' && Boolean(getSourceText(item.mediaUrl)))
+      .sort((left, right) => getSourceNumber(left.sortOrder) - getSourceNumber(right.sortOrder))
+    : [];
+}
+
+function getFamilyDayRouteRequiredChecks(scene: SolutionSceneSource, template: StaticRouteInput): string[] {
+  const groupsWithImages = getEnabledSolutionGroups(scene)
+    .map((group) => ({
+      group,
+      images: getEnabledImageItems(group),
+    }))
+    .filter(({ group, images }) => getSourceText(group.title) && getSourceText(group.summary) && images.length > 0);
+
+  if (groupsWithImages.length === 0) {
+    return template.requiredChecks;
+  }
+
+  return [
+    ...groupsWithImages.flatMap(({ group }) => [
+      group.title,
+      group.summary,
+    ]),
+    '联系我们探讨项目',
+  ].map(getSourceText).filter(Boolean);
+}
+
 function getArticleTemplateByPath(path: string): StaticRouteInput | undefined {
   return articleRouteTemplates.find((route) => route.path === path);
 }
@@ -705,6 +760,9 @@ function buildSolutionRoutesFromSource(takenOverPaths = new Set<string>()): {
       slug,
       description: getSourceText(scene.description) || template.description,
       canonicalPath: mappedPath,
+      requiredChecks: mappedPath === '/solutions/family-day'
+        ? getFamilyDayRouteRequiredChecks(scene, template)
+        : template.requiredChecks,
     });
   }
 

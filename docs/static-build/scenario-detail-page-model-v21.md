@@ -397,4 +397,23 @@ export interface MediaShowcasePage extends ScenarioDetailPage {
 - sitemap
 - prerender HTML
 
+## 12. 第21-6A-9 family-day 后台数据消费试点
+
+第21-6A-9 调整方向为复用既有“场景解决方案”后台模块，而不是继续为场景三级页新建一套 PageEditor 或 scenario-detail 编辑器。
+
+本轮以 `/solutions/family-day` 作为可控试点：
+
+- 内容主来源优先读取 `SolutionManagementPage` 对应的 `/api/solutions` 数据。
+- 只消费 `server/data/solutions.json` 中 `family-day` 场景下 enabled 的案例组和组内 enabled 图片素材。
+- 前台仍使用既有 `FamilyDayPage` 项目 / 案例展示型视觉，不改成普通文章页，不改成 `DynamicPage`。
+- 当后台 family-day 没有 enabled 案例组、没有有效图片素材、接口失败或字段不足时，继续 fallback 到 legacy `projectsData`，避免页面白屏。
+- 本轮跳过 family-day 中的视频素材播放；视频与数字资产能力后续仍交给 `/solutions/video` 单独设计。
+- route manifest 只让 `/solutions/family-day` 的 requiredChecks 与实际 HTML 渲染字段对齐：有可用后台项目时检查场景名、案例组标题、摘要、slug 与 CTA；无可用后台项目时保留 legacy fallback checks。
+
+维护入口边界保持不变：
+
+- 场景解决方案内容继续由 `SolutionManagementPage` 维护。
+- `PageEditorPage` 不负责场景方案内容。
+- `scenario-detail` API 骨架暂时冻结，不接 UI、不接前台、不接 route manifest、不接 sitemap。
+
 这意味着 scenario detail 页面即使创建为 `published`，也不会影响当前 17 个正式页面，不会进入 sitemap，也不会接管 `/solutions/*` 路径。下一步才考虑后台编辑器或模板试点。

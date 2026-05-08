@@ -6,7 +6,17 @@ import type { Page } from '../shared/types/pages';
 import ContactAndAssetsPage from './pages/ContactAndAssetsPage';
 import { PagePreviewPage } from './pages/PagePreviewPage';
 import { DynamicPage } from './pages/DynamicPage';
-import { fetchHomeVideo, fetchPublishedArticles, fetchPublishedCases, fetchEnabledSolutions, fetchPageByPath, type PublicArticle, type PublicCase } from './services/publicContent';
+import {
+  fetchHomeVideo,
+  fetchPublishedArticles,
+  fetchPublishedCases,
+  fetchEnabledSolutions,
+  fetchEnabledSolutionBySlug,
+  fetchPageByPath,
+  type PublicArticle,
+  type PublicCase,
+  type PublicSolution,
+} from './services/publicContent';
 import gsap from 'gsap';
 import Markdown from 'react-markdown';
 
@@ -2714,13 +2724,108 @@ const projectsData = [
   }
 ];
 
+interface FamilyDayGalleryItem {
+  src: string;
+  alt: string;
+  caption: string;
+}
+
+interface FamilyDayProject {
+  id: string;
+  title: string;
+  slogan: string;
+  shortIntro: string;
+  gallery: FamilyDayGalleryItem[];
+}
+
+function toFamilyDayGalleryItem(value: string | FamilyDayGalleryItem, projectTitle: string): FamilyDayGalleryItem {
+  if (typeof value !== 'string') {
+    return value;
+  }
+
+  return {
+    src: value,
+    alt: projectTitle,
+    caption: '',
+  };
+}
+
+function getFamilyDayImageSrc(item: FamilyDayGalleryItem, index: number) {
+  return item.src.startsWith('image_')
+    ? `/${item.src}`
+    : item.src.startsWith('http') || item.src.startsWith('/') || item.src.startsWith('data:')
+      ? item.src
+      : `https://images.unsplash.com/photo-${1500000000000 + index}?q=80&w=800&auto=format&fit=crop`;
+}
+
+function mapSolutionToFamilyDayProjects(solution: PublicSolution | null): FamilyDayProject[] {
+  if (!solution) {
+    return [];
+  }
+
+  return solution.groups
+    .filter((group) => group.enabled)
+    .map((group) => {
+      const gallery = group.items
+        .filter((item) => item.enabled && item.fileType === 'image' && item.mediaUrl)
+        .map((item) => ({
+          src: item.mediaUrl,
+          alt: item.alt || item.mediaDisplayName || group.title,
+          caption: item.caption,
+        }));
+
+      return {
+        id: group.id || group.slug,
+        title: group.title,
+        slogan: group.slug,
+        shortIntro: group.summary || solution.desc,
+        gallery,
+      };
+    })
+    .filter((project) => project.title && project.shortIntro && project.gallery.length > 0)
+    .sort((left, right) => {
+      const leftGroup = solution.groups.find((group) => group.id === left.id || group.slug === left.id);
+      const rightGroup = solution.groups.find((group) => group.id === right.id || group.slug === right.id);
+
+      return (leftGroup?.sortOrder ?? 0) - (rightGroup?.sortOrder ?? 0);
+    });
+}
+
 function FamilyDayPage() {
   const { pathname } = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [cmsProjects, setCmsProjects] = useState<FamilyDayProject[]>([]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchEnabledSolutionBySlug('family-day')
+      .then((solution) => {
+        if (isMounted) {
+          setCmsProjects(mapSolutionToFamilyDayProjects(solution));
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setCmsProjects([]);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const visibleProjects = cmsProjects.length > 0
+    ? cmsProjects
+    : projectsData.map((project) => ({
+      ...project,
+      gallery: project.gallery.map((item) => toFamilyDayGalleryItem(item, project.title)),
+    }));
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white">
@@ -2731,7 +2836,7 @@ function FamilyDayPage() {
        </div>
        
        <div className="max-w-7xl mx-auto px-6 md:px-12 pt-16 pb-32 flex flex-col">
-          {projectsData.map((project, index) => (
+          {visibleProjects.map((project, index) => (
              <section key={project.id} className="mb-[120px] last:mb-0 relative">
                 {/* 文本区 */}
                 <div className="mb-12 max-w-4xl">
@@ -2768,14 +2873,14 @@ function FamilyDayPage() {
                       <div key={i} className={`${colSpanClass} overflow-hidden rounded-3xl group border border-white/5 bg-white/5 relative ${aspectClass}`}>
                          <div className="absolute inset-0 border border-[#ccff00]/0 group-hover:border-[#ccff00]/30 transition-colors z-20 rounded-3xl pointer-events-none" />
                          <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors z-10 duration-700 pointer-events-none" />
-                         <img loading="lazy" src={img.startsWith('image_') ? `/${img}` : `https://images.unsplash.com/photo-${1500000000000 + i}?q=80&w=800&auto=format&fit=crop`} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-[1.02]" alt={project.title} />
+                         <img loading="lazy" src={getFamilyDayImageSrc(img, i)} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-[1.02]" alt={img.alt || project.title} />
                       </div>
                     );
                   })}
                 </div>
                 
                 {/* 分割线 */}
-                {index < projectsData.length - 1 && (
+                {index < visibleProjects.length - 1 && (
                   <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-white/10 to-transparent mt-[120px]" />
                 )}
              </section>
