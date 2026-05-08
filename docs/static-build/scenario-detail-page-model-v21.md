@@ -459,3 +459,17 @@ export interface MediaShowcasePage extends ScenarioDetailPage {
 上述场景解决方案路径统一归 `SolutionManagementPage` 管理。`PageEditor` 不负责已有业务模块路径，只负责普通页面、专题页、GEO 长尾页、补充页面等没有专属后台的内容。
 
 `scenario-detail` API 骨架继续冻结，不接前台、不接 UI、不接 route manifest、不接 sitemap。
+
+## 15. 第21-6A-12 salon 展示型数据消费试点
+
+第21-6A-12 以 `/solutions/salon` 作为第二个 `SolutionManagementPage` 数据消费试点。实际数据源不使用路由名 `salon`，而是使用 `server/data/solutions.json` 中的真实场景 slug：`client-appreciation`；route manifest 中继续由 `client-appreciation -> /solutions/salon` 映射。
+
+本轮边界：
+
+- `/solutions/salon` 优先读取 `SolutionManagementPage` 对应的 `/api/solutions` 数据。
+- 当前仅当 `client-appreciation` 下存在 enabled 案例组、有效 group title、有效 group summary、且组内存在 enabled image media 时，前台切换为展示型项目 / 图库页面。
+- 后台数据不可用、接口失败、无有效案例组、无有效图片素材或字段不足时，继续 fallback 到 legacy solution article。
+- `PageEditor` 不负责场景解决方案内容，不使用 `pages.json`，不使用 `scenario-detail-pages.json`。
+- 本轮不接管 `annual`、`exhibition`、`forum`、`other`，不处理 `/solutions/video`。
+
+`/solutions/video` 仍保留后续单独增强方向，需要围绕 video showcase、poster、thumbnail、duration、图片 / 视频混合媒体排版继续设计。

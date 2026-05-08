@@ -468,7 +468,7 @@ function getEnabledImageItems(group: SolutionGroupSource): SolutionItemSource[] 
     : [];
 }
 
-function getFamilyDayRouteRequiredChecks(scene: SolutionSceneSource, template: StaticRouteInput): string[] {
+function getSolutionShowcaseRouteRequiredChecks(scene: SolutionSceneSource, template: StaticRouteInput): string[] {
   const groupsWithImages = getEnabledSolutionGroups(scene)
     .map((group) => ({
       group,
@@ -760,8 +760,8 @@ function buildSolutionRoutesFromSource(takenOverPaths = new Set<string>()): {
       slug,
       description: getSourceText(scene.description) || template.description,
       canonicalPath: mappedPath,
-      requiredChecks: mappedPath === '/solutions/family-day'
-        ? getFamilyDayRouteRequiredChecks(scene, template)
+      requiredChecks: mappedPath === '/solutions/family-day' || mappedPath === '/solutions/salon'
+        ? getSolutionShowcaseRouteRequiredChecks(scene, template)
         : template.requiredChecks,
     });
   }

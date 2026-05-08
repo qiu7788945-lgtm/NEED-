@@ -2738,6 +2738,10 @@ interface FamilyDayProject {
   gallery: FamilyDayGalleryItem[];
 }
 
+const solutionShowcaseSourceSlugByArticleId: Record<string, string> = {
+  salon: 'client-appreciation',
+};
+
 function toFamilyDayGalleryItem(value: string | FamilyDayGalleryItem, projectTitle: string): FamilyDayGalleryItem {
   if (typeof value !== 'string') {
     return value;
@@ -2758,6 +2762,107 @@ function getFamilyDayImageSrc(item: FamilyDayGalleryItem, index: number) {
       : `https://images.unsplash.com/photo-${1500000000000 + index}?q=80&w=800&auto=format&fit=crop`;
 }
 
+function mapShowcaseProjectsToFamilyDayProjects(solutionSlug: string): Promise<FamilyDayProject[]> {
+  return fetchEnabledSolutionBySlug(solutionSlug)
+    .then((solution) => {
+      const showcase = adaptSolutionGroupsToShowcaseProjects(solution);
+
+      return showcase.projects
+        .map((project) => ({
+          id: project.id,
+          title: project.title,
+          slogan: project.slug,
+          shortIntro: project.summary,
+          gallery: project.imageMedia.map((item) => ({
+            src: item.url,
+            alt: item.alt,
+            caption: item.caption,
+          })),
+        }))
+        .filter((project) => project.title && project.shortIntro && project.gallery.length > 0);
+    });
+}
+
+function ScenarioShowcasePage({
+  projects,
+  isModalOpen,
+  onModalClose,
+}: {
+  projects: FamilyDayProject[];
+  isModalOpen: boolean;
+  onModalClose: () => void;
+}) {
+  return (
+    <div className="min-h-screen bg-white text-black">
+      <div className="pt-32 px-6 md:px-12 lg:px-24 border-b border-black/5 pb-10">
+        <button onClick={() => window.history.back()} className="inline-flex items-center text-sm font-bold tracking-widest uppercase text-gray-500 hover:text-black transition-colors w-fit group">
+          <ArrowRight className="w-4 h-4 mr-3 rotate-180 group-hover:-translate-x-1 transition-transform" /> 返回上一页
+        </button>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-6 md:px-12 pt-16 pb-32 flex flex-col">
+        {projects.map((project, index) => (
+          <section key={project.id} className="mb-[120px] last:mb-0 relative">
+            <div className="mb-12 max-w-4xl">
+              <h2 className="text-sm font-mono tracking-widest text-[#ccff00] mb-4 uppercase flex items-center gap-4">
+                <span className="w-8 h-[1px] bg-[#ccff00]" />
+                {project.slogan}
+              </h2>
+              <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter mb-8 text-gray-950">
+                {project.title}
+              </h1>
+              <p className="text-xl text-gray-600 font-light leading-relaxed line-clamp-3">
+                {project.shortIntro}
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-4 md:gap-6">
+              {project.gallery.map((img, i) => {
+                let colSpanClass = 'col-span-1 md:col-span-2';
+                let aspectClass = 'aspect-[4/3]';
+
+                if (i === 0) {
+                  colSpanClass = 'col-span-1 md:col-span-6';
+                  aspectClass = 'aspect-[21/9] md:aspect-[21/8]';
+                } else if (i === 1 || i === 2) {
+                  colSpanClass = 'col-span-1 md:col-span-3';
+                  aspectClass = 'aspect-[4/3] md:aspect-[16/10]';
+                }
+
+                return (
+                  <div key={i} className={`${colSpanClass} overflow-hidden rounded-3xl group border border-black/5 bg-gray-100 relative ${aspectClass}`}>
+                    <div className="absolute inset-0 border border-[#ccff00]/0 group-hover:border-[#ccff00]/50 transition-colors z-20 rounded-3xl pointer-events-none" />
+                    <div className="absolute inset-0 bg-black/10 group-hover:bg-transparent transition-colors z-10 duration-700 pointer-events-none" />
+                    <img loading="lazy" src={getFamilyDayImageSrc(img, i)} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-[1.02]" alt={img.alt || project.title} />
+                  </div>
+                );
+              })}
+            </div>
+
+            {index < projects.length - 1 && (
+              <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-black/10 to-transparent mt-[120px]" />
+            )}
+          </section>
+        ))}
+      </div>
+
+      <div className="max-w-7xl mx-auto px-6 md:px-12 pb-32">
+        <div className="border-t border-black/10 pt-12 flex flex-col sm:flex-row items-center justify-between gap-6 bg-gray-50 p-8 md:p-10 rounded-2xl">
+          <div>
+            <h4 className="text-xl font-bold text-gray-950 mb-2">需要更详细的案例文件？</h4>
+            <p className="text-gray-500">联系我们，获取本场景的过往完整案例及执行策略表。</p>
+          </div>
+          <Link to="/contact" className="px-6 py-3 bg-black text-[#ccff00] font-bold rounded-full hover:bg-gray-800 transition-colors whitespace-nowrap inline-block text-center">
+            联系我们探讨项目
+          </Link>
+        </div>
+      </div>
+
+      <QRCodeModal isOpen={isModalOpen} onClose={onModalClose} />
+    </div>
+  );
+}
+
 function FamilyDayPage() {
   const { pathname } = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -2770,23 +2875,10 @@ function FamilyDayPage() {
   useEffect(() => {
     let isMounted = true;
 
-    fetchEnabledSolutionBySlug('family-day')
-      .then((solution) => {
+    mapShowcaseProjectsToFamilyDayProjects('family-day')
+      .then((projects) => {
         if (isMounted) {
-          const showcase = adaptSolutionGroupsToShowcaseProjects(solution);
-          setCmsProjects(showcase.projects
-            .map((project) => ({
-              id: project.id,
-              title: project.title,
-              slogan: project.slug,
-              shortIntro: project.summary,
-              gallery: project.imageMedia.map((item) => ({
-                src: item.url,
-                alt: item.alt,
-                caption: item.caption,
-              })),
-            }))
-            .filter((project) => project.title && project.shortIntro && project.gallery.length > 0));
+          setCmsProjects(projects);
         }
       })
       .catch(() => {
@@ -2890,13 +2982,52 @@ function SolutionArticlePage() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showcaseProjects, setShowcaseProjects] = useState<FamilyDayProject[]>([]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
 
+  useEffect(() => {
+    let isMounted = true;
+    const sourceSlug = articleId ? solutionShowcaseSourceSlugByArticleId[articleId] : undefined;
+
+    if (!sourceSlug) {
+      setShowcaseProjects([]);
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    mapShowcaseProjectsToFamilyDayProjects(sourceSlug)
+      .then((projects) => {
+        if (isMounted) {
+          setShowcaseProjects(projects);
+        }
+      })
+      .catch(() => {
+        if (isMounted) {
+          setShowcaseProjects([]);
+        }
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [articleId]);
+
   if (articleId === 'family-day') {
     return <FamilyDayPage />;
+  }
+
+  if (articleId === 'salon' && showcaseProjects.length > 0) {
+    return (
+      <ScenarioShowcasePage
+        projects={showcaseProjects}
+        isModalOpen={isModalOpen}
+        onModalClose={() => setIsModalOpen(false)}
+      />
+    );
   }
 
   const article = solutionsData.find(a => a.id === articleId);
