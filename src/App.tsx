@@ -620,11 +620,12 @@ function CasesTrailSection() {
           <img
             key={i}
             loading="lazy"
+            src={(trailImages[i % trailImages.length] ?? HOME_TRAIL_FALLBACK_IMAGES[0]).src}
             ref={el => { poolRefs.current[i] = el; }}
             className="absolute top-0 left-0 w-48 md:w-80 h-auto object-cover opacity-0 shadow-2xl rounded-sm"
             // Force hardware acceleration and composite layer creation
             style={{ willChange: 'transform, opacity' }}
-            alt=""
+            alt={(trailImages[i % trailImages.length] ?? HOME_TRAIL_FALLBACK_IMAGES[0]).alt}
           />
         ))}
       </div>
