@@ -124,6 +124,50 @@ export interface ScenarioShowcaseData {
   projects: ScenarioShowcaseProject[];
 }
 
+export interface PublicContactSocial {
+  id: string;
+  label: string;
+  displayName: string;
+  value: string;
+  qrImageUrl: string;
+  qrImageAlt: string;
+  sortOrder?: number;
+  enabled: boolean;
+}
+
+export interface PublicContactInfo {
+  companyName: string;
+  brandName: string;
+  address: {
+    label: string;
+    value: string;
+    alt: string;
+  };
+  email: {
+    label: string;
+    value: string;
+    enabled: boolean;
+  };
+  phone: {
+    label: string;
+    value: string;
+    enabled: boolean;
+  };
+  socials: PublicContactSocial[];
+}
+
+export interface PublicCompanyAsset {
+  id: string;
+  title: string;
+  summary: string;
+  description: string;
+  location: string;
+  imageUrl: string;
+  imageAlt: string;
+  sortOrder?: number;
+  enabled: boolean;
+}
+
 type UnknownRecord = Record<string, unknown>;
 
 export const solutionPublicPathBySourceSlug: Record<string, string> = {
@@ -443,6 +487,109 @@ function adaptSolutionItem(value: unknown): PublicSolutionItem | null {
   };
 }
 
+function adaptContactSocial(value: unknown): PublicContactSocial | null {
+  if (!isRecord(value) || !isEnabled(value)) {
+    return null;
+  }
+
+  const id = toStringValue(value.id);
+  const label = normalizePublicDisplayText(value.label);
+  const displayName = normalizePublicDisplayText(value.displayName);
+  const qrImageUrl = resolvePublicAssetUrl(value.qrImageUrl);
+
+  if (!id || !qrImageUrl || (!label && !displayName)) {
+    return null;
+  }
+
+  return {
+    id,
+    label,
+    displayName,
+    value: normalizePublicDisplayText(value.value),
+    qrImageUrl,
+    qrImageAlt: normalizePublicDisplayText(value.qrImageAlt) || displayName || label,
+    sortOrder: toNumberValue(value.sortOrder),
+    enabled: true,
+  };
+}
+
+function adaptContactInfo(value: unknown): PublicContactInfo | null {
+  const data = normalizeObjectPayload(value);
+
+  if (!data) {
+    return null;
+  }
+
+  const address = isRecord(data.address) ? data.address : {};
+  const email = isRecord(data.email) ? data.email : {};
+  const phone = isRecord(data.phone) ? data.phone : {};
+  const socials = normalizeArrayPayload(data.socials)
+    .map((social, index) => ({
+      item: adaptContactSocial(social),
+      index,
+    }))
+    .filter((entry): entry is { item: PublicContactSocial; index: number } => entry.item !== null)
+    .sort((left, right) => (
+      (left.item.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.item.sortOrder ?? Number.MAX_SAFE_INTEGER)
+      || left.index - right.index
+    ))
+    .map(({ item }) => item);
+
+  const addressValue = normalizePublicDisplayText(address.value);
+  const emailValue = normalizePublicDisplayText(email.value);
+
+  if (!addressValue && !emailValue && socials.length === 0) {
+    return null;
+  }
+
+  return {
+    companyName: normalizePublicDisplayText(data.companyName),
+    brandName: normalizePublicDisplayText(data.brandName),
+    address: {
+      label: normalizePublicDisplayText(address.label),
+      value: addressValue,
+      alt: normalizePublicDisplayText(address.alt),
+    },
+    email: {
+      label: normalizePublicDisplayText(email.label),
+      value: emailValue,
+      enabled: toBooleanValue(email.enabled, true),
+    },
+    phone: {
+      label: normalizePublicDisplayText(phone.label),
+      value: normalizePublicDisplayText(phone.value),
+      enabled: toBooleanValue(phone.enabled),
+    },
+    socials,
+  };
+}
+
+function adaptCompanyAsset(value: unknown): PublicCompanyAsset | null {
+  if (!isRecord(value) || !isEnabled(value)) {
+    return null;
+  }
+
+  const id = toStringValue(value.id);
+  const title = normalizePublicDisplayText(value.title);
+  const imageUrl = resolvePublicAssetUrl(value.imageUrl);
+
+  if (!id || !title) {
+    return null;
+  }
+
+  return {
+    id,
+    title,
+    summary: normalizePublicDisplayText(value.summary),
+    description: normalizePublicDisplayText(value.description),
+    location: normalizePublicDisplayText(value.location),
+    imageUrl,
+    imageAlt: normalizePublicDisplayText(value.imageAlt) || title,
+    sortOrder: toNumberValue(value.sortOrder),
+    enabled: true,
+  };
+}
+
 export function adaptSolutionGroupsToShowcaseProjects(solution: PublicSolution | null): ScenarioShowcaseData {
   if (!solution) {
     return {
@@ -587,6 +734,28 @@ export async function fetchHomeVideo(): Promise<PublicHomeVideo | null> {
     description: toStringValue(data.description),
     enabled,
   };
+}
+
+export async function fetchContactInfo(): Promise<PublicContactInfo | null> {
+  const payload = await safeFetchJson('/api/contact-info');
+
+  return adaptContactInfo(payload);
+}
+
+export async function fetchCompanyAssets(): Promise<PublicCompanyAsset[]> {
+  const payload = await safeFetchJson('/api/company-assets');
+
+  return normalizeArrayPayload(payload)
+    .map((value, index) => ({
+      item: adaptCompanyAsset(value),
+      index,
+    }))
+    .filter((entry): entry is { item: PublicCompanyAsset; index: number } => entry.item !== null)
+    .sort((left, right) => (
+      (left.item.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.item.sortOrder ?? Number.MAX_SAFE_INTEGER)
+      || left.index - right.index
+    ))
+    .map(({ item }) => item);
 }
 
 export async function fetchHomeInteractiveImages(): Promise<PublicHomeInteractiveImage[]> {
