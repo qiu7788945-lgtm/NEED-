@@ -16,6 +16,19 @@ export interface PublicHomeVideo {
   enabled: boolean;
 }
 
+export interface PublicHomeInteractiveImage {
+  slotNo: number;
+  mediaUrl: string;
+  mediaFileName: string;
+  alt: string;
+  enabled: boolean;
+  sortOrder: number;
+  title: string;
+  description: string;
+  geoDescription: string;
+  displayName: string;
+}
+
 export interface PublicArticle {
   id: string;
   slug: string;
@@ -276,6 +289,33 @@ function adaptArticle(value: unknown): PublicArticle | null {
     sortOrder: toNumberValue(value.sortOrder),
     seoTitle: toStringValue(value.seoTitle),
     seoDescription: toStringValue(value.seoDescription),
+  };
+}
+
+function adaptHomeInteractiveImage(value: unknown): PublicHomeInteractiveImage | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const slotNo = toNumberValue(value.slotNo);
+  const mediaUrl = resolvePublicAssetUrl(value.mediaUrl);
+  const enabled = toBooleanValue(value.enabled);
+
+  if (!Number.isInteger(slotNo) || !enabled || !mediaUrl) {
+    return null;
+  }
+
+  return {
+    slotNo,
+    mediaUrl,
+    mediaFileName: toStringValue(value.mediaFileName),
+    alt: toStringValue(value.alt),
+    enabled,
+    sortOrder: toNumberValue(value.sortOrder) ?? slotNo,
+    title: toStringValue(value.title),
+    description: toStringValue(value.description),
+    geoDescription: toStringValue(value.geoDescription),
+    displayName: toStringValue(value.displayName) || toStringValue(value.mediaDisplayName),
   };
 }
 
@@ -547,6 +587,22 @@ export async function fetchHomeVideo(): Promise<PublicHomeVideo | null> {
     description: toStringValue(data.description),
     enabled,
   };
+}
+
+export async function fetchHomeInteractiveImages(): Promise<PublicHomeInteractiveImage[]> {
+  const payload = await safeFetchJson('/api/home/interactive-images');
+  return normalizeArrayPayload(payload)
+    .map((value, index) => ({
+      item: adaptHomeInteractiveImage(value),
+      index,
+    }))
+    .filter((entry): entry is { item: PublicHomeInteractiveImage; index: number } => entry.item !== null)
+    .sort((left, right) => (
+      left.item.sortOrder - right.item.sortOrder
+      || left.item.slotNo - right.item.slotNo
+      || left.index - right.index
+    ))
+    .map(({ item }) => item);
 }
 
 export async function fetchPublishedArticles(): Promise<PublicArticle[]> {
