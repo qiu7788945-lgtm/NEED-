@@ -1900,8 +1900,8 @@ function CaseStudyPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-6 md:px-12 lg:px-24 pb-24">
-        <div className="markdown-body prose prose-lg prose-headings:font-black prose-headings:tracking-tighter prose-gray max-w-none prose-img:rounded-2xl prose-img:shadow-xl prose-img:w-full prose-p:leading-relaxed prose-a:text-[#ccff00]">
-          {caseStudy.contentHtml && !caseStudy.contentText ? (
+        <div className="markdown-body prose prose-lg prose-headings:font-black prose-headings:tracking-tighter prose-gray max-w-none prose-img:max-w-full prose-img:h-auto prose-img:rounded-2xl prose-img:shadow-xl prose-img:w-full prose-img:my-10 prose-p:leading-relaxed prose-a:text-[#ccff00]">
+          {caseStudy.contentHtml ? (
             <div dangerouslySetInnerHTML={{ __html: caseStudy.contentHtml }} />
           ) : (
             <Markdown>{caseStudy.content}</Markdown>

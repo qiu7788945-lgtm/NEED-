@@ -244,6 +244,13 @@ function isEnabled(item: UnknownRecord): boolean {
   return item.enabled !== false;
 }
 
+function resolvePublicHtmlAssetUrls(html: string): string {
+  return html.replace(
+    /(<img\b[^>]*\bsrc=)(["'])(\/uploads\/[^"']+)\2/gi,
+    (_match, prefix: string, quote: string, url: string) => `${prefix}${quote}${resolvePublicAssetUrl(url)}${quote}`,
+  );
+}
+
 function adaptArticle(value: unknown): PublicArticle | null {
   if (!isRecord(value) || !isPublished(value)) {
     return null;
@@ -289,7 +296,7 @@ function adaptCase(value: unknown): PublicCase | null {
   const coverUrl = toStringValue(value.coverUrl);
   const summary = toStringValue(value.summary) || toStringValue(value.seoDescription);
   const contentText = toStringValue(value.contentText);
-  const contentHtml = toStringValue(value.contentHtml);
+  const contentHtml = resolvePublicHtmlAssetUrls(toStringValue(value.contentHtml));
 
   return {
     id: toStringValue(value.id) || slug,
