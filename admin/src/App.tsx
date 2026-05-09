@@ -7,6 +7,7 @@ import { SolutionManagementPage } from './pages/SolutionManagementPage';
 import { QualityCheckPage } from './pages/QualityCheckPage';
 import { PublishManagementPage } from './pages/PublishManagementPage';
 import { PageEditorPage } from './pages/PageEditorPage';
+import { ContactAssetsManagementPage } from './pages/ContactAssetsManagementPage';
 
 const homeMenu = '首页管理';
 const mediaMenu = '媒体库';
@@ -17,12 +18,15 @@ const qualityMenu = 'GEO 检查';
 const publishMenu = '发布管理';
 const pageEditorMenu = '页面编辑器';
 
+const contactAssetsMenu = '联系我们 / 自有资产';
+
 const menuItems = [
   homeMenu,
   pageEditorMenu,
   caseMenu,
   articleMenu,
   solutionMenu,
+  contactAssetsMenu,
   mediaMenu,
   qualityMenu,
   'SEO / GEO 管理',
@@ -31,7 +35,22 @@ const menuItems = [
 ];
 
 export default function App() {
-  const [activeMenu, setActiveMenu] = useState(homeMenu);
+  const [activeMenu, setActiveMenu] = useState(() => (
+    window.location.pathname === '/contact-assets' ? contactAssetsMenu : homeMenu
+  ));
+
+  function activateMenu(item: string) {
+    setActiveMenu(item);
+
+    if (item === contactAssetsMenu) {
+      window.history.pushState(null, '', '/contact-assets');
+      return;
+    }
+
+    if (window.location.pathname === '/contact-assets') {
+      window.history.pushState(null, '', '/');
+    }
+  }
 
   return (
     <main className="admin-shell">
@@ -46,7 +65,7 @@ export default function App() {
               key={item}
               className={item === activeMenu ? 'admin-menu-item is-active' : 'admin-menu-item'}
               type="button"
-              onClick={() => setActiveMenu(item)}
+              onClick={() => activateMenu(item)}
             >
               {item}
             </button>
@@ -65,6 +84,8 @@ export default function App() {
           <CaseManagementPage />
         ) : activeMenu === solutionMenu ? (
           <SolutionManagementPage />
+        ) : activeMenu === contactAssetsMenu ? (
+          <ContactAssetsManagementPage />
         ) : activeMenu === mediaMenu ? (
           <MediaLibraryPage />
         ) : activeMenu === qualityMenu ? (
