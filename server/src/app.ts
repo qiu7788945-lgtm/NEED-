@@ -6,6 +6,8 @@ import express from 'express';
 import { env } from './config/env.js';
 import { errorMiddleware } from './middlewares/error.middleware.js';
 import { notFoundMiddleware } from './middlewares/not-found.middleware.js';
+import { companyAssetsRouter } from './routes/company-assets.routes.js';
+import { contactInfoRouter } from './routes/contact.routes.js';
 import { apiRouter } from './routes/index.js';
 import { logger } from './utils/logger.js';
 
@@ -18,6 +20,8 @@ app.use(express.json());
 app.use('/uploads/images', express.static(path.join(serverRoot, 'uploads', 'images')));
 app.use('/uploads/videos', express.static(path.join(serverRoot, 'uploads', 'videos')));
 app.use(express.static(path.join(projectRoot, 'public')));
+app.use('/api/contact-info', contactInfoRouter);
+app.use('/api/company-assets', companyAssetsRouter);
 app.use(apiRouter);
 app.use(notFoundMiddleware);
 app.use(errorMiddleware);

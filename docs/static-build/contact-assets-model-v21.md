@@ -1,16 +1,22 @@
 # Contact And Company Assets Model V21
 
-本轮只建立联系我们与自有资产 JSON 数据草案，不接入前台、不新增 API、不新增后台 UI，也不改变现有 prerender 输出。
+本轮建立联系我们与自有资产的专属 JSON 数据模型与 API 链路。`/contact` 是专属模块，后续不交给 PageEditor 维护。
 
-## Scope
+## Current Scope
 
 - `server/data/contact-info.json` 保存公司名称、品牌名、地址、邮箱、电话占位和社媒二维码信息。
 - `server/data/company-assets.json` 保存四类自有资产的标题、摘要、描述、地点、图片、alt、排序和启用状态。
-- `/contact` 是专属模块，后续不交给 PageEditor 维护。
+- 第21-6F-3 新增 GET/PUT API，用于读取和保存上述两个 JSON 数据源。
+
+## API
+
+- `GET /api/contact-info`：读取 `server/data/contact-info.json`。
+- `PUT /api/contact-info`：保存完整 contact info 对象。
+- `GET /api/company-assets`：读取 `server/data/company-assets.json`。
+- `PUT /api/company-assets`：保存完整 company assets 数组。
 
 ## Follow-Up Rounds
 
-- 第21-6F-3：新增 `GET/PUT` API，读取和保存 `contact-info.json` 与 `company-assets.json`。
 - 第21-6F-4：新增专属后台管理入口，用于维护联系方式、社媒二维码、自有资产内容、图片、alt、排序和启用状态。
 - 第21-6F-5：前台 `/contact` 通过 `src/services/publicContent.ts` 接入 `fetchContactInfo()` 与 `fetchCompanyAssets()`，保留现有硬编码 fallback。
 
