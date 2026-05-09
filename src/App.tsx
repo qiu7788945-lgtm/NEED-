@@ -161,7 +161,7 @@ function Navbar() {
           <Link to="/#how-to-choose" className={`text-sm font-medium transition-colors ${hoverColorClass}`}>怎么选活动公司</Link>
           <Link to="/#two-choose-one" className={`text-sm font-medium transition-colors ${hoverColorClass}`}>二选一怎么选</Link>
           <Link to="/#methods" className={`text-sm font-medium transition-colors ${hoverColorClass}`}>方法与判断</Link>
-          <Link to="/#cases" className={`text-sm font-medium transition-colors ${hoverColorClass}`}>案例拆解</Link>
+          <Link to="/cases" className={`text-sm font-medium transition-colors ${hoverColorClass}`}>案例拆解</Link>
         </nav>
 
         {/* Contact Button & Mobile Toggle */}
@@ -201,7 +201,7 @@ function Navbar() {
               <Link to="/#how-to-choose" onClick={() => setIsMobileOpen(false)} className="text-2xl font-bold">怎么选活动公司</Link>
               <Link to="/#two-choose-one" onClick={() => setIsMobileOpen(false)} className="text-2xl font-bold">二选一怎么选</Link>
               <Link to="/#methods" onClick={() => setIsMobileOpen(false)} className="text-2xl font-bold">方法与判断</Link>
-              <Link to="/#cases" onClick={() => setIsMobileOpen(false)} className="text-2xl font-bold">案例拆解</Link>
+              <Link to="/cases" onClick={() => setIsMobileOpen(false)} className="text-2xl font-bold">案例拆解</Link>
               <Link to="/contact" onClick={() => setIsMobileOpen(false)} className="text-2xl font-bold mt-8">联系我们</Link>
             </div>
           </motion.div>
@@ -809,8 +809,9 @@ function MethodsSection() {
 function CasesPreviewSection() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [publicCases, setPublicCases] = useState<Array<{ id: string; title: string; excerpt: string; tags: string[] }>>([]);
-  const baseCases = publicCases.length > 0 ? publicCases : caseStudiesData;
-  const extendedCases = [...baseCases, { ...baseCases[0], id: `${baseCases[0].id}-2` }, { ...baseCases[0], id: `${baseCases[0].id}-3` }];
+  const [activeCaseIndex, setActiveCaseIndex] = useState(0);
+  const displayCases = publicCases.slice(0, 5);
+  const canScrollCases = displayCases.length > 1;
 
   useEffect(() => {
     fetchPublishedCases()
@@ -820,7 +821,7 @@ function CasesPreviewSection() {
             id: getCaseRouteIdForCmsCase(caseStudy),
             title: caseStudy.title,
             excerpt: caseStudy.excerpt,
-            tags: caseStudy.tags.length > 0 ? caseStudy.tags : caseStudiesData[0].tags,
+            tags: caseStudy.tags,
           })));
         }
       })
@@ -829,16 +830,36 @@ function CasesPreviewSection() {
       });
   }, []);
 
-  const scrollLeft = () => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollBy({ left: -window.innerWidth * 0.8, behavior: 'smooth' });
+  useEffect(() => {
+    setActiveCaseIndex(0);
+    scrollRef.current?.scrollTo({ left: 0 });
+  }, [displayCases.length]);
+
+  const scrollToCase = (index: number) => {
+    if (!scrollRef.current || displayCases.length === 0) {
+      return;
     }
+
+    const nextIndex = (index + displayCases.length) % displayCases.length;
+    const target = scrollRef.current.children.item(nextIndex) as HTMLElement | null;
+
+    if (!target) {
+      return;
+    }
+
+    setActiveCaseIndex(nextIndex);
+    scrollRef.current.scrollTo({
+      left: target.offsetLeft - scrollRef.current.offsetLeft,
+      behavior: 'smooth',
+    });
+  };
+
+  const scrollLeft = () => {
+    scrollToCase(activeCaseIndex - 1);
   };
 
   const scrollRight = () => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollBy({ left: window.innerWidth * 0.8, behavior: 'smooth' });
-    }
+    scrollToCase(activeCaseIndex + 1);
   };
 
   return (
@@ -855,51 +876,165 @@ function CasesPreviewSection() {
             </p>
           </div>
           <div className="flex items-center justify-center gap-4 z-10 shrink-0">
-            <button 
-              onClick={scrollLeft}
-              className="w-14 h-14 rounded-full border border-white/20 flex items-center justify-center hover:bg-white/10 transition-colors"
-            >
-              <ArrowRight className="w-6 h-6 rotate-180" />
-            </button>
-            <button 
-              onClick={scrollRight}
-              className="w-14 h-14 rounded-full bg-[#ccff00] text-black flex items-center justify-center hover:bg-[#b3e600] transition-colors"
-            >
-              <ArrowRight className="w-6 h-6" />
-            </button>
+            <Link to="/cases" className="inline-flex items-center justify-center px-6 py-3 rounded-full border border-white/20 text-sm font-bold tracking-wider text-white hover:bg-white/10 transition-colors">
+              查看全部案例
+            </Link>
+            {canScrollCases ? (
+              <>
+                <button
+                  onClick={scrollLeft}
+                  className="w-14 h-14 rounded-full border border-white/20 flex items-center justify-center hover:bg-white/10 transition-colors"
+                >
+                  <ArrowRight className="w-6 h-6 rotate-180" />
+                </button>
+                <button
+                  onClick={scrollRight}
+                  className="w-14 h-14 rounded-full bg-[#ccff00] text-black flex items-center justify-center hover:bg-[#b3e600] transition-colors"
+                >
+                  <ArrowRight className="w-6 h-6" />
+                </button>
+              </>
+            ) : null}
           </div>
         </header>
 
-        <div ref={scrollRef} className="flex overflow-x-auto snap-x snap-mandatory gap-6 pb-12 [&::-webkit-scrollbar]:hidden" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
-          {extendedCases.map((caseStudy) => (
-            <Link 
-              key={caseStudy.id} 
-              to={`/cases/${caseStudy.id}`}
-              className="group relative bg-[#ccff00] text-black rounded-3xl transition-all duration-500 hover:bg-[#b3e600] hover:shadow-[0_0_40px_rgba(204,255,0,0.18)] hover:-translate-y-1 border border-[#ccff00]/70 flex min-w-[85vw] md:min-w-[800px] lg:min-w-[1000px] min-h-[420px] md:min-h-[500px] snap-center shrink-0 p-8 md:p-12 lg:p-16"
-            >
-              <div className="flex w-full flex-col justify-between gap-12">
-                <div>
-                  <div className="flex flex-wrap gap-2 mb-8">
-                      {caseStudy.tags.map(tag => (
-                          <span key={tag} className="px-3 py-1 bg-black/10 text-xs font-bold uppercase tracking-wider rounded-full text-black/70 transition-colors">{tag}</span>
-                      ))}
+        {displayCases.length > 0 ? (
+          <div ref={scrollRef} className="flex overflow-x-auto snap-x snap-mandatory gap-6 pb-12 [&::-webkit-scrollbar]:hidden" style={{ msOverflowStyle: 'none', scrollbarWidth: 'none' }}>
+            {displayCases.map((caseStudy) => (
+              <Link
+                key={caseStudy.id}
+                to={`/cases/${caseStudy.id}`}
+                className="group relative bg-[#ccff00] text-black rounded-3xl transition-all duration-500 hover:bg-[#b3e600] hover:shadow-[0_0_40px_rgba(204,255,0,0.18)] hover:-translate-y-1 border border-[#ccff00]/70 flex min-w-[85vw] md:min-w-[800px] lg:min-w-[1000px] min-h-[420px] md:min-h-[500px] snap-center shrink-0 p-8 md:p-12 lg:p-16"
+              >
+                <div className="flex w-full flex-col justify-between gap-12">
+                  <div>
+                    <div className="flex flex-wrap gap-2 mb-8">
+                        {caseStudy.tags.map(tag => (
+                            <span key={tag} className="px-3 py-1 bg-black/10 text-xs font-bold uppercase tracking-wider rounded-full text-black/70 transition-colors">{tag}</span>
+                        ))}
+                    </div>
+                    <h3 className="text-3xl md:text-5xl lg:text-6xl font-black tracking-tight mb-8 text-black leading-tight max-w-4xl">
+                    {caseStudy.title}
+                    </h3>
+                    <p className="text-black/75 transition-colors leading-relaxed text-lg md:text-xl max-w-3xl">
+                    {caseStudy.excerpt}
+                    </p>
                   </div>
-                  <h3 className="text-3xl md:text-5xl lg:text-6xl font-black tracking-tight mb-8 text-black leading-tight max-w-4xl">
-                  {caseStudy.title}
-                  </h3>
-                  <p className="text-black/75 transition-colors leading-relaxed text-lg md:text-xl max-w-3xl">
-                  {caseStudy.excerpt}
-                  </p>
+                  <div className="flex items-center text-sm font-bold uppercase tracking-wider text-black transition-colors">
+                  进入深度拆解 <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+                  </div>
                 </div>
-                <div className="flex items-center text-sm font-bold uppercase tracking-wider text-black transition-colors">
-                进入深度拆解 <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-gray-400">
+            暂无已发布案例，后续案例上线后会在这里展示。
+          </div>
+        )}
       </div>
     </section>
+  );
+}
+
+function CasesIndexPage() {
+  const { pathname } = useLocation();
+  const [cases, setCases] = useState<PublicCase[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  useEffect(() => {
+    let isActive = true;
+    setIsLoading(true);
+
+    fetchPublishedCases()
+      .then((items) => {
+        if (isActive) {
+          setCases(items);
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setCases([]);
+        }
+      })
+      .finally(() => {
+        if (isActive) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  return (
+    <main className="min-h-screen bg-white text-black pt-32 pb-24">
+      <section className="px-6 md:px-12 lg:px-24">
+        <div className="max-w-7xl mx-auto">
+          <Link to="/" className="inline-flex items-center text-sm font-bold tracking-widest uppercase mb-12 hover:text-[#ccff00] transition-colors">
+            <ArrowRight className="w-4 h-4 mr-2 rotate-180" /> 返回首页
+          </Link>
+          <header className="max-w-4xl mb-16">
+            <p className="text-sm font-black tracking-[0.3em] uppercase text-gray-400 mb-4">Case Analysis</p>
+            <h1 className="text-5xl md:text-7xl lg:text-8xl font-black tracking-tighter mb-8">
+              案例拆解<span className="text-[#ccff00]">.</span>
+            </h1>
+            <p className="text-xl md:text-2xl text-gray-600 leading-relaxed">
+              不同活动场景对应不同业务目标，案例拆解帮助客户理解 NEED 如何判断需求、拆解现场难点并完成落地。
+            </p>
+          </header>
+
+          <div className="flex items-end justify-between gap-6 mb-8">
+            <h2 className="text-2xl md:text-4xl font-black tracking-tight">全部案例</h2>
+            <span className="text-sm font-bold text-gray-400">{cases.length} CASES</span>
+          </div>
+
+          {isLoading ? (
+            <p className="text-gray-500">案例加载中...</p>
+          ) : cases.length > 0 ? (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {cases.map((caseStudy) => {
+                const meta = [caseStudy.clientType, caseStudy.eventType, caseStudy.eventDate, caseStudy.location].filter(Boolean);
+
+                return (
+                  <Link
+                    key={caseStudy.id}
+                    to={`/cases/${caseStudy.slug}`}
+                    className="group block rounded-3xl border border-gray-200 bg-gray-50 p-8 md:p-10 hover:bg-[#ccff00] hover:border-[#ccff00] transition-all duration-300"
+                  >
+                    <div className="flex flex-wrap gap-2 mb-6">
+                      {meta.map((item) => (
+                        <span key={item} className="px-3 py-1 rounded-full bg-black/5 text-xs font-bold text-black/60 group-hover:bg-black/10">
+                          {item}
+                        </span>
+                      ))}
+                    </div>
+                    <h3 className="text-2xl md:text-3xl font-black tracking-tight mb-5 leading-tight">
+                      {caseStudy.title}
+                    </h3>
+                    <p className="text-gray-600 group-hover:text-black/75 leading-relaxed mb-8">
+                      {caseStudy.summary || caseStudy.excerpt}
+                    </p>
+                    <div className="inline-flex items-center text-sm font-bold uppercase tracking-wider">
+                      进入深度拆解 <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="rounded-3xl bg-gray-50 border border-gray-200 p-10 text-gray-500">
+              暂无已发布案例，后续案例上线后会在这里展示。
+            </div>
+          )}
+        </div>
+      </section>
+    </main>
   );
 }
 
@@ -3314,6 +3449,7 @@ export default function App() {
           <Route path="/choose-between-two" element={<ChooseBetweenTwoPage />} />
           <Route path="/choose-between-two/:articleId" element={<ChooseArticlePage />} />
           <Route path="/how-to-choose/:articleId" element={<ArticlePage />} />
+          <Route path="/cases" element={<CasesIndexPage />} />
           <Route path="/cases/:id" element={<CaseStudyPage />} />
           <Route path="*" element={<DynamicPageRoute />} />
         </Routes>

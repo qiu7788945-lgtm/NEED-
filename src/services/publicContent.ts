@@ -41,6 +41,7 @@ export interface PublicCase {
   eventType?: string;
   eventDate?: string;
   location?: string;
+  sortOrder?: number;
   seoTitle?: string;
   seoDescription?: string;
 }
@@ -306,6 +307,7 @@ function adaptCase(value: unknown): PublicCase | null {
     eventType,
     eventDate,
     location,
+    sortOrder: toNumberValue(value.sortOrder),
     seoTitle: toStringValue(value.seoTitle),
     seoDescription: toStringValue(value.seoDescription),
   };
@@ -543,8 +545,16 @@ export async function fetchPublishedArticles(): Promise<PublicArticle[]> {
 export async function fetchPublishedCases(): Promise<PublicCase[]> {
   const payload = await safeFetchJson('/api/cases');
   return normalizeArrayPayload(payload)
-    .map(adaptCase)
-    .filter((item): item is PublicCase => item !== null);
+    .map((value, index) => ({
+      item: adaptCase(value),
+      index,
+    }))
+    .filter((entry): entry is { item: PublicCase; index: number } => entry.item !== null)
+    .sort((left, right) => (
+      (left.item.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.item.sortOrder ?? Number.MAX_SAFE_INTEGER)
+      || left.index - right.index
+    ))
+    .map(({ item }) => item);
 }
 
 export async function fetchPublishedCaseBySlug(slug: string): Promise<PublicCase | null> {

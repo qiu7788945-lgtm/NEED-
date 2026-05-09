@@ -136,6 +136,18 @@ const staticRoutes: StaticRouteInput[] = [
     requiredChecks: ['场景方案', '企业家庭日', '年会活动'],
   },
   {
+    path: '/cases',
+    outputPath: 'cases/index.html',
+    sourceType: 'fixed',
+    sourceId: 'cases-index',
+    slug: 'cases',
+    title: '案例拆解｜NEED 尼德公关',
+    description:
+      'NEED 尼德公关案例拆解按不同活动场景梳理项目目标、现场难点、判断方式与落地执行，帮助客户理解案例背后的真实工作方法。',
+    canonicalPath: '/cases',
+    requiredChecks: ['案例拆解', '全部案例'],
+  },
+  {
     path: '/solutions/family-day',
     outputPath: 'solutions/family-day/index.html',
     sourceType: 'solution',
@@ -327,7 +339,7 @@ const solutionSlugToReactPath: Record<string, string> = {
   other: '/solutions/other',
 };
 
-const fixedRoutePaths = new Set(['/', '/solutions', '/contact', '/how-to-choose', '/choose-between-two']);
+const fixedRoutePaths = new Set(['/', '/solutions', '/cases', '/contact', '/how-to-choose', '/choose-between-two']);
 const reservedStaticRoutePaths = new Set(staticRoutes.map((route) => route.path));
 const solutionDetailPageTakeoverPaths = new Set<string>();
 const solutionShowcaseRoutePaths = new Set([
@@ -369,8 +381,33 @@ function buildStaticRoutes(
     getRouteByPath(fixedRoutes, '/how-to-choose'),
     ...articleRoutes,
     getRouteByPath(fixedRoutes, '/choose-between-two'),
+    getCaseIndexRoute(),
     ...caseRoutes,
   ];
+}
+
+function getCaseIndexRoute(): StaticRouteInput {
+  const template = getRouteByPath(fixedRoutes, '/cases');
+  const firstPublishedCaseTitle = readCases()
+    .map((caseItem, index) => ({ caseItem, index }))
+    .sort(
+      (left, right) =>
+        getSourceNumber(left.caseItem.sortOrder) - getSourceNumber(right.caseItem.sortOrder) || left.index - right.index,
+    )
+    .map(({ caseItem }) => caseItem)
+    .find((caseItem) => (
+      caseItem.status === 'published'
+      && Boolean(getSourceText(caseItem.slug))
+      && Boolean(getSourceText(caseItem.title))
+    ))?.title;
+
+  return {
+    ...template,
+    requiredChecks: [
+      ...template.requiredChecks,
+      firstPublishedCaseTitle,
+    ].map(getRequiredCheckText).filter(Boolean).filter((value, index, values) => values.indexOf(value) === index),
+  };
 }
 
 function toManifestItem(route: StaticRouteInput): RouteManifestItem {
