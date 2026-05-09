@@ -7,6 +7,7 @@ import ContactAndAssetsPage from './pages/ContactAndAssetsPage';
 import { PagePreviewPage } from './pages/PagePreviewPage';
 import { DynamicPage } from './pages/DynamicPage';
 import {
+  fetchHomeInteractiveImages,
   fetchHomeVideo,
   fetchPublishedArticles,
   fetchPublishedCaseBySlug,
@@ -21,6 +22,7 @@ import {
   type ScenarioShowcaseData,
   type PublicArticle,
   type PublicCase,
+  type PublicHomeInteractiveImage,
 } from './services/publicContent';
 import gsap from 'gsap';
 import Markdown from 'react-markdown';
@@ -446,6 +448,43 @@ function PlaceholderSection({ id, title, subtitle, dark = false, linkTo, linkTex
   );
 }
 
+type HomeTrailImage = {
+  src: string;
+  alt: string;
+};
+
+const HOME_TRAIL_IMAGE_COUNT = 6;
+const HOME_TRAIL_FALLBACK_ALT = 'NEED 首页交互图';
+const HOME_TRAIL_FALLBACK_IMAGES: HomeTrailImage[] = [
+  "https://images.unsplash.com/photo-1511556532299-8f662fc26c06?q=80&w=800&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1505236858219-8359eb29e325?q=80&w=800&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=800&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=800&auto=format&fit=crop",
+  "https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?q=80&w=800&auto=format&fit=crop",
+].map((src) => ({ src, alt: HOME_TRAIL_FALLBACK_ALT }));
+
+function getHomeTrailAlt(image: PublicHomeInteractiveImage): string {
+  return image.alt
+    || image.geoDescription
+    || image.title
+    || image.description
+    || HOME_TRAIL_FALLBACK_ALT;
+}
+
+function buildHomeTrailImages(images: PublicHomeInteractiveImage[]): HomeTrailImage[] {
+  const backendImages = images.slice(0, HOME_TRAIL_IMAGE_COUNT).map((image) => ({
+    src: image.mediaUrl,
+    alt: getHomeTrailAlt(image),
+  }));
+
+  if (backendImages.length === 0) {
+    return HOME_TRAIL_FALLBACK_IMAGES;
+  }
+
+  return [...backendImages, ...HOME_TRAIL_FALLBACK_IMAGES].slice(0, HOME_TRAIL_IMAGE_COUNT);
+}
+
 function CasesTrailSection() {
   const navigate = useNavigate();
   const sectionRef = useRef<HTMLElement>(null);
@@ -453,19 +492,33 @@ function CasesTrailSection() {
   const lastPos = useRef({ x: 0, y: 0 });
   const poolIndex = useRef(0);
   const imageIndex = useRef(0);
-
-  const images = [
-    "https://images.unsplash.com/photo-1511556532299-8f662fc26c06?q=80&w=800&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1505236858219-8359eb29e325?q=80&w=800&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1501281668745-f7f57925c3b4?q=80&w=800&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1540575467063-178a50c2df87?q=80&w=800&auto=format&fit=crop",
-    "https://images.unsplash.com/photo-1515162816999-a0c47dc192f7?q=80&w=800&auto=format&fit=crop",
-  ];
+  const [trailImages, setTrailImages] = useState<HomeTrailImage[]>(HOME_TRAIL_FALLBACK_IMAGES);
 
   useEffect(() => {
+    let isActive = true;
+
+    fetchHomeInteractiveImages()
+      .then((images) => {
+        if (isActive) {
+          setTrailImages(buildHomeTrailImages(images));
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          setTrailImages(HOME_TRAIL_FALLBACK_IMAGES);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    imageIndex.current = 0;
+
     // Preload images to browser cache to prevent network stutter during animation
-    images.forEach(src => {
+    trailImages.forEach(({ src }) => {
       const img = new Image();
       img.src = src;
     });
@@ -491,12 +544,13 @@ function CasesTrailSection() {
         // Cycle through the fixed pool of 40 DOM nodes (increased for longer lingering animations)
         poolIndex.current = (poolIndex.current + 1) % 40;
         
-        const src = images[imageIndex.current % images.length];
+        const image = trailImages[imageIndex.current % trailImages.length] ?? HOME_TRAIL_FALLBACK_IMAGES[0];
         imageIndex.current += 1;
         
         const rotate = Math.random() * 20 - 10;
 
-        img.src = src;
+        img.src = image.src;
+        img.alt = image.alt;
 
         // GSAP Animation for extreme smoothness
         // Kill any ongoing animation on this specific image
@@ -551,7 +605,7 @@ function CasesTrailSection() {
       section.removeEventListener('mousemove', onMouseMove);
       section.removeEventListener('touchmove', onTouchMove);
     };
-  }, []);
+  }, [trailImages]);
 
   return (
     <section
