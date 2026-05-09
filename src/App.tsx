@@ -755,6 +755,29 @@ function findCmsChooseBetweenTwoArticle(articles: PublicArticle[], articleId?: s
   return hasRequiredContent ? article : null;
 }
 
+function getMethodJudgmentRouteIdForCmsArticle(article: PublicArticle): string | null {
+  if (article.category === 'method_judgment' && article.slug) {
+    return article.slug;
+  }
+
+  return null;
+}
+
+function findCmsMethodJudgmentArticle(articles: PublicArticle[], articleId?: string): PublicArticle | null {
+  if (!articleId) {
+    return null;
+  }
+
+  const article = articles.find((item) => item.category === 'method_judgment' && item.slug === articleId);
+
+  if (!article) {
+    return null;
+  }
+
+  const hasRequiredContent = article.title.trim() && article.excerpt.trim() && article.content?.trim();
+  return hasRequiredContent ? article : null;
+}
+
 function getCaseRouteIdForCmsCase(caseStudy: PublicCase): string {
   return caseStudy.slug || caseStudy.id;
 }
@@ -2231,6 +2254,172 @@ function ArticlePage() {
   );
 }
 
+function MethodsPage() {
+  const { pathname } = useLocation();
+  const [methodArticles, setMethodArticles] = useState<Array<{ id: string; title: string; excerpt: string }>>([]);
+  const [hasLoaded, setHasLoaded] = useState(false);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  useEffect(() => {
+    fetchPublishedArticles()
+      .then((articles) => {
+        const publishedMethodArticles = articles
+          .map((article, index) => ({
+            article,
+            index,
+            routeId: getMethodJudgmentRouteIdForCmsArticle(article),
+          }))
+          .filter((item): item is { article: PublicArticle; index: number; routeId: string } => Boolean(item.routeId))
+          .sort((a, b) => (
+            (a.article.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.article.sortOrder ?? Number.MAX_SAFE_INTEGER)
+            || a.index - b.index
+          ));
+
+        setMethodArticles(publishedMethodArticles.map(({ article, routeId }) => ({
+          id: routeId,
+          title: article.title,
+          excerpt: article.excerpt,
+        })));
+      })
+      .catch(() => {
+        setMethodArticles([]);
+      })
+      .finally(() => {
+        setHasLoaded(true);
+      });
+  }, []);
+
+  return (
+    <main className="bg-white min-h-screen pt-24">
+      <section className="bg-[#f4f4f4] py-20 px-6 md:px-12 lg:px-24">
+        <div className="max-w-4xl mx-auto">
+          <p className="text-sm font-black tracking-[0.35em] uppercase text-gray-400 mb-6">Methods</p>
+          <h1 className="text-5xl md:text-7xl font-black tracking-tight text-gray-900 mb-8">方法与判断</h1>
+          <p className="text-xl md:text-2xl text-gray-600 leading-relaxed font-medium">
+            把活动策划与执行中的判断拆成可阅读、可校对、可复用的方法，帮助客户在正式合作前先看清问题。
+          </p>
+        </div>
+      </section>
+
+      <section className="py-16 px-6 md:px-12 lg:px-24">
+        <div className="max-w-4xl mx-auto">
+          {methodArticles.length > 0 ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {methodArticles.map((article) => (
+                <Link key={article.id} to={`/methods/${article.id}`} className="block p-8 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-100">
+                  <h2 className="text-xl font-bold text-gray-900 mb-3">{article.title}</h2>
+                  <p className="text-gray-500 line-clamp-3">{article.excerpt}</p>
+                  <div className="mt-6 text-sm font-bold text-black flex items-center gap-2">
+                    阅读全文 &rarr;
+                  </div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <div className="bg-gray-50 border border-gray-100 rounded-2xl p-8 md:p-10">
+              <h2 className="text-2xl font-black text-gray-900 mb-4">暂无已发布的方法文章</h2>
+              <p className="text-gray-600 leading-relaxed">
+                当前方法与判断内容还没有进入公开发布状态。后台文章发布后，这里会自动展示对应专题列表。
+              </p>
+              {!hasLoaded ? <p className="text-gray-400 mt-4">正在检查已发布内容...</p> : null}
+            </div>
+          )}
+        </div>
+      </section>
+    </main>
+  );
+}
+
+function MethodArticlePage() {
+  const { articleId } = useParams();
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [cmsArticle, setCmsArticle] = useState<PublicArticle | null>(null);
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  useEffect(() => {
+    let isActive = true;
+    setCmsArticle(null);
+
+    if (!articleId) {
+      return () => {
+        isActive = false;
+      };
+    }
+
+    fetchPublishedArticles()
+      .then((articles) => {
+        if (!isActive) {
+          return;
+        }
+
+        setCmsArticle(findCmsMethodJudgmentArticle(articles, articleId));
+      })
+      .catch(() => {
+        if (isActive) {
+          setCmsArticle(null);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [articleId]);
+
+  const article = cmsArticle
+    ? {
+        id: articleId,
+        title: cmsArticle.title,
+        excerpt: cmsArticle.excerpt,
+        content: cmsArticle.content ?? '',
+      }
+    : null;
+
+  if (!article) {
+    return (
+      <div className="min-h-screen pt-32 px-6 text-center flex flex-col items-center justify-center">
+        <h1 className="text-2xl font-bold mb-4">文章不存在</h1>
+        <button onClick={() => navigate(-1)} className="text-[#ccff00] hover:underline">返回上一页</button>
+      </div>
+    );
+  }
+
+  return (
+    <main className="bg-white min-h-screen pt-32 pb-24">
+      <article className="max-w-3xl mx-auto px-6 md:px-12">
+        <button onClick={() => navigate(-1)} className="text-gray-500 hover:text-black mb-12 flex items-center gap-2 transition-colors font-medium">
+          &larr; 返回上一页
+        </button>
+        <h1 className="text-3xl md:text-5xl font-black tracking-tight text-gray-900 mb-8 leading-tight">{article.title}</h1>
+        <p className="text-xl text-gray-500 leading-relaxed mb-10">{article.excerpt}</p>
+        <div className="w-16 h-1 bg-[#ccff00] mb-12" />
+        <div className="prose prose-lg md:prose-xl text-gray-700 max-w-none leading-relaxed prose-h3:text-2xl prose-h3:font-bold prose-h3:text-gray-900 prose-h3:mt-12 prose-h3:mb-6">
+          <Markdown>{article.content}</Markdown>
+        </div>
+
+        <div className="mt-20 pt-12 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-6 bg-gray-50 p-8 md:p-10 rounded-2xl">
+          <div>
+            <h4 className="text-xl font-bold text-gray-900 mb-2">需要把方法放到具体项目里判断？</h4>
+            <p className="text-gray-500">联系我们，把你的活动需求、预算边界和现场限制先梳理清楚。</p>
+          </div>
+          <Link to="/contact" className="px-6 py-3 bg-black text-[#ccff00] font-bold rounded-full hover:bg-gray-800 transition-colors whitespace-nowrap inline-block text-center">
+            联系我们探讨项目
+          </Link>
+        </div>
+
+        <QRCodeModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      </article>
+    </main>
+  );
+}
+
 function ChooseBetweenTwoPage() {
   const { pathname } = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -3537,6 +3726,8 @@ export default function App() {
           <Route path="/solutions/:articleId" element={<SolutionArticlePage />} />
           <Route path="/" element={<Home />} />
           <Route path="/how-to-choose" element={<HowToChoosePage />} />
+          <Route path="/methods" element={<MethodsPage />} />
+          <Route path="/methods/:articleId" element={<MethodArticlePage />} />
           <Route path="/choose-between-two" element={<ChooseBetweenTwoPage />} />
           <Route path="/choose-between-two/:articleId" element={<ChooseArticlePage />} />
           <Route path="/how-to-choose/:articleId" element={<ArticlePage />} />

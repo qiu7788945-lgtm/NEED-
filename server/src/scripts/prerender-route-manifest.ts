@@ -317,6 +317,18 @@ const staticRoutes: StaticRouteInput[] = [
     requiredChecks: ['二选一怎么选', '谁更理解需求', '判断更清楚', '执行更稳'],
   },
   {
+    path: '/methods',
+    outputPath: 'methods/index.html',
+    sourceType: 'fixed',
+    sourceId: 'methods-index',
+    slug: 'methods',
+    title: '方法与判断｜NEED 尼德公关',
+    description:
+      'NEED 将活动策划与执行中的需求判断、预算判断、流程判断和现场落地方法整理为专题文章，帮助客户在合作前看清问题。',
+    canonicalPath: '/methods',
+    requiredChecks: ['方法与判断', '活动策划与执行'],
+  },
+  {
     path: '/cases/hyundai-family-day',
     outputPath: 'cases/hyundai-family-day/index.html',
     sourceType: 'case',
@@ -407,6 +419,25 @@ function getCaseIndexRoute(): StaticRouteInput {
     requiredChecks: [
       ...template.requiredChecks,
       firstPublishedCaseTitle,
+    ].map(getRequiredCheckText).filter(Boolean).filter((value, index, values) => values.indexOf(value) === index),
+  };
+}
+
+function getMethodsIndexRoute(methodArticles: ArticleSource[]): StaticRouteInput | null {
+  if (methodArticles.length === 0) {
+    return null;
+  }
+
+  const template = getRouteByPath(staticRoutes, '/methods');
+  const firstPublishedMethodTitle = methodArticles
+    .map((article) => getSourceText(article.title))
+    .find(Boolean);
+
+  return {
+    ...template,
+    requiredChecks: [
+      ...template.requiredChecks,
+      firstPublishedMethodTitle,
     ].map(getRequiredCheckText).filter(Boolean).filter((value, index, values) => values.indexOf(value) === index),
   };
 }
@@ -879,6 +910,12 @@ function resolveChooseBetweenTwoArticlePath(article: ArticleSource): string {
   return slug ? `/choose-between-two/${slug}` : '';
 }
 
+function resolveMethodJudgmentArticlePath(article: ArticleSource): string {
+  const slug = getSourceText(article.slug);
+
+  return slug ? `/methods/${slug}` : '';
+}
+
 function normalizeMarkdownText(value: unknown): string {
   return getRequiredCheckText(value)
     .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
@@ -920,6 +957,10 @@ function resolveArticleFallbackPath(article: ArticleSource): string {
       || (Number.isInteger(sortOrder) && sortOrder >= 1 ? `/choose-between-two/${String(sortOrder).padStart(2, '0')}` : `/choose-between-two/${slug}`);
   }
 
+  if (category === 'method_judgment') {
+    return resolveMethodJudgmentArticlePath(article) || `/methods/${slug}`;
+  }
+
   if (category === 'how_to_choose') {
     return resolveHowToChooseArticlePath(article) || `/how-to-choose/${slug}`;
   }
@@ -933,6 +974,7 @@ function buildArticleRoutesFromSource(): {
 } {
   const routes: StaticRouteInput[] = [];
   const skippedRoutes: RouteManifestItem[] = [];
+  const generatedMethodArticles: ArticleSource[] = [];
 
   const articles = readArticles()
     .map((article, index) => ({ article, index }))
@@ -951,14 +993,16 @@ function buildArticleRoutesFromSource(): {
       continue;
     }
 
-    if (category !== 'how_to_choose' && category !== 'choose_between_two') {
+    if (category !== 'how_to_choose' && category !== 'choose_between_two' && category !== 'method_judgment') {
       skippedRoutes.push(toSkippedArticleRoute(article, path, SKIP_REASONS.unsupportedArticleCategory, []));
       continue;
     }
 
     const mappedPath = category === 'choose_between_two'
       ? resolveChooseBetweenTwoArticlePath(article)
-      : resolveHowToChooseArticlePath(article);
+      : category === 'method_judgment'
+        ? resolveMethodJudgmentArticlePath(article)
+        : resolveHowToChooseArticlePath(article);
 
     if (!mappedPath) {
       skippedRoutes.push(
@@ -970,7 +1014,7 @@ function buildArticleRoutesFromSource(): {
     }
 
     const template = getArticleTemplateByPath(mappedPath);
-    const requiredChecks = getArticleRouteRequiredChecks(article, category === 'choose_between_two');
+    const requiredChecks = getArticleRouteRequiredChecks(article, category !== 'how_to_choose');
 
     if (requiredChecks.length < 2) {
       skippedRoutes.push(
@@ -1004,10 +1048,17 @@ function buildArticleRoutesFromSource(): {
       canonicalPath: mappedPath,
       requiredChecks,
     });
+
+    if (category === 'method_judgment') {
+      generatedMethodArticles.push(article);
+    }
   }
 
+  const methodsIndexRoute = getMethodsIndexRoute(generatedMethodArticles);
+  const nextRoutes = methodsIndexRoute ? [...routes, methodsIndexRoute] : routes;
+
   return {
-    routes: routes.length > 0 ? routes : articleRouteTemplates.map(markLegacyVerifiedRoute),
+    routes: nextRoutes.length > 0 ? nextRoutes : articleRouteTemplates.map(markLegacyVerifiedRoute),
     skippedRoutes,
   };
 }
