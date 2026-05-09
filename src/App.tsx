@@ -732,6 +732,29 @@ function findCmsHowToChooseArticle(articles: PublicArticle[], articleId?: string
   return hasRequiredContent ? article : null;
 }
 
+function getChooseBetweenTwoRouteIdForCmsArticle(article: PublicArticle): string | null {
+  if (article.category === 'choose_between_two' && article.slug) {
+    return article.slug;
+  }
+
+  return null;
+}
+
+function findCmsChooseBetweenTwoArticle(articles: PublicArticle[], articleId?: string): PublicArticle | null {
+  if (!articleId) {
+    return null;
+  }
+
+  const article = articles.find((item) => item.category === 'choose_between_two' && item.slug === articleId);
+
+  if (!article) {
+    return null;
+  }
+
+  const hasRequiredContent = article.title.trim() && article.excerpt.trim() && article.content?.trim();
+  return hasRequiredContent ? article : null;
+}
+
 function getCaseRouteIdForCmsCase(caseStudy: PublicCase): string {
   return caseStudy.slug || caseStudy.id;
 }
@@ -2211,10 +2234,38 @@ function ArticlePage() {
 function ChooseBetweenTwoPage() {
   const { pathname } = useLocation();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [publicChooseArticles, setPublicChooseArticles] = useState<Array<{ id: string; title: string; excerpt: string }>>([]);
+  const chooseArticles = publicChooseArticles.length > 0 ? publicChooseArticles : chooseBetweenTwoArticlesData;
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
+
+  useEffect(() => {
+    fetchPublishedArticles()
+      .then((articles) => {
+        const chooseBetweenTwoArticles = articles
+          .map((article, index) => ({
+            article,
+            index,
+            routeId: getChooseBetweenTwoRouteIdForCmsArticle(article),
+          }))
+          .filter((item): item is { article: PublicArticle; index: number; routeId: string } => Boolean(item.routeId))
+          .sort((a, b) => (
+            (a.article.sortOrder ?? Number.MAX_SAFE_INTEGER) - (b.article.sortOrder ?? Number.MAX_SAFE_INTEGER)
+            || a.index - b.index
+          ));
+
+        setPublicChooseArticles(chooseBetweenTwoArticles.map(({ article, routeId }) => ({
+          id: routeId,
+          title: article.title,
+          excerpt: article.excerpt,
+        })));
+      })
+      .catch(() => {
+        setPublicChooseArticles([]);
+      });
+  }, []);
 
   const sections = [
     {
@@ -2514,7 +2565,7 @@ function ChooseBetweenTwoPage() {
           <div className="mt-24 pt-16 border-t border-gray-200">
             <h3 className="text-2xl md:text-3xl font-black text-black mb-8">深度阅读</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {chooseBetweenTwoArticlesData.map(article => (
+              {chooseArticles.map(article => (
                 <Link key={article.id} to={`/choose-between-two/${article.id}`} className="block p-8 rounded-2xl bg-gray-50 hover:bg-gray-100 transition-colors border border-gray-100">
                   <h4 className="text-xl font-bold text-gray-900 mb-3">{article.title}</h4>
                   <p className="text-gray-500 line-clamp-2">{article.excerpt}</p>
@@ -2558,12 +2609,50 @@ function ChooseArticlePage() {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [cmsArticle, setCmsArticle] = useState<PublicArticle | null>(null);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [pathname]);
 
-  const article = chooseBetweenTwoArticlesData.find(a => a.id === articleId);
+  useEffect(() => {
+    let isActive = true;
+    setCmsArticle(null);
+
+    if (!articleId) {
+      return () => {
+        isActive = false;
+      };
+    }
+
+    fetchPublishedArticles()
+      .then((articles) => {
+        if (!isActive) {
+          return;
+        }
+
+        setCmsArticle(findCmsChooseBetweenTwoArticle(articles, articleId));
+      })
+      .catch(() => {
+        if (isActive) {
+          setCmsArticle(null);
+        }
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [articleId]);
+
+  const legacyArticle = chooseBetweenTwoArticlesData.find(a => a.id === articleId);
+  const article = cmsArticle
+    ? {
+        id: articleId,
+        title: cmsArticle.title,
+        excerpt: cmsArticle.excerpt,
+        content: cmsArticle.content ?? '',
+      }
+    : legacyArticle;
 
   if (!article) {
     return (

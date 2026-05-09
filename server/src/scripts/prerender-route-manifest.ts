@@ -873,6 +873,12 @@ function resolveHowToChooseArticlePath(article: ArticleSource): string {
   return howToChooseArticlePathById[id] || howToChooseArticlePathBySlug[slug] || (slug ? `/how-to-choose/${slug}` : '');
 }
 
+function resolveChooseBetweenTwoArticlePath(article: ArticleSource): string {
+  const slug = getSourceText(article.slug);
+
+  return slug ? `/choose-between-two/${slug}` : '';
+}
+
 function normalizeMarkdownText(value: unknown): string {
   return getRequiredCheckText(value)
     .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
@@ -894,10 +900,13 @@ function getArticleContentRequiredCheck(article: ArticleSource): string {
   return contentLine.length > 80 ? contentLine.slice(0, 80) : contentLine;
 }
 
-function getArticleRouteRequiredChecks(article: ArticleSource): string[] {
+function getArticleRouteRequiredChecks(article: ArticleSource, preferSummary = false): string[] {
+  const summaryCheck = getRequiredCheckText(article.summary);
+  const contentCheck = getArticleContentRequiredCheck(article);
+
   return [
     getRequiredCheckText(article.title),
-    getArticleContentRequiredCheck(article),
+    preferSummary ? summaryCheck || contentCheck : contentCheck || summaryCheck,
   ].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index);
 }
 
@@ -906,8 +915,9 @@ function resolveArticleFallbackPath(article: ArticleSource): string {
   const sortOrder = getSourceNumber(article.sortOrder);
   const slug = getSourceText(article.slug) || getSourceText(article.id) || 'unknown-article';
 
-  if (category === 'choose_between_two' && Number.isInteger(sortOrder) && sortOrder >= 1) {
-    return `/choose-between-two/${String(sortOrder).padStart(2, '0')}`;
+  if (category === 'choose_between_two') {
+    return resolveChooseBetweenTwoArticlePath(article)
+      || (Number.isInteger(sortOrder) && sortOrder >= 1 ? `/choose-between-two/${String(sortOrder).padStart(2, '0')}` : `/choose-between-two/${slug}`);
   }
 
   if (category === 'how_to_choose') {
@@ -941,21 +951,14 @@ function buildArticleRoutesFromSource(): {
       continue;
     }
 
-    if (category === 'choose_between_two') {
-      skippedRoutes.push(
-        toSkippedArticleRoute(article, path, SKIP_REASONS.articleContentTooWeak, [
-          'intentionally skipped until content is completed',
-        ]),
-      );
-      continue;
-    }
-
-    if (category !== 'how_to_choose') {
+    if (category !== 'how_to_choose' && category !== 'choose_between_two') {
       skippedRoutes.push(toSkippedArticleRoute(article, path, SKIP_REASONS.unsupportedArticleCategory, []));
       continue;
     }
 
-    const mappedPath = resolveHowToChooseArticlePath(article);
+    const mappedPath = category === 'choose_between_two'
+      ? resolveChooseBetweenTwoArticlePath(article)
+      : resolveHowToChooseArticlePath(article);
 
     if (!mappedPath) {
       skippedRoutes.push(
@@ -967,12 +970,12 @@ function buildArticleRoutesFromSource(): {
     }
 
     const template = getArticleTemplateByPath(mappedPath);
-    const requiredChecks = getArticleRouteRequiredChecks(article);
+    const requiredChecks = getArticleRouteRequiredChecks(article, category === 'choose_between_two');
 
     if (requiredChecks.length < 2) {
       skippedRoutes.push(
         toSkippedArticleRoute(article, mappedPath, SKIP_REASONS.articleContentTooWeak, [
-          'published how_to_choose article needs title and content for GEO prerender checks',
+          `published ${category} article needs title and summary or content for GEO prerender checks`,
         ]),
       );
       continue;
