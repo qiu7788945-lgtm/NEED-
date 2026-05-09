@@ -30,12 +30,16 @@ export interface PublicCase {
   slug: string;
   title: string;
   subtitle?: string;
+  summary: string;
   excerpt: string;
   coverImg?: string;
   tags: string[];
   content?: string;
+  contentHtml?: string;
+  contentText?: string;
   clientType?: string;
   eventType?: string;
+  eventDate?: string;
   location?: string;
   seoTitle?: string;
   seoDescription?: string;
@@ -278,21 +282,29 @@ function adaptCase(value: unknown): PublicCase | null {
 
   const clientType = toStringValue(value.clientType);
   const eventType = toStringValue(value.eventType);
+  const eventDate = toStringValue(value.eventDate);
   const location = toStringValue(value.location);
   const tags = [clientType, eventType, location].filter(Boolean);
   const coverUrl = toStringValue(value.coverUrl);
+  const summary = toStringValue(value.summary) || toStringValue(value.seoDescription);
+  const contentText = toStringValue(value.contentText);
+  const contentHtml = toStringValue(value.contentHtml);
 
   return {
     id: toStringValue(value.id) || slug,
     slug,
     title,
     subtitle: [clientType, eventType].filter(Boolean).join(' | '),
-    excerpt: toStringValue(value.summary) || toStringValue(value.seoDescription),
+    summary,
+    excerpt: summary,
     coverImg: resolvePublicAssetUrl(coverUrl),
     tags,
-    content: toStringValue(value.contentText) || toStringValue(value.contentHtml),
+    content: contentText || contentHtml,
+    contentHtml,
+    contentText,
     clientType,
     eventType,
+    eventDate,
     location,
     seoTitle: toStringValue(value.seoTitle),
     seoDescription: toStringValue(value.seoDescription),
@@ -533,6 +545,17 @@ export async function fetchPublishedCases(): Promise<PublicCase[]> {
   return normalizeArrayPayload(payload)
     .map(adaptCase)
     .filter((item): item is PublicCase => item !== null);
+}
+
+export async function fetchPublishedCaseBySlug(slug: string): Promise<PublicCase | null> {
+  const normalizedSlug = slug.trim();
+
+  if (!normalizedSlug) {
+    return null;
+  }
+
+  const cases = await fetchPublishedCases();
+  return cases.find((item) => item.slug === normalizedSlug) ?? null;
 }
 
 export async function fetchEnabledSolutions(): Promise<PublicSolution[]> {

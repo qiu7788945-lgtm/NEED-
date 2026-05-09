@@ -9,6 +9,7 @@ import { DynamicPage } from './pages/DynamicPage';
 import {
   fetchHomeVideo,
   fetchPublishedArticles,
+  fetchPublishedCaseBySlug,
   fetchPublishedCases,
   fetchEnabledSolutions,
   fetchEnabledSolutionBySlug,
@@ -698,10 +699,6 @@ const howToChooseCmsArticleIds: Record<string, string> = {
   '04': 'public-how-08',
 };
 
-const caseCmsIdsByRoute: Record<string, string> = {
-  'hyundai-family-day': 'legacy-hyundai-family-day',
-};
-
 function getHowToChooseRouteIdForCmsArticle(article: PublicArticle): string | null {
   const entry = Object.entries(howToChooseCmsArticleIds).find(([, cmsId]) => cmsId === article.id);
 
@@ -734,22 +731,6 @@ function findCmsHowToChooseArticle(articles: PublicArticle[], articleId?: string
 
 function getCaseRouteIdForCmsCase(caseStudy: PublicCase): string {
   return caseStudy.slug || caseStudy.id;
-}
-
-function findCmsCaseForRoute(cases: PublicCase[], routeId?: string): PublicCase | null {
-  if (!routeId) {
-    return null;
-  }
-
-  const cmsId = caseCmsIdsByRoute[routeId];
-  const caseStudy = cases.find((item) => item.slug === routeId || item.id === cmsId);
-
-  if (!caseStudy) {
-    return null;
-  }
-
-  const hasRequiredContent = caseStudy.title.trim() && caseStudy.excerpt.trim() && caseStudy.content?.trim();
-  return hasRequiredContent ? caseStudy : null;
 }
 
 function MethodsSection() {
@@ -1685,6 +1666,17 @@ export const chooseBetweenTwoArticlesData = [
   }
 ];
 
+interface CaseStudyViewModel {
+  id: string;
+  title: string;
+  subtitle: string;
+  excerpt: string;
+  coverImg: string;
+  tags: string[];
+  content: string;
+  contentHtml?: string;
+  contentText?: string;
+}
 
 function CaseStudyPage() {
   const { id } = useParams();
@@ -1700,19 +1692,19 @@ function CaseStudyPage() {
     let isActive = true;
     setCmsCaseStudy(null);
 
-    if (!id || !caseCmsIdsByRoute[id]) {
+    if (!id) {
       return () => {
         isActive = false;
       };
     }
 
-    fetchPublishedCases()
-      .then((cases) => {
+    fetchPublishedCaseBySlug(id)
+      .then((caseStudy) => {
         if (!isActive) {
           return;
         }
 
-        setCmsCaseStudy(findCmsCaseForRoute(cases, id));
+        setCmsCaseStudy(caseStudy);
       })
       .catch(() => {
         if (isActive) {
@@ -1725,16 +1717,18 @@ function CaseStudyPage() {
     };
   }, [id]);
 
-  const legacyCaseStudy = caseStudiesData.find(c => c.id === id);
-  const caseStudy = cmsCaseStudy
+  const legacyCaseStudy = caseStudiesData.find(c => c.id === id) as CaseStudyViewModel | undefined;
+  const caseStudy: CaseStudyViewModel | undefined = cmsCaseStudy
     ? {
         id: id ?? cmsCaseStudy.slug,
         title: cmsCaseStudy.title,
-        subtitle: cmsCaseStudy.subtitle || [cmsCaseStudy.clientType, cmsCaseStudy.eventType, cmsCaseStudy.location].filter(Boolean).join(' | '),
+        subtitle: [cmsCaseStudy.clientType, cmsCaseStudy.eventType, cmsCaseStudy.eventDate, cmsCaseStudy.location].filter(Boolean).join(' | '),
         excerpt: cmsCaseStudy.excerpt,
         coverImg: cmsCaseStudy.coverImg || caseStudiesData[0].coverImg,
-        tags: cmsCaseStudy.tags.length > 0 ? cmsCaseStudy.tags : caseStudiesData[0].tags,
+        tags: [cmsCaseStudy.clientType, cmsCaseStudy.eventType, cmsCaseStudy.eventDate, cmsCaseStudy.location].filter(Boolean),
         content: cmsCaseStudy.content ?? '',
+        contentHtml: cmsCaseStudy.contentHtml,
+        contentText: cmsCaseStudy.contentText,
       }
     : legacyCaseStudy;
 
@@ -1759,6 +1753,11 @@ function CaseStudyPage() {
         <p className="text-xl text-gray-500 mb-8 max-w-2xl">
           {caseStudy.subtitle}
         </p>
+        {caseStudy.excerpt && !caseStudy.content.startsWith(caseStudy.excerpt) ? (
+          <p className="text-lg text-gray-600 mb-8 max-w-3xl leading-relaxed">
+            {caseStudy.excerpt}
+          </p>
+        ) : null}
         <div className="flex flex-wrap gap-2 mb-12">
             {caseStudy.tags.map(tag => (
                 <span key={tag} className="px-3 py-1 bg-black/5 text-xs font-bold uppercase tracking-wider rounded-full text-black/60">{tag}</span>
@@ -1772,7 +1771,11 @@ function CaseStudyPage() {
 
       <div className="max-w-3xl mx-auto px-6 md:px-12 lg:px-24 pb-24">
         <div className="markdown-body prose prose-lg prose-headings:font-black prose-headings:tracking-tighter prose-gray max-w-none prose-img:rounded-2xl prose-img:shadow-xl prose-img:w-full prose-p:leading-relaxed prose-a:text-[#ccff00]">
-          <Markdown>{caseStudy.content}</Markdown>
+          {caseStudy.contentHtml && !caseStudy.contentText ? (
+            <div dangerouslySetInnerHTML={{ __html: caseStudy.contentHtml }} />
+          ) : (
+            <Markdown>{caseStudy.content}</Markdown>
+          )}
         </div>
       </div>
 
