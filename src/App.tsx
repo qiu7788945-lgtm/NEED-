@@ -808,7 +808,7 @@ function MethodsSection() {
 
 function CasesPreviewSection() {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [publicCases, setPublicCases] = useState<Array<{ id: string; title: string; excerpt: string; coverImg: string; tags: string[] }>>([]);
+  const [publicCases, setPublicCases] = useState<Array<{ id: string; title: string; excerpt: string; tags: string[] }>>([]);
   const baseCases = publicCases.length > 0 ? publicCases : caseStudiesData;
   const extendedCases = [...baseCases, { ...baseCases[0], id: `${baseCases[0].id}-2` }, { ...baseCases[0], id: `${baseCases[0].id}-3` }];
 
@@ -820,7 +820,6 @@ function CasesPreviewSection() {
             id: getCaseRouteIdForCmsCase(caseStudy),
             title: caseStudy.title,
             excerpt: caseStudy.excerpt,
-            coverImg: caseStudy.coverImg || caseStudiesData[0].coverImg,
             tags: caseStudy.tags.length > 0 ? caseStudy.tags : caseStudiesData[0].tags,
           })));
         }
@@ -876,29 +875,25 @@ function CasesPreviewSection() {
             <Link 
               key={caseStudy.id} 
               to={`/cases/${caseStudy.id}`}
-              className="group relative overflow-hidden bg-white/5 rounded-3xl transition-all duration-500 hover:bg-[#ccff00] hover:shadow-[0_0_40px_rgba(204,255,0,0.15)] hover:-translate-y-1 border border-white/10 hover:border-transparent flex flex-col md:flex-row min-w-[85vw] md:min-w-[800px] lg:min-w-[1000px] snap-center shrink-0"
+              className="group relative bg-[#ccff00] text-black rounded-3xl transition-all duration-500 hover:bg-[#b3e600] hover:shadow-[0_0_40px_rgba(204,255,0,0.18)] hover:-translate-y-1 border border-[#ccff00]/70 flex min-w-[85vw] md:min-w-[800px] lg:min-w-[1000px] min-h-[420px] md:min-h-[500px] snap-center shrink-0 p-8 md:p-12 lg:p-16"
             >
-              <div className="w-full md:w-2/5 aspect-[4/3] md:aspect-auto md:min-h-full overflow-hidden relative">
-                <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent transition-colors z-10 mix-blend-overlay" />
-                <img loading="lazy" src={caseStudy.coverImg} alt={caseStudy.title} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" />
-              </div>
-              <div className="p-8 md:p-12 lg:p-16 flex-1 flex items-center">
-                  <div>
-                    <div className="flex flex-wrap gap-2 mb-6">
-                        {caseStudy.tags.map(tag => (
-                            <span key={tag} className="px-3 py-1 bg-white/10 text-xs font-bold uppercase tracking-wider rounded-full text-white/80 group-hover:bg-black/10 group-hover:text-black transition-colors">{tag}</span>
-                        ))}
-                    </div>
-                    <h3 className="text-3xl md:text-4xl lg:text-5xl font-black tracking-tight mb-6 text-white group-hover:text-black transition-colors leading-tight">
-                    {caseStudy.title}
-                    </h3>
-                    <p className="text-gray-400 group-hover:text-black/80 transition-colors leading-relaxed text-lg mb-10 max-w-2xl">
-                    {caseStudy.excerpt}
-                    </p>
-                    <div className="flex items-center text-sm font-bold uppercase tracking-wider text-white group-hover:text-black transition-colors">
-                    进入深度拆解 <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 group-hover:text-[#ccff00] transition-transform" />
-                    </div>
+              <div className="flex w-full flex-col justify-between gap-12">
+                <div>
+                  <div className="flex flex-wrap gap-2 mb-8">
+                      {caseStudy.tags.map(tag => (
+                          <span key={tag} className="px-3 py-1 bg-black/10 text-xs font-bold uppercase tracking-wider rounded-full text-black/70 transition-colors">{tag}</span>
+                      ))}
                   </div>
+                  <h3 className="text-3xl md:text-5xl lg:text-6xl font-black tracking-tight mb-8 text-black leading-tight max-w-4xl">
+                  {caseStudy.title}
+                  </h3>
+                  <p className="text-black/75 transition-colors leading-relaxed text-lg md:text-xl max-w-3xl">
+                  {caseStudy.excerpt}
+                  </p>
+                </div>
+                <div className="flex items-center text-sm font-bold uppercase tracking-wider text-black transition-colors">
+                进入深度拆解 <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
+                </div>
               </div>
             </Link>
           ))}
