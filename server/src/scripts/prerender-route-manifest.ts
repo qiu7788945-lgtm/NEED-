@@ -44,8 +44,8 @@ const SKIP_REASONS = {
   unsupportedArticleCategory: 'unsupported article category',
   publishedArticleNoReactRouteMapping: 'published article has no React route mapping',
   caseNotPublished: 'case not published',
-  publishedCaseNoReactRouteMapping: 'published case has no React route mapping',
-  displayOnlyDuplicateCaseRoute: 'display-only duplicate case route',
+  caseMissingSlug: 'case missing slug',
+  caseMissingTitle: 'case missing title',
   legacyVerifiedRoute: 'legacy verified route kept until CMS content takeover',
   pageNotPublished: 'page not published',
   pageShouldIndexDisabled: 'page shouldIndex disabled',
@@ -96,6 +96,8 @@ interface CaseSource {
   title?: unknown;
   slug?: unknown;
   summary?: unknown;
+  clientType?: unknown;
+  eventType?: unknown;
   sortOrder?: unknown;
   status?: unknown;
   seoTitle?: unknown;
@@ -531,12 +533,12 @@ function getArticleTemplateByPath(path: string): StaticRouteInput | undefined {
   return articleRouteTemplates.find((route) => route.path === path);
 }
 
-function getCaseTemplateByPath(path: string): StaticRouteInput | undefined {
-  return caseRouteTemplates.find((route) => route.path === path);
-}
-
 function getSourceText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function getRequiredCheckText(value: unknown): string {
+  return getSourceText(value).replace(/\s+/g, ' ');
 }
 
 function getSourceNumber(value: unknown): number {
@@ -934,16 +936,22 @@ function buildArticleRoutesFromSource(): {
   };
 }
 
-const casePathBySlug: Record<string, string> = {
-  'hyundai-family-day': '/cases/hyundai-family-day',
-};
-
-const displayOnlyDuplicateCaseSlugs = new Set(['hyundai-family-day-2', 'hyundai-family-day-3']);
-
-function resolveCaseFallbackPath(caseItem: CaseSource): string {
+function resolveCaseRoutePath(caseItem: CaseSource): string {
   const slug = getSourceText(caseItem.slug) || getSourceText(caseItem.id) || 'unknown-case';
 
-  return casePathBySlug[slug] || `/cases/${slug}`;
+  return `/cases/${slug}`;
+}
+
+function getCaseRouteRequiredTextChecks(caseItem: CaseSource): string[] {
+  return [
+    caseItem.title,
+    caseItem.summary,
+    caseItem.clientType,
+    caseItem.eventType,
+  ]
+    .map(getRequiredCheckText)
+    .filter(Boolean)
+    .filter((value, index, values) => values.indexOf(value) === index);
 }
 
 function buildCaseRoutesFromSource(): {
@@ -963,48 +971,42 @@ function buildCaseRoutesFromSource(): {
 
   for (const caseItem of cases) {
     const slug = getSourceText(caseItem.slug);
-    const path = resolveCaseFallbackPath(caseItem);
-
-    if (displayOnlyDuplicateCaseSlugs.has(slug)) {
-      skippedRoutes.push(toSkippedCaseRoute(caseItem, path, SKIP_REASONS.displayOnlyDuplicateCaseRoute, []));
-      continue;
-    }
+    const title = getSourceText(caseItem.title);
+    const path = resolveCaseRoutePath(caseItem);
 
     if (caseItem.status !== 'published') {
       skippedRoutes.push(toSkippedCaseRoute(caseItem, path, SKIP_REASONS.caseNotPublished, []));
       continue;
     }
 
-    const mappedPath = casePathBySlug[slug];
-
-    if (!mappedPath) {
+    if (!slug) {
       skippedRoutes.push(
-        toSkippedCaseRoute(caseItem, path, SKIP_REASONS.publishedCaseNoReactRouteMapping, [
-          `Published case "${getSourceText(caseItem.id) || slug || 'unknown-case'}" has no React route mapping`,
+        toSkippedCaseRoute(caseItem, path, SKIP_REASONS.caseMissingSlug, [
+          `Published case "${getSourceText(caseItem.id) || 'unknown-case'}" is missing a slug`,
         ]),
       );
       continue;
     }
 
-    const template = getCaseTemplateByPath(mappedPath);
-
-    if (!template) {
+    if (!title) {
       skippedRoutes.push(
-        toSkippedCaseRoute(caseItem, mappedPath, SKIP_REASONS.publishedCaseNoReactRouteMapping, [
-          `Published case "${getSourceText(caseItem.id) || slug || 'unknown-case'}" maps to "${mappedPath}", but no verified React route manifest template exists`,
+        toSkippedCaseRoute(caseItem, path, SKIP_REASONS.caseMissingTitle, [
+          `Published case "${getSourceText(caseItem.id) || slug}" is missing a title`,
         ]),
       );
       continue;
     }
 
     routes.push({
-      ...template,
-      path: mappedPath,
-      outputPath: inferOutputPath(mappedPath),
-      sourceId: getSourceText(caseItem.id) || template.sourceId,
+      path,
+      outputPath: inferOutputPath(path),
+      sourceType: 'case',
+      sourceId: getSourceText(caseItem.id) || slug,
       slug,
-      description: getSourceText(caseItem.seoDescription) || getSourceText(caseItem.summary) || template.description,
-      canonicalPath: mappedPath,
+      title: getSourceText(caseItem.seoTitle) || title,
+      description: getSourceText(caseItem.seoDescription) || getSourceText(caseItem.summary) || title,
+      canonicalPath: path,
+      requiredChecks: getCaseRouteRequiredTextChecks(caseItem),
     });
   }
 
