@@ -1,0 +1,46 @@
+[
+  {
+    "id": "warehouse",
+    "title": "自有设备仓库",
+    "summary": "占地 2000㎡ / 800平方P2、P3及室外防雨屏及配套服务系统；300台舞美专业灯光；声扬音响系统全套（线阵音响、单/双十五音响、数字控台）",
+    "description": "全天候响应的硬件大本营，确保每一次现场交付的绝对控盘。",
+    "location": "天津市东丽区先锋路",
+    "imageUrl": "/factory-1.png",
+    "imageAlt": "自有设备仓库",
+    "sortOrder": 1,
+    "enabled": true
+  },
+  {
+    "id": "print-factory",
+    "title": "自有印厂",
+    "summary": "占地 1800㎡ / 6层；核心引进海德堡系列UV平板/卷材机-室内/户外写真机、经纬切割仪等设备",
+    "description": "从设计稿到实物的无色差落地，把控最高视觉标准。",
+    "location": "天津市津南区联动U谷",
+    "imageUrl": "/factory-2.png",
+    "imageAlt": "自有印厂",
+    "sortOrder": 2,
+    "enabled": true
+  },
+  {
+    "id": "digital-print",
+    "title": "自有数码印刷",
+    "summary": "爱普生系列数码印刷机 / 峰值生产速度 2000张/小时",
+    "description": "柔性生产，极速出街，满足高定数字视觉资产的即时物理转化。",
+    "location": "天津市南开区金融界南开中心B座",
+    "imageUrl": "/factory-3.png",
+    "imageAlt": "自有数码印刷",
+    "sortOrder": 3,
+    "enabled": true
+  },
+  {
+    "id": "special-construction",
+    "title": "自有木作、铁艺、泡沫雕刻、特装工厂",
+    "summary": "占地 3000㎡ / 工业级 3D 打印阵列及五轴数控雕刻机",
+    "description": "异形结构的孵化舱，将天马行空的 3D 渲染图绝对一比一还原进现实。",
+    "location": "天津市北辰区佳业道",
+    "imageUrl": "/factory-4.png",
+    "imageAlt": "自有木作、铁艺、泡沫雕刻、特装工厂",
+    "sortOrder": 4,
+    "enabled": true
+  }
+]

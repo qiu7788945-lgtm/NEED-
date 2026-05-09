@@ -1,0 +1,51 @@
+{
+  "companyName": "尼德（天津）公关策划有限公司",
+  "brandName": "NEED尼德公关",
+  "address": {
+    "label": "HQ LOCATION",
+    "value": "天津市东丽区英诺美迪产业园1号楼2F",
+    "alt": "NEED尼德公关办公地址"
+  },
+  "email": {
+    "label": "EMAIL ADDRESS",
+    "value": "needpr@163.com",
+    "enabled": true
+  },
+  "phone": {
+    "label": "PHONE",
+    "value": "",
+    "enabled": false
+  },
+  "socials": [
+    {
+      "id": "wechat-official",
+      "label": "官方微信",
+      "displayName": "官方微信",
+      "value": "WeChat",
+      "qrImageUrl": "/qr-wechat.png",
+      "qrImageAlt": "官方微信二维码",
+      "sortOrder": 1,
+      "enabled": true
+    },
+    {
+      "id": "xiaohongshu-main",
+      "label": "小红书主号",
+      "displayName": "NEED尼德公关",
+      "value": "XiaoHongShu",
+      "qrImageUrl": "/qr-xhs-main.png",
+      "qrImageAlt": "NEED尼德公关小红书二维码",
+      "sortOrder": 2,
+      "enabled": true
+    },
+    {
+      "id": "xiaohongshu-sub",
+      "label": "小红书子号",
+      "displayName": "然汽造",
+      "value": "XiaoHongShu-Sub",
+      "qrImageUrl": "/qr-xhs-sub.png",
+      "qrImageAlt": "然汽造小红书二维码",
+      "sortOrder": 3,
+      "enabled": true
+    }
+  ]
+}
