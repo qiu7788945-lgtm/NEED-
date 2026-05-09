@@ -2644,7 +2644,6 @@ function ChooseArticlePage() {
     };
   }, [articleId]);
 
-  const legacyArticle = chooseBetweenTwoArticlesData.find(a => a.id === articleId);
   const article = cmsArticle
     ? {
         id: articleId,
@@ -2652,7 +2651,7 @@ function ChooseArticlePage() {
         excerpt: cmsArticle.excerpt,
         content: cmsArticle.content ?? '',
       }
-    : legacyArticle;
+    : null;
 
   if (!article) {
     return (
