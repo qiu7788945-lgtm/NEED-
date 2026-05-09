@@ -105,11 +105,20 @@ interface CaseSource {
   seoDescription?: unknown;
 }
 
+interface HomeInteractiveImageSource {
+  slotNo?: unknown;
+  mediaUrl?: unknown;
+  alt?: unknown;
+  sortOrder?: unknown;
+  enabled?: unknown;
+}
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const solutionsDataPath = join(scriptDir, '../../data/solutions.json');
 const articlesDataPath = join(scriptDir, '../../data/articles.json');
 const casesDataPath = join(scriptDir, '../../data/cases.json');
 const pagesDataPath = join(scriptDir, '../../data/pages.json');
+const homeInteractiveImagesDataPath = join(scriptDir, '../../data/home-interactive-images.json');
 
 const staticRoutes: StaticRouteInput[] = [
   {
@@ -387,7 +396,7 @@ function buildStaticRoutes(
   caseRoutes: StaticRouteInput[],
 ): StaticRouteInput[] {
   return [
-    getRouteByPath(fixedRoutes, '/'),
+    getHomeIndexRoute(),
     getRouteByPath(fixedRoutes, '/solutions'),
     ...solutionRoutes,
     getRouteByPath(fixedRoutes, '/contact'),
@@ -397,6 +406,31 @@ function buildStaticRoutes(
     getCaseIndexRoute(),
     ...caseRoutes,
   ];
+}
+
+function getHomeIndexRoute(): StaticRouteInput {
+  const template = getRouteByPath(fixedRoutes, '/');
+  const homeInteractiveChecks = readHomeInteractiveImages()
+    .map((slot, index) => ({ slot, index }))
+    .filter(({ slot }) => slot.enabled !== false && Boolean(getSourceText(slot.mediaUrl)))
+    .sort(
+      (left, right) =>
+        getSourceNumber(left.slot.sortOrder) - getSourceNumber(right.slot.sortOrder)
+        || getSourceNumber(left.slot.slotNo) - getSourceNumber(right.slot.slotNo)
+        || left.index - right.index,
+    )
+    .flatMap(({ slot }) => [
+      slot.mediaUrl,
+      slot.alt,
+    ]);
+
+  return {
+    ...template,
+    requiredChecks: [
+      ...template.requiredChecks,
+      ...homeInteractiveChecks,
+    ].map(getRequiredCheckText).filter(Boolean).filter((value, index, values) => values.indexOf(value) === index),
+  };
 }
 
 function getCaseIndexRoute(): StaticRouteInput {
@@ -512,6 +546,17 @@ function readCases(): CaseSource[] {
 
   if (!Array.isArray(parsedContent)) {
     throw new Error('Expected server/data/cases.json to contain an array of cases');
+  }
+
+  return parsedContent;
+}
+
+function readHomeInteractiveImages(): HomeInteractiveImageSource[] {
+  const rawContent = readFileSync(homeInteractiveImagesDataPath, 'utf8');
+  const parsedContent = JSON.parse(rawContent) as unknown;
+
+  if (!Array.isArray(parsedContent)) {
+    throw new Error('Expected server/data/home-interactive-images.json to contain an array of home interactive image slots');
   }
 
   return parsedContent;
