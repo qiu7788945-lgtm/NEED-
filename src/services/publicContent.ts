@@ -10,6 +10,9 @@ const API_BASE_URL = viteEnv?.VITE_PUBLIC_API_BASE_URL || 'http://localhost:4000
 
 export interface PublicHomeVideo {
   videoUrl: string;
+  posterUrl: string;
+  title: string;
+  description: string;
   enabled: boolean;
 }
 
@@ -530,6 +533,7 @@ export async function fetchHomeVideo(): Promise<PublicHomeVideo | null> {
   }
 
   const videoUrl = resolvePublicAssetUrl(data.videoUrl);
+  const posterUrl = resolvePublicAssetUrl(data.posterUrl || data.poster);
   const enabled = toBooleanValue(data.enabled);
 
   if (!enabled || !videoUrl) {
@@ -538,6 +542,9 @@ export async function fetchHomeVideo(): Promise<PublicHomeVideo | null> {
 
   return {
     videoUrl,
+    posterUrl,
+    title: toStringValue(data.title),
+    description: toStringValue(data.description),
     enabled,
   };
 }

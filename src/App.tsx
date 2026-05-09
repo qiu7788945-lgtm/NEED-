@@ -218,6 +218,9 @@ function HeroSection() {
   const [volume, setVolume] = useState(0.45);
   const [isMuted, setIsMuted] = useState(true); // Start muted to allow autoplay
   const [heroVideoSrc, setHeroVideoSrc] = useState('/hero-video.mp4');
+  const [heroVideoPoster, setHeroVideoPoster] = useState('');
+  const [heroVideoTitle, setHeroVideoTitle] = useState('NEED home video');
+  const [heroVideoDescription, setHeroVideoDescription] = useState('');
 
   const { scrollYProgress } = useScroll({
     target: containerRef,
@@ -237,10 +240,22 @@ function HeroSection() {
       .then((homeVideo) => {
         if (homeVideo?.enabled && homeVideo.videoUrl) {
           setHeroVideoSrc(homeVideo.videoUrl);
+          setHeroVideoPoster(homeVideo.posterUrl);
+          setHeroVideoTitle(homeVideo.title || 'NEED home video');
+          setHeroVideoDescription(homeVideo.description);
+          return;
         }
+
+        setHeroVideoSrc('/hero-video.mp4');
+        setHeroVideoPoster('');
+        setHeroVideoTitle('NEED home video');
+        setHeroVideoDescription('');
       })
       .catch(() => {
         setHeroVideoSrc('/hero-video.mp4');
+        setHeroVideoPoster('');
+        setHeroVideoTitle('NEED home video');
+        setHeroVideoDescription('');
       });
   }, []);
 
@@ -330,6 +345,9 @@ function HeroSection() {
               playsInline
               className="absolute inset-0 w-full h-full object-cover"
               src={heroVideoSrc}
+              poster={heroVideoPoster || undefined}
+              title={heroVideoTitle || undefined}
+              aria-label={heroVideoDescription || heroVideoTitle}
             />
             
             {/* Video Controls - Minimalist Transparent Module (Always visible) */}
