@@ -2840,7 +2840,9 @@ function ChooseArticlePage() {
         excerpt: cmsArticle.excerpt,
         content: cmsArticle.content ?? '',
       }
-    : null;
+    : articleId && /^\d{2}$/.test(articleId)
+      ? chooseBetweenTwoArticlesData.find((item) => item.id === articleId) ?? null
+      : null;
 
   if (!article) {
     return (
@@ -2858,6 +2860,9 @@ function ChooseArticlePage() {
           &larr; 返回上一页
         </button>
         <h1 className="text-3xl md:text-5xl font-black tracking-tight text-gray-900 mb-8 leading-tight">{article.title}</h1>
+        {article.excerpt ? (
+          <p className="text-xl text-gray-500 leading-relaxed mb-10">{article.excerpt}</p>
+        ) : null}
         <div className="w-16 h-1 bg-[#ccff00] mb-12" />
         <div className="prose prose-lg md:prose-xl text-gray-700 max-w-none leading-relaxed prose-h3:text-2xl prose-h3:font-bold prose-h3:text-gray-900 prose-h3:mt-12 prose-h3:mb-6">
           <Markdown>{article.content}</Markdown>
