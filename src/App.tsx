@@ -706,8 +706,8 @@ function getHowToChooseRouteIdForCmsArticle(article: PublicArticle): string | nu
     return entry[0];
   }
 
-  if (article.category === 'how_to_choose' && article.sortOrder && article.sortOrder >= 1 && article.sortOrder <= 4) {
-    return String(article.sortOrder).padStart(2, '0');
+  if (article.category === 'how_to_choose' && article.slug) {
+    return article.slug;
   }
 
   return null;
@@ -719,7 +719,10 @@ function findCmsHowToChooseArticle(articles: PublicArticle[], articleId?: string
   }
 
   const cmsId = howToChooseCmsArticleIds[articleId];
-  const article = articles.find((item) => item.id === cmsId);
+  const article = articles.find((item) => (
+    item.category === 'how_to_choose'
+    && (cmsId ? item.id === cmsId : item.slug === articleId)
+  ));
 
   if (!article || article.category !== 'how_to_choose') {
     return null;
@@ -2132,7 +2135,7 @@ function ArticlePage() {
     let isActive = true;
     setCmsArticle(null);
 
-    if (!articleId || !howToChooseCmsArticleIds[articleId]) {
+    if (!articleId) {
       return () => {
         isActive = false;
       };

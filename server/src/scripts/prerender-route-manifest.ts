@@ -85,6 +85,7 @@ interface ArticleSource {
   slug?: unknown;
   category?: unknown;
   summary?: unknown;
+  content?: unknown;
   sortOrder?: unknown;
   status?: unknown;
   seoTitle?: unknown;
@@ -865,19 +866,39 @@ const howToChooseArticlePathBySlug: Record<string, string> = {
   'why-events-fail-in-execution-not-creative': '/how-to-choose/04',
 };
 
-const howToChooseArticlePathBySortOrder: Record<number, string> = {
-  1: '/how-to-choose/01',
-  2: '/how-to-choose/02',
-  3: '/how-to-choose/03',
-  4: '/how-to-choose/04',
-};
-
 function resolveHowToChooseArticlePath(article: ArticleSource): string {
   const id = getSourceText(article.id);
   const slug = getSourceText(article.slug);
-  const sortOrder = getSourceNumber(article.sortOrder);
 
-  return howToChooseArticlePathById[id] || howToChooseArticlePathBySlug[slug] || howToChooseArticlePathBySortOrder[sortOrder] || '';
+  return howToChooseArticlePathById[id] || howToChooseArticlePathBySlug[slug] || (slug ? `/how-to-choose/${slug}` : '');
+}
+
+function normalizeMarkdownText(value: unknown): string {
+  return getRequiredCheckText(value)
+    .replace(/!\[[^\]]*]\([^)]+\)/g, ' ')
+    .replace(/\[([^\]]+)]\([^)]+\)/g, '$1')
+    .replace(/[`*_#>~-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getArticleContentRequiredCheck(article: ArticleSource): string {
+  const title = normalizeMarkdownText(article.title);
+  const summary = normalizeMarkdownText(article.summary);
+  const contentLines = getSourceText(article.content)
+    .split(/\r?\n+/)
+    .map(normalizeMarkdownText)
+    .filter((line) => line && line !== title && line !== summary);
+
+  const contentLine = contentLines.find((line) => line.length >= 8) || '';
+  return contentLine.length > 80 ? contentLine.slice(0, 80) : contentLine;
+}
+
+function getArticleRouteRequiredChecks(article: ArticleSource): string[] {
+  return [
+    getRequiredCheckText(article.title),
+    getArticleContentRequiredCheck(article),
+  ].filter(Boolean).filter((value, index, values) => values.indexOf(value) === index);
 }
 
 function resolveArticleFallbackPath(article: ArticleSource): string {
@@ -946,24 +967,39 @@ function buildArticleRoutesFromSource(): {
     }
 
     const template = getArticleTemplateByPath(mappedPath);
+    const requiredChecks = getArticleRouteRequiredChecks(article);
 
-    if (!template) {
+    if (requiredChecks.length < 2) {
       skippedRoutes.push(
-        toSkippedArticleRoute(article, mappedPath, SKIP_REASONS.publishedArticleNoReactRouteMapping, [
-          `Published article maps to "${mappedPath}", but no verified React route manifest template exists`,
+        toSkippedArticleRoute(article, mappedPath, SKIP_REASONS.articleContentTooWeak, [
+          'published how_to_choose article needs title and content for GEO prerender checks',
         ]),
       );
       continue;
     }
 
-    routes.push({
-      ...template,
+    const routeBase: StaticRouteInput = template ?? {
       path: mappedPath,
       outputPath: inferOutputPath(mappedPath),
-      sourceId: getSourceText(article.id) || template.sourceId,
-      slug: getSourceText(article.slug) || getSourceText(article.id) || template.slug,
-      description: getSourceText(article.seoDescription) || getSourceText(article.summary) || template.description,
+      sourceType: 'article',
+      sourceId: getSourceText(article.id) || getSourceText(article.slug) || 'unknown-article',
+      slug: getSourceText(article.slug) || getSourceText(article.id) || 'unknown-article',
+      title: getSourceText(article.seoTitle) || getSourceText(article.title) || `${getSourceText(article.slug)} | NEED`,
+      description: getSourceText(article.seoDescription) || getSourceText(article.summary),
       canonicalPath: mappedPath,
+      requiredChecks,
+    };
+
+    routes.push({
+      ...routeBase,
+      path: mappedPath,
+      outputPath: inferOutputPath(mappedPath),
+      sourceId: getSourceText(article.id) || routeBase.sourceId,
+      slug: getSourceText(article.slug) || getSourceText(article.id) || routeBase.slug,
+      title: getSourceText(article.seoTitle) || getSourceText(article.title) || routeBase.title,
+      description: getSourceText(article.seoDescription) || getSourceText(article.summary) || routeBase.description,
+      canonicalPath: mappedPath,
+      requiredChecks,
     });
   }
 
