@@ -1897,7 +1897,58 @@
     "description": "一场重要活动如果不通过影像记录，它的影响力会随着离场而消散。视频与数字资产是企业传播的长尾引擎，需要在筹备期就明确影像大纲、核心观点、情绪镜头和后续分发场景。",
     "sortOrder": 5,
     "enabled": true,
-    "groups": []
+    "groups": [
+      {
+        "id": "1778238929968-xmnouc",
+        "title": "NEEDLOGO",
+        "slug": "needlogo",
+        "summary": "这是NEED最新LOGO",
+        "sceneSlug": "video-digital-assets",
+        "sortOrder": 2,
+        "enabled": true,
+        "items": [
+          {
+            "id": "1778239029213-naqnvd",
+            "fileType": "image",
+            "mediaUrl": "/uploads/images/image-1778239029197-kfwvjbyj.png",
+            "mediaFileName": "image-1778239029197-kfwvjbyj.png",
+            "mediaDisplayName": "NEEDLOGO 主图",
+            "alt": "NEEDLOGO 主图",
+            "caption": "",
+            "sortOrder": 1,
+            "enabled": true,
+            "createdAt": "2026-05-08T11:17:09.213Z"
+          }
+        ],
+        "createdAt": "2026-05-08T11:15:29.967Z",
+        "updatedAt": "2026-05-08T11:18:46.971Z"
+      },
+      {
+        "id": "1778238913768-fclf1q",
+        "title": "NEED官方视频",
+        "slug": "need",
+        "summary": "这是一个官网视频",
+        "sceneSlug": "video-digital-assets",
+        "sortOrder": 6,
+        "enabled": true,
+        "items": [
+          {
+            "id": "1778238918280-bt0rq9",
+            "fileType": "video",
+            "mediaUrl": "/uploads/videos/video-1778238918259-a1nn62ob.mp4",
+            "mediaFileName": "video-1778238918259-a1nn62ob.mp4",
+            "mediaDisplayName": "NEED官方视频 视频",
+            "alt": "NEED官方视频 视频",
+            "caption": "",
+            "sortOrder": 1,
+            "enabled": true,
+            "createdAt": "2026-05-08T11:15:18.280Z"
+          }
+        ],
+        "createdAt": "2026-05-08T11:15:13.766Z",
+        "updatedAt": "2026-05-08T11:15:18.280Z"
+      }
+    ]
   },
   {
     "slug": "academic-forum",
