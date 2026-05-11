@@ -113,12 +113,36 @@ interface HomeInteractiveImageSource {
   enabled?: unknown;
 }
 
+interface ContactInfoSource {
+  address?: {
+    value?: unknown;
+  };
+  email?: {
+    value?: unknown;
+  };
+  socials?: unknown;
+}
+
+interface ContactSocialSource {
+  displayName?: unknown;
+  qrImageAlt?: unknown;
+  enabled?: unknown;
+}
+
+interface CompanyAssetSource {
+  title?: unknown;
+  imageAlt?: unknown;
+  enabled?: unknown;
+}
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const solutionsDataPath = join(scriptDir, '../../data/solutions.json');
 const articlesDataPath = join(scriptDir, '../../data/articles.json');
 const casesDataPath = join(scriptDir, '../../data/cases.json');
 const pagesDataPath = join(scriptDir, '../../data/pages.json');
 const homeInteractiveImagesDataPath = join(scriptDir, '../../data/home-interactive-images.json');
+const contactInfoDataPath = join(scriptDir, '../../data/contact-info.json');
+const companyAssetsDataPath = join(scriptDir, '../../data/company-assets.json');
 
 const staticRoutes: StaticRouteInput[] = [
   {
@@ -399,7 +423,7 @@ function buildStaticRoutes(
     getHomeIndexRoute(),
     getRouteByPath(fixedRoutes, '/solutions'),
     ...solutionRoutes,
-    getRouteByPath(fixedRoutes, '/contact'),
+    getContactRoute(),
     getRouteByPath(fixedRoutes, '/how-to-choose'),
     ...articleRoutes,
     getRouteByPath(fixedRoutes, '/choose-between-two'),
@@ -429,6 +453,19 @@ function getHomeIndexRoute(): StaticRouteInput {
     requiredChecks: [
       ...template.requiredChecks,
       ...homeInteractiveChecks,
+    ].map(getRequiredCheckText).filter(Boolean).filter((value, index, values) => values.indexOf(value) === index),
+  };
+}
+
+function getContactRoute(): StaticRouteInput {
+  const template = getRouteByPath(fixedRoutes, '/contact');
+
+  return {
+    ...template,
+    requiredChecks: [
+      ...template.requiredChecks,
+      ...getContactInfoRequiredChecks(),
+      ...getCompanyAssetsRequiredChecks(),
     ].map(getRequiredCheckText).filter(Boolean).filter((value, index, values) => values.indexOf(value) === index),
   };
 }
@@ -562,6 +599,30 @@ function readHomeInteractiveImages(): HomeInteractiveImageSource[] {
   return parsedContent;
 }
 
+function readContactInfo(): ContactInfoSource | undefined {
+  try {
+    const rawContent = readFileSync(contactInfoDataPath, 'utf8');
+    const parsedContent = JSON.parse(rawContent) as unknown;
+
+    return parsedContent && typeof parsedContent === 'object' && !Array.isArray(parsedContent)
+      ? parsedContent as ContactInfoSource
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readCompanyAssets(): CompanyAssetSource[] {
+  try {
+    const rawContent = readFileSync(companyAssetsDataPath, 'utf8');
+    const parsedContent = JSON.parse(rawContent) as unknown;
+
+    return Array.isArray(parsedContent) ? parsedContent as CompanyAssetSource[] : [];
+  } catch {
+    return [];
+  }
+}
+
 function readPages(): Page[] {
   const rawContent = readFileSync(pagesDataPath, 'utf8');
   const parsedContent = JSON.parse(rawContent) as unknown;
@@ -653,6 +714,34 @@ function getSourceText(value: unknown): string {
 
 function getRequiredCheckText(value: unknown): string {
   return getSourceText(value).replace(/\s+/g, ' ');
+}
+
+function getContactInfoRequiredChecks(): string[] {
+  const contactInfo = readContactInfo();
+
+  if (!contactInfo) {
+    return [];
+  }
+
+  const socials = Array.isArray(contactInfo.socials)
+    ? contactInfo.socials as ContactSocialSource[]
+    : [];
+
+  return [
+    contactInfo.address?.value,
+    contactInfo.email?.value,
+    ...socials
+      .filter((social) => social.enabled === true)
+      .flatMap((social) => [social.displayName, social.qrImageAlt]),
+  ].map(getRequiredCheckText).filter(Boolean);
+}
+
+function getCompanyAssetsRequiredChecks(): string[] {
+  return readCompanyAssets()
+    .filter((asset) => asset.enabled === true)
+    .flatMap((asset) => [asset.title, asset.imageAlt])
+    .map(getRequiredCheckText)
+    .filter(Boolean);
 }
 
 function getSourceNumber(value: unknown): number {
