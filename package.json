@@ -14,7 +14,9 @@
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
-    "typecheck:server": "tsc -p server/tsconfig.json --noEmit"
+    "typecheck:server": "tsc -p server/tsconfig.json --noEmit",
+    "db:health": "tsx server/src/db/health.ts",
+    "db:migrate": "tsx server/src/db/migrate.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -31,6 +33,7 @@
     "mammoth": "^1.12.0",
     "motion": "^12.23.24",
     "multer": "^2.1.1",
+    "mysql2": "^3.22.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-markdown": "^10.1.0",

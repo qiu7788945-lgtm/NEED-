@@ -1,56 +1,79 @@
--- NEED initial schema draft for MySQL 8.
--- This migration is a planning artifact only in round 7.
--- Do not execute until a real migration tool and database connection are introduced.
+-- NEED round22 MySQL foundation schema.
+-- This file defines content tables only. It does not switch any service to MySQL.
+-- Admin users, permissions, roles, and audit logging are intentionally deferred.
 
-CREATE TABLE admin_users (
+CREATE TABLE IF NOT EXISTS migration_logs (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  username VARCHAR(80) NOT NULL,
-  display_name VARCHAR(120) NOT NULL,
-  email VARCHAR(180) NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  role VARCHAR(40) NOT NULL DEFAULT 'editor',
-  status VARCHAR(30) NOT NULL DEFAULT 'active',
-  last_login_at DATETIME NULL,
+  migration_key VARCHAR(160) NOT NULL,
+  batch_id VARCHAR(120) NULL,
+  source_file VARCHAR(500) NULL,
+  source_hash VARCHAR(128) NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'pending',
+  source_count INT UNSIGNED NOT NULL DEFAULT 0,
+  inserted_count INT UNSIGNED NOT NULL DEFAULT 0,
+  updated_count INT UNSIGNED NOT NULL DEFAULT 0,
+  skipped_count INT UNSIGNED NOT NULL DEFAULT 0,
+  warning_count INT UNSIGNED NOT NULL DEFAULT 0,
+  error_message TEXT NULL,
+  details_json JSON NULL,
+  started_at DATETIME NULL,
+  finished_at DATETIME NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at DATETIME NULL,
-  UNIQUE KEY uk_admin_users_username (username),
-  UNIQUE KEY uk_admin_users_email (email),
-  KEY idx_admin_users_status (status),
-  KEY idx_admin_users_deleted_at (deleted_at)
+  UNIQUE KEY uk_migration_logs_key_hash (migration_key, source_hash),
+  KEY idx_migration_logs_status (status),
+  KEY idx_migration_logs_batch_id (batch_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE media_files (
+CREATE TABLE IF NOT EXISTS media_files (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   file_name VARCHAR(255) NOT NULL,
-  original_name VARCHAR(255) NOT NULL,
-  file_path VARCHAR(600) NOT NULL,
-  public_url VARCHAR(800) NULL,
-  mime_type VARCHAR(120) NOT NULL,
+  original_name VARCHAR(255) NULL,
+  file_path VARCHAR(600) NULL,
+  public_url VARCHAR(800) NOT NULL,
+  mime_type VARCHAR(120) NULL,
   file_ext VARCHAR(30) NULL,
   file_size BIGINT UNSIGNED NOT NULL DEFAULT 0,
   width INT UNSIGNED NULL,
   height INT UNSIGNED NULL,
   duration_seconds DECIMAL(10,2) NULL,
-  category VARCHAR(60) NOT NULL DEFAULT 'general',
+  category VARCHAR(80) NOT NULL DEFAULT 'general',
   alt_text VARCHAR(255) NULL,
   description TEXT NULL,
-  source VARCHAR(120) NULL,
+  metadata_json JSON NULL,
   storage_provider VARCHAR(30) NOT NULL DEFAULT 'local',
   usage_count INT UNSIGNED NOT NULL DEFAULT 0,
   status VARCHAR(30) NOT NULL DEFAULT 'active',
-  uploaded_by BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at DATETIME NULL,
+  UNIQUE KEY uk_media_files_public_url (public_url),
   KEY idx_media_files_category (category),
   KEY idx_media_files_status (status),
-  KEY idx_media_files_uploaded_by (uploaded_by),
-  KEY idx_media_files_deleted_at (deleted_at),
-  CONSTRAINT fk_media_files_uploaded_by FOREIGN KEY (uploaded_by) REFERENCES admin_users(id)
+  KEY idx_media_files_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE home_interactive_images (
+CREATE TABLE IF NOT EXISTS home_video (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  singleton_key VARCHAR(40) NOT NULL DEFAULT 'home_video',
+  video_media_id BIGINT UNSIGNED NULL,
+  poster_media_id BIGINT UNSIGNED NULL,
+  video_url VARCHAR(800) NULL,
+  poster_url VARCHAR(800) NULL,
+  title VARCHAR(180) NULL,
+  description TEXT NULL,
+  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  UNIQUE KEY uk_home_video_singleton (singleton_key),
+  KEY idx_home_video_enabled (is_enabled),
+  KEY idx_home_video_deleted_at (deleted_at),
+  CONSTRAINT fk_home_video_video_media FOREIGN KEY (video_media_id) REFERENCES media_files(id),
+  CONSTRAINT fk_home_video_poster_media FOREIGN KEY (poster_media_id) REFERENCES media_files(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS home_interactive_images (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   slot_number TINYINT UNSIGNED NOT NULL,
   media_id BIGINT UNSIGNED NULL,
@@ -70,26 +93,9 @@ CREATE TABLE home_interactive_images (
   CONSTRAINT fk_home_interactive_images_media FOREIGN KEY (media_id) REFERENCES media_files(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE home_video (
+CREATE TABLE IF NOT EXISTS pages (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  video_media_id BIGINT UNSIGNED NULL,
-  poster_media_id BIGINT UNSIGNED NULL,
-  video_url VARCHAR(800) NULL,
-  poster_url VARCHAR(800) NULL,
-  title VARCHAR(180) NULL,
-  description TEXT NULL,
-  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at DATETIME NULL,
-  KEY idx_home_video_enabled (is_enabled),
-  KEY idx_home_video_deleted_at (deleted_at),
-  CONSTRAINT fk_home_video_video_media FOREIGN KEY (video_media_id) REFERENCES media_files(id),
-  CONSTRAINT fk_home_video_poster_media FOREIGN KEY (poster_media_id) REFERENCES media_files(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE pages (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  source_id VARCHAR(120) NULL,
   title VARCHAR(180) NOT NULL,
   slug VARCHAR(180) NOT NULL,
   summary TEXT NULL,
@@ -97,20 +103,17 @@ CREATE TABLE pages (
   sort_order INT NOT NULL DEFAULT 0,
   is_system_page TINYINT(1) NOT NULL DEFAULT 0,
   published_at DATETIME NULL,
-  created_by BIGINT UNSIGNED NULL,
-  updated_by BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at DATETIME NULL,
   UNIQUE KEY uk_pages_slug (slug),
+  UNIQUE KEY uk_pages_source_id (source_id),
   KEY idx_pages_status (status),
   KEY idx_pages_sort_order (sort_order),
-  KEY idx_pages_deleted_at (deleted_at),
-  CONSTRAINT fk_pages_created_by FOREIGN KEY (created_by) REFERENCES admin_users(id),
-  CONSTRAINT fk_pages_updated_by FOREIGN KEY (updated_by) REFERENCES admin_users(id)
+  KEY idx_pages_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE page_blocks (
+CREATE TABLE IF NOT EXISTS page_blocks (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   page_id BIGINT UNSIGNED NOT NULL,
   block_type VARCHAR(80) NOT NULL,
@@ -127,81 +130,7 @@ CREATE TABLE page_blocks (
   CONSTRAINT fk_page_blocks_page FOREIGN KEY (page_id) REFERENCES pages(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE cases (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  title VARCHAR(220) NOT NULL,
-  slug VARCHAR(180) NOT NULL,
-  summary TEXT NULL,
-  client_type VARCHAR(120) NULL,
-  event_type VARCHAR(120) NULL,
-  event_time VARCHAR(120) NULL,
-  event_location VARCHAR(180) NULL,
-  cover_media_id BIGINT UNSIGNED NULL,
-  cover_url VARCHAR(800) NULL,
-  project_goal TEXT NULL,
-  client_need TEXT NULL,
-  our_scope TEXT NULL,
-  execution_challenge TEXT NULL,
-  solution_summary TEXT NULL,
-  live_highlight TEXT NULL,
-  final_result TEXT NULL,
-  status VARCHAR(30) NOT NULL DEFAULT 'draft',
-  sort_order INT NOT NULL DEFAULT 0,
-  is_home_featured TINYINT(1) NOT NULL DEFAULT 0,
-  published_at DATETIME NULL,
-  created_by BIGINT UNSIGNED NULL,
-  updated_by BIGINT UNSIGNED NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at DATETIME NULL,
-  UNIQUE KEY uk_cases_slug (slug),
-  KEY idx_cases_status (status),
-  KEY idx_cases_sort_order (sort_order),
-  KEY idx_cases_home_featured (is_home_featured),
-  KEY idx_cases_deleted_at (deleted_at),
-  CONSTRAINT fk_cases_cover_media FOREIGN KEY (cover_media_id) REFERENCES media_files(id),
-  CONSTRAINT fk_cases_created_by FOREIGN KEY (created_by) REFERENCES admin_users(id),
-  CONSTRAINT fk_cases_updated_by FOREIGN KEY (updated_by) REFERENCES admin_users(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE case_blocks (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  case_id BIGINT UNSIGNED NOT NULL,
-  block_type VARCHAR(80) NOT NULL,
-  block_data_json JSON NOT NULL,
-  sort_order INT NOT NULL DEFAULT 0,
-  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at DATETIME NULL,
-  KEY idx_case_blocks_case_id (case_id),
-  KEY idx_case_blocks_type (block_type),
-  KEY idx_case_blocks_sort_order (sort_order),
-  KEY idx_case_blocks_deleted_at (deleted_at),
-  CONSTRAINT fk_case_blocks_case FOREIGN KEY (case_id) REFERENCES cases(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE case_images (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  case_id BIGINT UNSIGNED NOT NULL,
-  media_id BIGINT UNSIGNED NULL,
-  image_url VARCHAR(800) NULL,
-  alt_text VARCHAR(255) NULL,
-  caption VARCHAR(255) NULL,
-  sort_order INT NOT NULL DEFAULT 0,
-  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at DATETIME NULL,
-  KEY idx_case_images_case_id (case_id),
-  KEY idx_case_images_media_id (media_id),
-  KEY idx_case_images_sort_order (sort_order),
-  KEY idx_case_images_deleted_at (deleted_at),
-  CONSTRAINT fk_case_images_case FOREIGN KEY (case_id) REFERENCES cases(id),
-  CONSTRAINT fk_case_images_media FOREIGN KEY (media_id) REFERENCES media_files(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE article_categories (
+CREATE TABLE IF NOT EXISTS article_categories (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(120) NOT NULL,
   slug VARCHAR(180) NOT NULL,
@@ -217,12 +146,15 @@ CREATE TABLE article_categories (
   KEY idx_article_categories_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE articles (
+CREATE TABLE IF NOT EXISTS articles (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  source_id VARCHAR(120) NULL,
   category_id BIGINT UNSIGNED NULL,
+  category_slug VARCHAR(180) NULL,
   title VARCHAR(220) NOT NULL,
   slug VARCHAR(180) NOT NULL,
   summary TEXT NULL,
+  content MEDIUMTEXT NULL,
   cover_media_id BIGINT UNSIGNED NULL,
   cover_url VARCHAR(800) NULL,
   tags_json JSON NULL,
@@ -230,24 +162,21 @@ CREATE TABLE articles (
   sort_order INT NOT NULL DEFAULT 0,
   is_home_featured TINYINT(1) NOT NULL DEFAULT 0,
   published_at DATETIME NULL,
-  created_by BIGINT UNSIGNED NULL,
-  updated_by BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at DATETIME NULL,
   UNIQUE KEY uk_articles_slug (slug),
+  UNIQUE KEY uk_articles_source_id (source_id),
   KEY idx_articles_category_id (category_id),
   KEY idx_articles_status (status),
   KEY idx_articles_sort_order (sort_order),
   KEY idx_articles_home_featured (is_home_featured),
   KEY idx_articles_deleted_at (deleted_at),
   CONSTRAINT fk_articles_category FOREIGN KEY (category_id) REFERENCES article_categories(id),
-  CONSTRAINT fk_articles_cover_media FOREIGN KEY (cover_media_id) REFERENCES media_files(id),
-  CONSTRAINT fk_articles_created_by FOREIGN KEY (created_by) REFERENCES admin_users(id),
-  CONSTRAINT fk_articles_updated_by FOREIGN KEY (updated_by) REFERENCES admin_users(id)
+  CONSTRAINT fk_articles_cover_media FOREIGN KEY (cover_media_id) REFERENCES media_files(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE article_blocks (
+CREATE TABLE IF NOT EXISTS article_blocks (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   article_id BIGINT UNSIGNED NOT NULL,
   block_type VARCHAR(80) NOT NULL,
@@ -264,13 +193,88 @@ CREATE TABLE article_blocks (
   CONSTRAINT fk_article_blocks_article FOREIGN KEY (article_id) REFERENCES articles(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE solutions (
+CREATE TABLE IF NOT EXISTS cases (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  source_id VARCHAR(120) NULL,
+  title VARCHAR(220) NOT NULL,
+  slug VARCHAR(180) NOT NULL,
+  summary TEXT NULL,
+  client_type VARCHAR(160) NULL,
+  event_type VARCHAR(160) NULL,
+  event_date VARCHAR(80) NULL,
+  location VARCHAR(180) NULL,
+  cover_media_id BIGINT UNSIGNED NULL,
+  cover_url VARCHAR(800) NULL,
+  cover_file_name VARCHAR(255) NULL,
+  cover_display_name VARCHAR(255) NULL,
+  word_file_name VARCHAR(255) NULL,
+  word_original_name VARCHAR(255) NULL,
+  content_html MEDIUMTEXT NULL,
+  content_text MEDIUMTEXT NULL,
+  raw_json JSON NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'draft',
+  sort_order INT NOT NULL DEFAULT 0,
+  is_home_featured TINYINT(1) NOT NULL DEFAULT 0,
+  published_at DATETIME NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  UNIQUE KEY uk_cases_slug (slug),
+  UNIQUE KEY uk_cases_source_id (source_id),
+  KEY idx_cases_status (status),
+  KEY idx_cases_sort_order (sort_order),
+  KEY idx_cases_home_featured (is_home_featured),
+  KEY idx_cases_deleted_at (deleted_at),
+  CONSTRAINT fk_cases_cover_media FOREIGN KEY (cover_media_id) REFERENCES media_files(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS case_blocks (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  case_id BIGINT UNSIGNED NOT NULL,
+  block_type VARCHAR(80) NOT NULL,
+  block_data_json JSON NOT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  KEY idx_case_blocks_case_id (case_id),
+  KEY idx_case_blocks_type (block_type),
+  KEY idx_case_blocks_sort_order (sort_order),
+  KEY idx_case_blocks_deleted_at (deleted_at),
+  CONSTRAINT fk_case_blocks_case FOREIGN KEY (case_id) REFERENCES cases(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS case_images (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  case_id BIGINT UNSIGNED NOT NULL,
+  media_id BIGINT UNSIGNED NULL,
+  image_url VARCHAR(800) NULL,
+  alt_text VARCHAR(255) NULL,
+  caption VARCHAR(255) NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  UNIQUE KEY uk_case_images_url_order (case_id, image_url, sort_order),
+  KEY idx_case_images_case_id (case_id),
+  KEY idx_case_images_media_id (media_id),
+  KEY idx_case_images_sort_order (sort_order),
+  KEY idx_case_images_deleted_at (deleted_at),
+  CONSTRAINT fk_case_images_case FOREIGN KEY (case_id) REFERENCES cases(id),
+  CONSTRAINT fk_case_images_media FOREIGN KEY (media_id) REFERENCES media_files(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS solutions (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  source_id VARCHAR(120) NULL,
   title VARCHAR(180) NOT NULL,
   slug VARCHAR(180) NOT NULL,
   summary TEXT NULL,
   cover_media_id BIGINT UNSIGNED NULL,
   cover_url VARCHAR(800) NULL,
+  raw_json JSON NULL,
   status VARCHAR(30) NOT NULL DEFAULT 'draft',
   sort_order INT NOT NULL DEFAULT 0,
   published_at DATETIME NULL,
@@ -278,17 +282,70 @@ CREATE TABLE solutions (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at DATETIME NULL,
   UNIQUE KEY uk_solutions_slug (slug),
+  UNIQUE KEY uk_solutions_source_id (source_id),
   KEY idx_solutions_status (status),
   KEY idx_solutions_sort_order (sort_order),
   KEY idx_solutions_deleted_at (deleted_at),
   CONSTRAINT fk_solutions_cover_media FOREIGN KEY (cover_media_id) REFERENCES media_files(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE solution_pages (
+CREATE TABLE IF NOT EXISTS solution_groups (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   solution_id BIGINT UNSIGNED NOT NULL,
+  source_id VARCHAR(120) NULL,
   title VARCHAR(220) NOT NULL,
   slug VARCHAR(180) NOT NULL,
+  summary TEXT NULL,
+  scene_slug VARCHAR(180) NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  UNIQUE KEY uk_solution_groups_solution_slug (solution_id, slug),
+  UNIQUE KEY uk_solution_groups_source_id (source_id),
+  KEY idx_solution_groups_solution_id (solution_id),
+  KEY idx_solution_groups_scene_slug (scene_slug),
+  KEY idx_solution_groups_sort_order (sort_order),
+  KEY idx_solution_groups_enabled (is_enabled),
+  KEY idx_solution_groups_deleted_at (deleted_at),
+  CONSTRAINT fk_solution_groups_solution FOREIGN KEY (solution_id) REFERENCES solutions(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS solution_media_items (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  group_id BIGINT UNSIGNED NOT NULL,
+  source_id VARCHAR(120) NULL,
+  media_id BIGINT UNSIGNED NULL,
+  file_type VARCHAR(30) NOT NULL DEFAULT 'image',
+  media_url VARCHAR(800) NOT NULL,
+  media_file_name VARCHAR(255) NULL,
+  media_display_name VARCHAR(255) NULL,
+  alt_text VARCHAR(255) NULL,
+  caption VARCHAR(255) NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  UNIQUE KEY uk_solution_media_source_id (source_id),
+  KEY idx_solution_media_group_id (group_id),
+  KEY idx_solution_media_media_id (media_id),
+  KEY idx_solution_media_file_type (file_type),
+  KEY idx_solution_media_sort_order (sort_order),
+  KEY idx_solution_media_enabled (is_enabled),
+  KEY idx_solution_media_deleted_at (deleted_at),
+  CONSTRAINT fk_solution_media_group FOREIGN KEY (group_id) REFERENCES solution_groups(id),
+  CONSTRAINT fk_solution_media_media FOREIGN KEY (media_id) REFERENCES media_files(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS solution_pages (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  solution_id BIGINT UNSIGNED NULL,
+  source_id VARCHAR(120) NULL,
+  title VARCHAR(220) NOT NULL,
+  slug VARCHAR(180) NOT NULL,
+  route_path VARCHAR(500) NULL,
   summary TEXT NULL,
   cover_media_id BIGINT UNSIGNED NULL,
   cover_url VARCHAR(800) NULL,
@@ -299,6 +356,8 @@ CREATE TABLE solution_pages (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at DATETIME NULL,
   UNIQUE KEY uk_solution_pages_solution_slug (solution_id, slug),
+  UNIQUE KEY uk_solution_pages_route_path (route_path),
+  UNIQUE KEY uk_solution_pages_source_id (source_id),
   KEY idx_solution_pages_solution_id (solution_id),
   KEY idx_solution_pages_status (status),
   KEY idx_solution_pages_sort_order (sort_order),
@@ -307,7 +366,7 @@ CREATE TABLE solution_pages (
   CONSTRAINT fk_solution_pages_cover_media FOREIGN KEY (cover_media_id) REFERENCES media_files(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE solution_page_blocks (
+CREATE TABLE IF NOT EXISTS solution_page_blocks (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   solution_page_id BIGINT UNSIGNED NOT NULL,
   block_type VARCHAR(80) NOT NULL,
@@ -324,10 +383,11 @@ CREATE TABLE solution_page_blocks (
   CONSTRAINT fk_solution_page_blocks_page FOREIGN KEY (solution_page_id) REFERENCES solution_pages(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE faq_items (
+CREATE TABLE IF NOT EXISTS faq_items (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   owner_type VARCHAR(60) NOT NULL,
-  owner_id BIGINT UNSIGNED NOT NULL,
+  owner_source_id VARCHAR(120) NULL,
+  owner_id BIGINT UNSIGNED NULL,
   question VARCHAR(300) NOT NULL,
   answer TEXT NOT NULL,
   sort_order INT NOT NULL DEFAULT 0,
@@ -336,15 +396,17 @@ CREATE TABLE faq_items (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at DATETIME NULL,
   KEY idx_faq_items_owner (owner_type, owner_id),
+  KEY idx_faq_items_owner_source (owner_type, owner_source_id),
   KEY idx_faq_items_status (status),
   KEY idx_faq_items_sort_order (sort_order),
   KEY idx_faq_items_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE seo_settings (
+CREATE TABLE IF NOT EXISTS seo_settings (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   owner_type VARCHAR(60) NOT NULL,
-  owner_id BIGINT UNSIGNED NOT NULL,
+  owner_source_id VARCHAR(120) NULL,
+  owner_id BIGINT UNSIGNED NULL,
   title VARCHAR(255) NULL,
   description TEXT NULL,
   keywords TEXT NULL,
@@ -363,38 +425,73 @@ CREATE TABLE seo_settings (
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at DATETIME NULL,
   UNIQUE KEY uk_seo_settings_owner (owner_type, owner_id),
-  KEY idx_seo_settings_owner (owner_type, owner_id),
+  KEY idx_seo_settings_owner_source (owner_type, owner_source_id),
   KEY idx_seo_settings_deleted_at (deleted_at),
   CONSTRAINT fk_seo_settings_og_image FOREIGN KEY (og_image_media_id) REFERENCES media_files(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE publish_logs (
+CREATE TABLE IF NOT EXISTS contact_info (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  publish_version VARCHAR(80) NOT NULL,
+  singleton_key VARCHAR(40) NOT NULL DEFAULT 'contact_info',
+  content_json JSON NOT NULL,
+  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  UNIQUE KEY uk_contact_info_singleton (singleton_key),
+  KEY idx_contact_info_enabled (is_enabled),
+  KEY idx_contact_info_deleted_at (deleted_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS company_assets (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  asset_key VARCHAR(120) NOT NULL,
+  media_id BIGINT UNSIGNED NULL,
+  media_url VARCHAR(800) NULL,
+  alt_text VARCHAR(255) NULL,
+  description TEXT NULL,
+  sort_order INT NOT NULL DEFAULT 0,
+  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
+  raw_json JSON NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  deleted_at DATETIME NULL,
+  UNIQUE KEY uk_company_assets_key (asset_key),
+  KEY idx_company_assets_media_id (media_id),
+  KEY idx_company_assets_sort_order (sort_order),
+  KEY idx_company_assets_enabled (is_enabled),
+  KEY idx_company_assets_deleted_at (deleted_at),
+  CONSTRAINT fk_company_assets_media FOREIGN KEY (media_id) REFERENCES media_files(id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS publish_logs (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  publish_version VARCHAR(120) NOT NULL,
   publish_type VARCHAR(40) NOT NULL DEFAULT 'full',
   target_type VARCHAR(60) NULL,
   target_id BIGINT UNSIGNED NULL,
   status VARCHAR(30) NOT NULL DEFAULT 'pending',
   release_dir VARCHAR(500) NULL,
-  previous_version VARCHAR(80) NULL,
-  rollback_to_version VARCHAR(80) NULL,
+  previous_version VARCHAR(120) NULL,
+  rollback_to_version VARCHAR(120) NULL,
   summary TEXT NULL,
   error_message TEXT NULL,
+  source_stats_json JSON NULL,
+  failed_routes_json JSON NULL,
+  routes_json JSON NULL,
+  raw_log_json JSON NULL,
   started_at DATETIME NULL,
   finished_at DATETIME NULL,
-  created_by BIGINT UNSIGNED NULL,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at DATETIME NULL,
   UNIQUE KEY uk_publish_logs_version (publish_version),
   KEY idx_publish_logs_status (status),
   KEY idx_publish_logs_target (target_type, target_id),
-  KEY idx_publish_logs_created_by (created_by),
-  KEY idx_publish_logs_deleted_at (deleted_at),
-  CONSTRAINT fk_publish_logs_created_by FOREIGN KEY (created_by) REFERENCES admin_users(id)
+  KEY idx_publish_logs_deleted_at (deleted_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE site_settings (
+CREATE TABLE IF NOT EXISTS site_settings (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   setting_key VARCHAR(120) NOT NULL,
   setting_value_json JSON NOT NULL,
@@ -407,44 +504,4 @@ CREATE TABLE site_settings (
   UNIQUE KEY uk_site_settings_key (setting_key),
   KEY idx_site_settings_group (group_name),
   KEY idx_site_settings_deleted_at (deleted_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE redirects (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  from_path VARCHAR(500) NOT NULL,
-  to_path VARCHAR(500) NOT NULL,
-  status_code SMALLINT UNSIGNED NOT NULL DEFAULT 301,
-  reason VARCHAR(255) NULL,
-  is_enabled TINYINT(1) NOT NULL DEFAULT 1,
-  created_by BIGINT UNSIGNED NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at DATETIME NULL,
-  UNIQUE KEY uk_redirects_from_path (from_path),
-  KEY idx_redirects_enabled (is_enabled),
-  KEY idx_redirects_deleted_at (deleted_at),
-  CONSTRAINT fk_redirects_created_by FOREIGN KEY (created_by) REFERENCES admin_users(id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-CREATE TABLE audit_logs (
-  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
-  admin_user_id BIGINT UNSIGNED NULL,
-  action VARCHAR(120) NOT NULL,
-  target_type VARCHAR(60) NULL,
-  target_id BIGINT UNSIGNED NULL,
-  request_method VARCHAR(20) NULL,
-  request_path VARCHAR(500) NULL,
-  ip_address VARCHAR(80) NULL,
-  user_agent VARCHAR(500) NULL,
-  before_json JSON NULL,
-  after_json JSON NULL,
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  deleted_at DATETIME NULL,
-  KEY idx_audit_logs_admin_user_id (admin_user_id),
-  KEY idx_audit_logs_action (action),
-  KEY idx_audit_logs_target (target_type, target_id),
-  KEY idx_audit_logs_created_at (created_at),
-  KEY idx_audit_logs_deleted_at (deleted_at),
-  CONSTRAINT fk_audit_logs_admin_user FOREIGN KEY (admin_user_id) REFERENCES admin_users(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
