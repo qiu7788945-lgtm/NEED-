@@ -1,35 +1,48 @@
 import type { ResultSetHeader } from 'mysql2';
-import { getDbPool } from '../client.js';
-import type { MigrationPlan, ModulePlan } from './types.js';
+import type { PoolConnection } from 'mysql2/promise';
 import type { ContentSnapshotResult } from '../snapshot/content-snapshot.js';
+import type { ModuleMigrationResult, ModulePlan } from './types.js';
 
 export type MigrationLogWriteResult = {
   attempted: number;
   affectedRows: number;
 };
 
-function buildDetailsJson(modulePlan: ModulePlan, snapshot: ContentSnapshotResult): string {
+type MigrationLogConnection = Pick<PoolConnection, 'execute'>;
+
+function buildDetailsJson(
+  modulePlan: ModulePlan,
+  result: ModuleMigrationResult,
+  snapshot: ContentSnapshotResult,
+): string {
   return JSON.stringify({
-    businessWritesEnabled: false,
-    snapshotDir: snapshot.snapshotDir,
+    businessWritesEnabled: result.status === 'success',
     moduleName: modulePlan.moduleName,
+    snapshotDir: snapshot.snapshotDir,
     plannedWrites: modulePlan.plannedWrites,
-    warnings: modulePlan.warnings,
+    actualWrites: result.actualWrites,
+    warnings: result.warnings,
     schemaCompatibility: modulePlan.schemaCompatibility,
+    skippedReason: result.skippedReason,
   });
 }
 
 export async function writeMigrationLogs(
-  plan: MigrationPlan,
+  connection: MigrationLogConnection,
+  modulePlans: ModulePlan[],
+  results: ModuleMigrationResult[],
   snapshot: ContentSnapshotResult,
 ): Promise<MigrationLogWriteResult> {
-  const pool = getDbPool();
-  const startedAt = new Date();
   let affectedRows = 0;
 
-  for (const modulePlan of plan.modules) {
-    const finishedAt = new Date();
-    const [result] = await pool.execute<ResultSetHeader>(
+  for (const resultItem of results) {
+    const modulePlan = modulePlans.find((plan) => plan.moduleName === resultItem.moduleName);
+
+    if (!modulePlan) {
+      continue;
+    }
+
+    const [result] = await connection.execute<ResultSetHeader>(
       `INSERT INTO migration_logs (
         migration_key,
         batch_id,
@@ -75,20 +88,22 @@ export async function writeMigrationLogs(
         started_at = VALUES(started_at),
         finished_at = VALUES(finished_at)`,
       {
-        migrationKey: modulePlan.migrationKey,
+        migrationKey: resultItem.migrationKey,
         batchId: snapshot.batchId,
-        sourceFile: modulePlan.sourceFile,
-        sourceHash: modulePlan.sourceHash,
-        status: 'snapshot_logged',
-        sourceCount: modulePlan.sourceCount,
-        insertedCount: 0,
-        updatedCount: 0,
-        skippedCount: modulePlan.sourceCount,
-        warningCount: modulePlan.warnings.length,
-        errorMessage: null,
-        detailsJson: buildDetailsJson(modulePlan, snapshot),
-        startedAt,
-        finishedAt,
+        sourceFile: resultItem.sourceFile,
+        sourceHash: resultItem.sourceHash,
+        status: resultItem.status === 'skipped' && resultItem.skippedReason === 'source_hash_already_successfully_migrated'
+          ? 'skipped_success_hash'
+          : resultItem.status,
+        sourceCount: resultItem.sourceCount,
+        insertedCount: resultItem.insertedCount,
+        updatedCount: resultItem.updatedCount,
+        skippedCount: resultItem.skippedCount,
+        warningCount: resultItem.warningCount,
+        errorMessage: resultItem.errorMessage,
+        detailsJson: buildDetailsJson(modulePlan, resultItem, snapshot),
+        startedAt: resultItem.startedAt,
+        finishedAt: resultItem.finishedAt,
       },
     );
 
@@ -96,7 +111,7 @@ export async function writeMigrationLogs(
   }
 
   return {
-    attempted: plan.modules.length,
+    attempted: results.length,
     affectedRows,
   };
 }

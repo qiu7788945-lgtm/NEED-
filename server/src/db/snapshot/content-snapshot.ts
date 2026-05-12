@@ -45,7 +45,46 @@ function createTimestamp(date: Date): string {
     pad(date.getHours()),
     pad(date.getMinutes()),
     pad(date.getSeconds()),
+    '-',
+    date.getMilliseconds().toString().padStart(3, '0'),
   ].join('');
+}
+
+function hasErrorCode(error: unknown, code: string): boolean {
+  return Boolean(
+    error &&
+      typeof error === 'object' &&
+      'code' in error &&
+      (error as NodeJS.ErrnoException).code === code,
+  );
+}
+
+async function createUniqueSnapshotDirectory(date: Date): Promise<{
+  batchId: string;
+  snapshotPath: string;
+}> {
+  await mkdir(backupRoot, { recursive: true });
+
+  const baseBatchId = createTimestamp(date);
+
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const suffix = attempt === 0 ? '' : `-${attempt.toString().padStart(2, '0')}`;
+    const batchId = `${baseBatchId}${suffix}`;
+    const snapshotPath = path.join(backupRoot, batchId);
+
+    try {
+      await mkdir(snapshotPath, { recursive: false });
+      return { batchId, snapshotPath };
+    } catch (error) {
+      if (hasErrorCode(error, 'EEXIST')) {
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw new Error(`Unable to create a unique snapshot directory under ${backupRoot}.`);
 }
 
 function toProjectRelative(absolutePath: string): string {
@@ -108,7 +147,7 @@ async function buildTopLevelJsonManifestEntry(input: {
   }
 
   if (!modulePlan) {
-    notes.push('Snapshot-only source; no 22-3B-2 migration module is registered for this file.');
+    notes.push('Snapshot-only source; no 22-3B-3 migration module is registered for this file.');
   }
 
   return {
@@ -178,15 +217,14 @@ async function copySnapshotFiles(snapshotPath: string, publishLogIndex: PublishL
 }
 
 export async function createContentSnapshot(plan: MigrationPlan): Promise<ContentSnapshotResult> {
-  const createdAt = new Date().toISOString();
-  const batchId = createTimestamp(new Date());
+  const now = new Date();
+  const createdAt = now.toISOString();
+  const { batchId, snapshotPath } = await createUniqueSnapshotDirectory(now);
   const gitCommit = await readGitCommit();
-  const snapshotPath = path.join(backupRoot, batchId);
   const includedModuleNames = new Set(plan.modules.map((module) => module.moduleName));
   const publishLogIndex = await buildPublishLogIndex();
   const manifest: SourceManifestEntry[] = [];
 
-  await mkdir(snapshotPath, { recursive: false });
   await copySnapshotFiles(snapshotPath, publishLogIndex);
 
   for (const fileName of await listTopLevelJsonFiles()) {

@@ -282,7 +282,7 @@ export const moduleDefinitions: ModuleDefinition[] = [
     migrationKey: 'content:company-assets',
     sourceFile: 'company-assets.json',
     sourceRequired: true,
-    countStrategy: 'singleton',
+    countStrategy: 'array',
     upsertKeys: ['company_assets.asset_key'],
     plannedWrites: [
       {

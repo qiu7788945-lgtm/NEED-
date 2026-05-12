@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { closeDbPool, getSafeDatabaseConfig } from '../client.js';
-import { writeMigrationLogs } from '../migration/migration-log-writer.js';
+import { prepareContentWrite, runContentWrite } from '../migration/content-write-runner.js';
 import { reportMigrationPlan } from '../migration/plan-reporter.js';
 import { loadSchemaTables, checkPlannedWritesAgainstSchema } from '../migration/schema-compatibility.js';
 import { loadSource } from '../migration/source-loader.js';
@@ -11,6 +11,7 @@ import {
   type MigrationPlan,
   type ModulePlan,
 } from '../migration/types.js';
+import { isWritableContentModule } from '../migrators/low-risk-content.js';
 import { moduleDefinitions } from '../migrators/registry.js';
 import { createContentSnapshot } from '../snapshot/content-snapshot.js';
 
@@ -26,8 +27,8 @@ Options:
   --dry-run        Default. Read JSON and print a plan only.
   --module <name> Run one module plan, or "all".
   --fail-fast      Stop plan generation after the first module error.
-  --write          Create a JSON snapshot and write migration_logs skeleton records only.
-                   Does not write business tables in 22-3B-2.`);
+  --write          Create a JSON snapshot, write enabled low-risk modules, and log all modules.
+                   Does not switch any service or write high-risk modules in 22-3B-3.`);
 }
 
 function isMigrationModuleName(value: string): value is MigrationModuleName {
@@ -103,6 +104,7 @@ async function buildModulePlan(
 ): Promise<ModulePlan> {
   const source = await loadSource(definition);
   const schemaCompatibility = checkPlannedWritesAgainstSchema(definition.plannedWrites, schemaTables);
+  const businessWritesEnabled = isWritableContentModule(definition.moduleName);
 
   return {
     moduleName: definition.moduleName,
@@ -110,6 +112,8 @@ async function buildModulePlan(
     sourceFile: definition.sourceFile,
     sourceCount: source.sourceCount,
     sourceHash: source.sourceHash,
+    businessWritesEnabled,
+    skippedReason: businessWritesEnabled ? null : 'not_implemented_in_22_3B_3',
     upsertKeys: definition.upsertKeys,
     plannedWrites: definition.plannedWrites,
     warnings: [
@@ -167,23 +171,28 @@ async function buildMigrationPlan(options: CliOptions): Promise<MigrationPlan> {
   };
 }
 
-async function runWriteMode(plan: MigrationPlan): Promise<void> {
+async function runWriteMode(plan: MigrationPlan): Promise<Awaited<ReturnType<typeof runContentWrite>>> {
+  await prepareContentWrite(plan);
   const snapshot = await createContentSnapshot(plan);
-  const migrationLogResult = await writeMigrationLogs(plan, snapshot);
+  const writeResult = await runContentWrite(plan, snapshot);
 
   console.log(
     JSON.stringify(
       {
         mode: 'write',
-        businessWritesEnabled: false,
+        businessWritesEnabled: true,
         snapshotDir: snapshot.snapshotDir,
         sourceManifest: snapshot.manifestPath,
-        migrationLogs: migrationLogResult,
+        summary: writeResult.summary,
+        results: writeResult.results,
+        migrationLogs: writeResult.migrationLogs,
       },
       null,
       2,
     ),
   );
+
+  return writeResult;
 }
 
 async function main(): Promise<void> {
@@ -205,12 +214,15 @@ async function main(): Promise<void> {
 
     const plan = await buildMigrationPlan(options);
     reportMigrationPlan(plan);
+    let failedWriteCount = 0;
 
     if (options.writeRequested) {
-      await runWriteMode(plan);
+      const writeResult = await runWriteMode(plan);
+      failedWriteCount = writeResult.summary.failedCount;
     }
 
     if (
+      failedWriteCount > 0 ||
       !plan.summary.schemaCompatible ||
       plan.modules.some((modulePlan) => modulePlan.warnings.some((warning) => warning.level === 'error'))
     ) {

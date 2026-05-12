@@ -1,14 +1,14 @@
 # Round 22 Migration Skeleton
 
-This document describes the 22-3B-2 migration skeleton only.
+This document describes the 22-3B-3 migration skeleton only.
 
-The skeleton can read JSON sources, compute canonical SHA256 hashes, identify migration modules, print dry-run plans, check planned tables and fields against `server/src/db/migrations/001_initial_schema.sql`, create pre-write JSON snapshots, and write `migration_logs` skeleton records.
+The skeleton can read JSON sources, compute canonical SHA256 hashes, identify migration modules, print dry-run plans, check planned tables and fields against `server/src/db/migrations/001_initial_schema.sql`, create pre-write JSON snapshots, write selected low-risk business tables, and write `migration_logs` records for every selected module.
 
-It does not migrate business data.
-It does not write MySQL business tables.
+It migrates only the low-risk modules opened in 22-3B-3.
+It does not migrate high-risk business data.
 It does not switch any service to MySQL.
 
-JSON remains the only primary data source in 22-3B-2. MySQL remains a shadow database target for later steps.
+JSON remains the only primary data source in 22-3B-3. MySQL remains a shadow database target for later steps.
 
 ## Commands
 
@@ -22,17 +22,66 @@ npm.cmd run migrate:content -- --write
 
 `migrate:content` defaults to dry-run.
 
-Dry-run reads JSON and prints the migration plan only. It does not create snapshots and does not write `migration_logs`.
+Dry-run reads JSON and prints the migration plan only. It does not create snapshots, write `migration_logs`, or write business tables. The plan includes `businessWritesEnabled` and `skippedReason` so reviewers can see which modules are writable and which remain plan-only.
 
-`--write` is enabled only for 22-3B-2 snapshot and log scaffolding. It:
+`--write` is enabled only for 22-3B-3 low-risk shadow writes. It:
 
 1. Requires `MYSQL_HOST`, `MYSQL_DATABASE`, `MYSQL_USER`, and `MYSQL_PASSWORD`.
-2. Creates a JSON snapshot under `server/data-backups/mysql-migration/YYYYMMDD-HHmmss/`.
-3. Writes `source-manifest.json` into the snapshot directory.
-4. Writes one `migration_logs` skeleton record per selected source module.
-5. Leaves all business tables untouched.
+2. Checks the MySQL connection.
+3. Checks schema compatibility.
+4. Creates a JSON snapshot under `server/data-backups/mysql-migration/YYYYMMDD-HHmmss/`.
+5. Writes `source-manifest.json` into the snapshot directory.
+6. Writes only the 22-3B-3 low-risk business tables.
+7. Writes one `migration_logs` record per selected source module.
+8. Leaves all high-risk business tables untouched.
 
 If MySQL is not configured, `--write` fails before creating a snapshot and before writing any database rows.
+
+## Writable Modules
+
+Only these modules can write business tables in 22-3B-3:
+
+- `pages`
+- `contact-info`
+- `company-assets`
+- `home-video`
+- `home-interactive-images`
+
+The writable tables are limited to:
+
+- `pages`
+- `page_blocks`
+- `seo_settings`
+- `contact_info`
+- `company_assets`
+- `home_video`
+- `home_interactive_images`
+- `media_files`, only for media referenced by the writable modules
+- `migration_logs`
+
+These modules remain plan-only / not implemented in 22-3B-3:
+
+- `articles`
+- `cases`
+- `solutions`
+- `scenario-detail-pages`
+- `media-library`
+- `publish-logs`
+
+When `npm.cmd run migrate:content -- --write --module all` is used, only the five writable modules are allowed to write business tables. The plan-only modules receive `migration_logs` records with `status = not_implemented` and `skippedReason = not_implemented_in_22_3B_3`.
+
+## Repeat Runs
+
+Low-risk writes use idempotent upsert keys:
+
+- `pages`: `source_id` when present, otherwise `slug`
+- `contact-info`: `singleton_key = contact_info`
+- `company-assets`: `asset_key`
+- `home-video`: `singleton_key = home_video`
+- `home-interactive-images`: `slot_number`
+- `media_files`: `public_url`
+
+If a module has already recorded the same `source_hash` with a successful migration status, a later `--write` run skips that module and records `status = skipped_success_hash`. MySQL rows that do not exist in JSON are not hard-deleted in this stage.
 
 ## Snapshot Manifest
 
@@ -54,7 +103,7 @@ The snapshot copies top-level JSON files from `server/data/*.json`, writes `serv
 
 ## Migration Logs
 
-`--write` writes only `migration_logs`. Each selected source module receives one row using the existing schema fields:
+`--write` writes `migration_logs` after the selected business writes. Each selected source module receives one row using the existing schema fields:
 
 - `migration_key`
 - `batch_id`
@@ -73,12 +122,14 @@ The snapshot copies top-level JSON files from `server/data/*.json`, writes `serv
 
 `details_json` includes:
 
-- `businessWritesEnabled: false`
+- `businessWritesEnabled`, true only for successfully written low-risk modules
 - `snapshotDir`
 - `moduleName`
 - `plannedWrites`
+- `actualWrites`
 - `warnings`
 - `schemaCompatibility`
+- `skippedReason`
 
 Rows are inserted with an upsert on the existing `(migration_key, source_hash)` unique key so repeated runs against unchanged sources update the skeleton log instead of failing on duplicates.
 

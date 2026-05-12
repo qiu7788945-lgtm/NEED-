@@ -89,10 +89,38 @@ export type ModulePlan = {
   sourceFile: string;
   sourceCount: number;
   sourceHash: string | null;
+  businessWritesEnabled: boolean;
+  skippedReason: string | null;
   upsertKeys: string[];
   plannedWrites: PlannedTableWrite[];
   warnings: MigrationWarning[];
   schemaCompatibility: SchemaCompatibilityResult;
+};
+
+export type ActualTableWrite = {
+  table: string;
+  inserted: number;
+  updated: number;
+  skipped: number;
+};
+
+export type ModuleMigrationResult = {
+  moduleName: MigrationModuleName;
+  migrationKey: string;
+  sourceFile: string;
+  sourceHash: string | null;
+  status: 'success' | 'skipped' | 'failed' | 'not_implemented';
+  sourceCount: number;
+  insertedCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  warningCount: number;
+  errorMessage: string | null;
+  actualWrites: ActualTableWrite[];
+  warnings: MigrationWarning[];
+  skippedReason: string | null;
+  startedAt: Date;
+  finishedAt: Date;
 };
 
 export type MigrationPlan = {
