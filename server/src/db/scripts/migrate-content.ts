@@ -1,4 +1,7 @@
 import 'dotenv/config';
+import { closeDbPool, getSafeDatabaseConfig } from '../client.js';
+import { writeMigrationLogs } from '../migration/migration-log-writer.js';
+import { reportMigrationPlan } from '../migration/plan-reporter.js';
 import { loadSchemaTables, checkPlannedWritesAgainstSchema } from '../migration/schema-compatibility.js';
 import { loadSource } from '../migration/source-loader.js';
 import {
@@ -8,8 +11,8 @@ import {
   type MigrationPlan,
   type ModulePlan,
 } from '../migration/types.js';
-import { reportMigrationPlan } from '../migration/plan-reporter.js';
 import { moduleDefinitions } from '../migrators/registry.js';
+import { createContentSnapshot } from '../snapshot/content-snapshot.js';
 
 function printUsage(): void {
   console.log(`Usage:
@@ -17,12 +20,14 @@ function printUsage(): void {
   npm.cmd run migrate:content:dry-run
   npm.cmd run migrate:content -- --module articles
   npm.cmd run migrate:content -- --module all --fail-fast
+  npm.cmd run migrate:content -- --write
 
 Options:
   --dry-run        Default. Read JSON and print a plan only.
   --module <name> Run one module plan, or "all".
   --fail-fast      Stop plan generation after the first module error.
-  --write          Recognized but intentionally disabled in 22-3B-1.`);
+  --write          Create a JSON snapshot and write migration_logs skeleton records only.
+                   Does not write business tables in 22-3B-2.`);
 }
 
 function isMigrationModuleName(value: string): value is MigrationModuleName {
@@ -82,6 +87,16 @@ function parseCliOptions(args: string[]): CliOptions {
   return options;
 }
 
+function assertMySqlConfiguredForWrite(): void {
+  const safeConfig = getSafeDatabaseConfig();
+
+  if (!safeConfig.configured) {
+    throw new Error(
+      `--write requires MySQL configuration before any snapshot is created. Missing: ${safeConfig.missing.join(', ')}`,
+    );
+  }
+}
+
 async function buildModulePlan(
   definition: (typeof moduleDefinitions)[number],
   schemaTables: Awaited<ReturnType<typeof loadSchemaTables>>,
@@ -137,7 +152,7 @@ async function buildMigrationPlan(options: CliOptions): Promise<MigrationPlan> {
   const warningCount = modules.reduce((count, modulePlan) => count + modulePlan.warnings.length, 0);
 
   return {
-    mode: 'dry-run',
+    mode: options.writeRequested ? 'write' : 'dry-run',
     writeRequested: options.writeRequested,
     moduleFilter: options.moduleName,
     failFast: options.failFast,
@@ -152,6 +167,25 @@ async function buildMigrationPlan(options: CliOptions): Promise<MigrationPlan> {
   };
 }
 
+async function runWriteMode(plan: MigrationPlan): Promise<void> {
+  const snapshot = await createContentSnapshot(plan);
+  const migrationLogResult = await writeMigrationLogs(plan, snapshot);
+
+  console.log(
+    JSON.stringify(
+      {
+        mode: 'write',
+        businessWritesEnabled: false,
+        snapshotDir: snapshot.snapshotDir,
+        sourceManifest: snapshot.manifestPath,
+        migrationLogs: migrationLogResult,
+      },
+      null,
+      2,
+    ),
+  );
+}
+
 async function main(): Promise<void> {
   let options: CliOptions;
 
@@ -164,19 +198,29 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (options.writeRequested) {
-    console.error(
-      '第22-3B-1暂不开放写入：--write 已被识别，但本阶段不会写 MySQL 业务表、不会写 migration_logs、不会生成真实快照。',
-    );
-    process.exitCode = 1;
-    return;
-  }
+  try {
+    if (options.writeRequested) {
+      assertMySqlConfiguredForWrite();
+    }
 
-  const plan = await buildMigrationPlan(options);
-  reportMigrationPlan(plan);
+    const plan = await buildMigrationPlan(options);
+    reportMigrationPlan(plan);
 
-  if (!plan.summary.schemaCompatible || plan.modules.some((modulePlan) => modulePlan.warnings.some((warning) => warning.level === 'error'))) {
+    if (options.writeRequested) {
+      await runWriteMode(plan);
+    }
+
+    if (
+      !plan.summary.schemaCompatible ||
+      plan.modules.some((modulePlan) => modulePlan.warnings.some((warning) => warning.level === 'error'))
+    ) {
+      process.exitCode = 1;
+    }
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : error);
     process.exitCode = 1;
+  } finally {
+    await closeDbPool();
   }
 }
 

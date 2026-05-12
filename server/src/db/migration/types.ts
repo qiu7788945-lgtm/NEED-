@@ -51,6 +51,20 @@ export type LoadedSource = {
   warnings: MigrationWarning[];
 };
 
+export type SourceManifestEntry = {
+  batch_id: string;
+  created_at: string;
+  git_commit: string | null;
+  source_file: string;
+  relative_path: string;
+  source_hash: string | null;
+  raw_file_hash: string | null;
+  file_size: number;
+  record_count: number;
+  included_in_migration: boolean;
+  notes: string[];
+};
+
 export type SchemaTable = {
   table: string;
   fields: string[];
@@ -82,7 +96,7 @@ export type ModulePlan = {
 };
 
 export type MigrationPlan = {
-  mode: 'dry-run';
+  mode: 'dry-run' | 'write';
   writeRequested: boolean;
   moduleFilter: MigrationModuleName | 'all';
   failFast: boolean;

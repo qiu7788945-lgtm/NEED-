@@ -31,7 +31,7 @@ async function loadPublishLogsSource(definition: ModuleDefinition): Promise<Load
       code: 'publish_logs_plan_only',
       level: 'info',
       message:
-        'publish-logs is plan-only in 22-3B-1; existing JSON publish log generation remains unchanged.',
+        'publish-logs is snapshot/log metadata only in 22-3B-2; existing JSON publish log generation remains unchanged.',
     },
   ];
 
