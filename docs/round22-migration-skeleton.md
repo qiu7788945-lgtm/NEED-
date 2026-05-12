@@ -138,3 +138,23 @@ Rows are inserted with an upsert on the existing `(migration_key, source_hash)` 
 The skeleton must not change frontend UI, admin UI, business services, API output, JSON data, uploads, prerender scripts, sitemap scripts, route slugs, or existing publish log generation.
 
 `publish-logs` remains JSON-primary in this step. The migration skeleton can index publish logs for snapshot and log metadata only; it must not make MySQL the primary publish log source.
+
+## 22-3B-4 Snapshot Safety
+
+`server/data-backups/mysql-migration/` is a local migration acceptance snapshot directory. It is ignored by Git and must not be committed.
+
+These snapshots are only for local migration verification. They are not formal production backups, not deployment artifacts, and not part of the canonical content source. They may be cleaned after each acceptance pass once the operator no longer needs the local rollback/reference copy.
+
+Formal production backup strategy is deferred to Round 24 deployment preparation.
+
+## 22-3 Next Boundaries
+
+Recommended order after the completed low-risk 22-3B-3 writes:
+
+1. 22-3B-5: `articles`
+2. 22-3B-6: `media-library` dedupe strategy / shadow migration
+3. 22-3B-7: `cases`
+4. 22-3B-8: `solutions` + `scenario-detail-pages`
+5. 22-3B-9: `publish-logs` shadow index + 22-3 full acceptance
+
+`solutions` should stay last because it spans scene solution records, grouped galleries, images, videos, and display-oriented detail pages. Its write surface and route/content coupling are the highest-risk part of the Round 22 shadow migration.
