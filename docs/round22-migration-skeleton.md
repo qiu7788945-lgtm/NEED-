@@ -1,11 +1,11 @@
 # Round 22 Migration Skeleton
 
-This document describes the Round 22 content migration skeleton through 22-3B-8.
+This document describes the Round 22 content migration skeleton through 22-3B-9.
 
 The skeleton can read JSON sources, compute canonical SHA256 hashes, identify migration modules, print dry-run plans, check planned tables and fields against `server/src/db/migrations/001_initial_schema.sql`, create pre-write JSON snapshots, write selected shadow business tables, and write `migration_logs` records for every selected module.
 
-It migrates only the low-risk modules opened in 22-3B-3, `articles` opened in 22-3B-5, `media-library` opened in 22-3B-6, `cases` opened in 22-3B-7, and `solutions` / `scenario-detail-pages` opened in 22-3B-8.
-It does not migrate publish logs as formal business content.
+It migrates the low-risk modules opened in 22-3B-3, `articles` opened in 22-3B-5, `media-library` opened in 22-3B-6, `cases` opened in 22-3B-7, `solutions` / `scenario-detail-pages` opened in 22-3B-8, and the `publish-logs` shadow index opened in 22-3B-9.
+It indexes publish logs only as shadow metadata; JSON publish log files remain the formal publish chain source.
 It does not switch any service to MySQL.
 
 JSON remains the only primary data source in 22-3. MySQL remains a shadow database target for later steps.
@@ -20,6 +20,7 @@ npm.cmd run migrate:content -- --module media-library
 npm.cmd run migrate:content -- --module cases
 npm.cmd run migrate:content -- --module solutions
 npm.cmd run migrate:content -- --module scenario-detail-pages
+npm.cmd run migrate:content -- --module publish-logs
 npm.cmd run migrate:content -- --module all --fail-fast
 npm.cmd run migrate:content -- --write
 ```
@@ -35,15 +36,15 @@ Dry-run reads JSON and prints the migration plan only. It does not create snapsh
 3. Checks schema compatibility.
 4. Creates a unique JSON snapshot under `server/data-backups/mysql-migration/`.
 5. Writes `source-manifest.json` into the snapshot directory.
-6. Writes only the modules enabled through 22-3B-8.
+6. Writes only the modules enabled through 22-3B-9.
 7. Writes one `migration_logs` record per selected source module.
-8. Leaves all unopened medium-risk and high-risk business tables untouched.
+8. Leaves runtime services, route generation, prerender, sitemap, and existing publish log JSON generation untouched.
 
 If MySQL is not configured, `--write` fails before creating a snapshot and before writing any database rows.
 
 ## Writable Modules
 
-Only these modules can write business tables through 22-3B-8:
+Only these modules can write shadow business tables through 22-3B-9:
 
 - `articles`
 - `cases`
@@ -55,6 +56,7 @@ Only these modules can write business tables through 22-3B-8:
 - `home-video`
 - `home-interactive-images`
 - `media-library`
+- `publish-logs`
 
 The writable tables are limited to:
 
@@ -76,15 +78,14 @@ The writable tables are limited to:
 - `solution_media_items`
 - `solution_pages`
 - `solution_page_blocks`
+- `publish_logs`, as a shadow index only
 - `migration_logs`
 
 `article_blocks` remains unused while `articles.json` stores article body as whole `content` without explicit block records.
 
-These modules remain plan-only / not implemented in 22-3B-8:
+After 22-3B-9 there are no remaining not-implemented content modules in the migration skeleton. Empty sources can still complete with zero business rows and explanatory warnings/details.
 
-- `publish-logs`
-
-When `npm.cmd run migrate:content -- --write --module all` is used, only the ten writable modules are allowed to write business tables. The plan-only module receives a `migration_logs` record with `status = not_implemented` and `skippedReason = not_implemented_in_22_3B_8`.
+When `npm.cmd run migrate:content -- --write --module all` is used, all eleven migration modules are allowed to write their opened shadow targets. `publish_logs` is still a shadow index only and must not replace `server/data/publish-logs/*.json`.
 
 ## Repeat Runs
 
@@ -110,6 +111,7 @@ Low-risk writes use idempotent upsert keys:
 - `home-interactive-images`: `slot_number`
 - media files from opened low-risk modules: `public_url`
 - `media-library`: `public_url`, then `file_path`, then `file_name + file_size`
+- `publish-logs`: `publish_version`
 
 If a module has already recorded the same `source_hash` with a successful migration status, a later `--write` run skips that module and records `status = skipped_success_hash`. MySQL rows that do not exist in JSON are not hard-deleted in this stage.
 
@@ -174,6 +176,8 @@ For `solutions`, `details_json` records direct counters for `sourceCount`, `solu
 
 For `scenario-detail-pages`, `details_json` records direct counters for `sourceCount`, `emptySource`, `solutionPagesCount`, `solutionPageBlocksCount`, `mediaFilesCount`, `seoCount`, `faqCount`, and `skippedPageCount`. Empty source data is a successful no-business-row write with warnings/details rather than an error.
 
+For `publish-logs`, `details_json` records direct counters for `sourceCount`, `publishLogCount`, `publishLogsCount`, `invalidJsonCount`, `missingVersionCount`, `missingStartedAtCount`, `missingFinishedAtCount`, `duplicateCount`, `successLogCount`, `failedLogCount`, `rollbackLogCount`, `unknownLogCount`, `dedupeStrategy`, and per-table inserted / updated / skipped / duplicate counts. It also records `jsonPrimarySource: true` and `shadowIndexOnly: true`.
+
 ## 22-3B-5 Articles
 
 22-3B-5 opens `articles` as the next shadow-write module. It writes `article_categories`, `articles`, article `seo_settings`, article `faq_items` when source FAQ exists, and `migration_logs`.
@@ -216,11 +220,21 @@ Solution groups represent case / showcase groups within a scene. They are upsert
 
 Scenario detail pages are also shadow-only. If `scenario-detail-pages.json` is empty, the module succeeds without writing `solution_pages` or `solution_page_blocks`, and records empty-source details in `migration_logs`. If future source records exist, they are upserted by `source_id`, `route_path`, or `solution_id + slug`, and explicit page blocks are written to `solution_page_blocks`.
 
+## 22-3B-9 Publish Logs Shadow Index
+
+22-3B-9 opens `publish-logs` as the final shadow-write module for Round 22-3. It writes `publish_logs` and `migration_logs` only.
+
+The migration reads existing `server/data/publish-logs/*.json` files, parses each log, derives `publish_version` from stable log fields such as `version`, `publishVersion`, `publishId`, or `timestamp`, and falls back to the file name when no explicit version exists. Rows are upserted by `publish_logs.publish_version`, so repeated runs update existing shadow index rows instead of inserting duplicates.
+
+The shadow index preserves status, publish type, release / rollback metadata, route arrays, failed routes, source stats, timing fields where parseable, and the full original publish log object in `raw_log_json`. Invalid JSON files are skipped with warnings. Missing version or time fields are counted in `details_json`.
+
+This does not change publish behavior. JSON publish log files remain the primary publish chain source; build, prerender, route manifest, sitemap, publish buttons, and publish log generation do not depend on MySQL.
+
 ## Boundaries
 
 The skeleton must not change frontend UI, admin UI, business services, API output, JSON data, uploads, prerender scripts, sitemap scripts, route slugs, or existing publish log generation.
 
-`publish-logs` remains JSON-primary in this step. The migration skeleton can index publish logs for snapshot and log metadata only; it must not make MySQL the primary publish log source.
+`publish-logs` remains JSON-primary in this step. The migration skeleton indexes publish logs for shadow metadata only; it must not make MySQL the primary publish log source.
 
 ## 22-3B-4 Snapshot Safety
 
@@ -230,10 +244,15 @@ These snapshots are only for local migration verification. They are not formal p
 
 Formal production backup strategy is deferred to Round 24 deployment preparation.
 
-## 22-3 Next Boundaries
+## 22-3 Acceptance Boundary
 
-Recommended order after 22-3B-8:
+Round 22-3 has completed JSON to MySQL shadow write coverage for the content migration skeleton:
 
-1. 22-3B-9: `publish-logs` shadow index + 22-3 full acceptance
+- low-risk singleton/page/media modules
+- articles
+- media library
+- cases
+- solutions and scenario detail pages
+- publish logs shadow index
 
-`publish-logs` remains the final unopened module because current JSON publish log generation must stay untouched until explicit shadow-index acceptance.
+This is still not Round 22-4. Dual-read, service switching, runtime MySQL reads, and making MySQL the primary data source remain out of scope.

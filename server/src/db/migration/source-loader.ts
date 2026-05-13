@@ -28,10 +28,10 @@ function countJsonRecords(data: unknown, strategy: ModuleDefinition['countStrate
 async function loadPublishLogsSource(definition: ModuleDefinition): Promise<LoadedSource> {
   const warnings: MigrationWarning[] = [
     {
-      code: 'publish_logs_plan_only',
+      code: 'publish_logs_shadow_index_only',
       level: 'info',
       message:
-        'publish-logs is snapshot/log metadata only in 22-3B-8; existing JSON publish log generation remains unchanged.',
+        'publish-logs is a MySQL shadow index only in 22-3B-9; existing JSON publish log generation remains unchanged.',
     },
   ];
 

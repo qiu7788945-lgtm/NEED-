@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { loadSource } from '../migration/source-loader.js';
 import type {
@@ -20,6 +22,7 @@ export const writableContentModules = [
   'home-video',
   'home-interactive-images',
   'media-library',
+  'publish-logs',
 ] as const satisfies MigrationModuleName[];
 
 type WritableContentModuleName = (typeof writableContentModules)[number];
@@ -4007,6 +4010,378 @@ async function migrateHomeInteractiveImages(context: MigrationContext): Promise<
   return counts;
 }
 
+type PublishLogManifestEntry = {
+  fileName: string;
+};
+
+function getPublishLogManifestEntries(data: unknown): PublishLogManifestEntry[] {
+  if (!Array.isArray(data)) {
+    return [];
+  }
+
+  return data
+    .filter(isRecord)
+    .map((entry) => ({
+      fileName: asString(entry.fileName),
+    }))
+    .filter((entry) => entry.fileName.endsWith('.json'));
+}
+
+function fileNameWithoutExt(fileName: string): string {
+  return fileName.endsWith('.json') ? fileName.slice(0, -5) : fileName;
+}
+
+function stableVersionValue(value: unknown): string | null {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim();
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  return null;
+}
+
+function getPublishVersion(log: Record<string, unknown>, fileName: string): {
+  publishVersion: string;
+  usedFileNameFallback: boolean;
+} {
+  const fromLog = stableVersionValue(log.version)
+    ?? stableVersionValue(log.publishVersion)
+    ?? stableVersionValue(log.publish_version)
+    ?? stableVersionValue(log.publishId)
+    ?? stableVersionValue(log.publish_id)
+    ?? stableVersionValue(log.timestamp)
+    ?? stableVersionValue(log.generatedAt)
+    ?? stableVersionValue(log.generated_at);
+
+  return {
+    publishVersion: (fromLog ?? fileNameWithoutExt(fileName)).slice(0, 120),
+    usedFileNameFallback: !fromLog,
+  };
+}
+
+function normalizePublishStatus(log: Record<string, unknown>): 'success' | 'failed' | 'rollback' | 'unknown' {
+  const status = asString(log.status).trim().toLowerCase();
+
+  if (status === 'success' || status === 'failed' || status === 'rollback') {
+    return status;
+  }
+
+  if (status === 'error') {
+    return 'failed';
+  }
+
+  if (Array.isArray(log.failedRoutes) && log.failedRoutes.length > 0) {
+    return 'failed';
+  }
+
+  return 'unknown';
+}
+
+function getPublishType(log: Record<string, unknown>, status: string): string {
+  return (firstString(log, 'publishType', 'publish_type', 'type') ?? (status === 'rollback' ? 'rollback' : 'full'))
+    .slice(0, 40);
+}
+
+function getJsonArrayString(value: unknown): string | null {
+  return Array.isArray(value) ? JSON.stringify(value) : null;
+}
+
+function getSourceStatsJson(log: Record<string, unknown>, fileName: string): string | null {
+  const sourceStats = log.sourceStats ?? log.source_stats;
+
+  if (sourceStats !== undefined) {
+    return JSON.stringify(sourceStats);
+  }
+
+  const stats: Record<string, unknown> = {
+    fileName,
+  };
+  const knownStatKeys = [
+    'totalRoutes',
+    'skippedRoutes',
+    'sitemapPath',
+    'robotsPath',
+    'manifestPath',
+    'triggeredBy',
+  ];
+  let hasStats = false;
+
+  for (const key of knownStatKeys) {
+    if (log[key] !== undefined) {
+      stats[key] = log[key] as SqlValue;
+      hasStats = true;
+    }
+  }
+
+  return hasStats ? JSON.stringify(stats) : null;
+}
+
+function getPublishSummary(log: Record<string, unknown>): string | null {
+  const summary = firstString(log, 'summary', 'message', 'description');
+
+  if (summary) {
+    return summary;
+  }
+
+  const totalRoutes = asOptionalUnsignedInteger(log.totalRoutes);
+  const generatedRoutes = Array.isArray(log.generatedRoutes) ? log.generatedRoutes.length : null;
+  const failedRoutes = Array.isArray(log.failedRoutes) ? log.failedRoutes.length : null;
+
+  if (totalRoutes !== null || generatedRoutes !== null || failedRoutes !== null) {
+    return `routes total=${totalRoutes ?? 'unknown'}, generated=${generatedRoutes ?? 'unknown'}, failed=${failedRoutes ?? 'unknown'}`;
+  }
+
+  return null;
+}
+
+function getPublishErrorMessage(log: Record<string, unknown>): string | null {
+  const directError = firstString(log, 'errorMessage', 'error_message', 'error');
+
+  if (directError) {
+    return directError;
+  }
+
+  if (Array.isArray(log.errors) && log.errors.length > 0) {
+    return JSON.stringify(log.errors);
+  }
+
+  return null;
+}
+
+function getPublishStartedAt(log: Record<string, unknown>): Date | null {
+  return asDate(log.startedAt ?? log.started_at ?? log.generatedAt ?? log.generated_at ?? log.createdAt ?? log.created_at);
+}
+
+function getPublishFinishedAt(log: Record<string, unknown>): Date | null {
+  return asDate(log.finishedAt ?? log.finished_at ?? log.completedAt ?? log.completed_at ?? log.generatedAt ?? log.generated_at);
+}
+
+async function migratePublishLogs(context: MigrationContext): Promise<CountableWrite> {
+  const source = await loadSource(context.definition);
+  const entries = getPublishLogManifestEntries(source.data);
+  const counts = emptyWrites();
+  const seenVersions = new Set<string>();
+  const duplicateVersions = new Set<string>();
+  let publishLogsCount = 0;
+  let invalidJsonCount = 0;
+  let missingVersionCount = 0;
+  let missingStartedAtCount = 0;
+  let missingFinishedAtCount = 0;
+  let duplicateCount = 0;
+  let successLogCount = 0;
+  let failedLogCount = 0;
+  let rollbackLogCount = 0;
+  let unknownLogCount = 0;
+
+  for (const entry of entries) {
+    const absolutePath = path.join(source.absolutePath, entry.fileName);
+    let log: Record<string, unknown>;
+
+    try {
+      const rawContent = await readFile(absolutePath, 'utf8');
+      const parsed = JSON.parse(rawContent) as unknown;
+
+      if (!isRecord(parsed)) {
+        throw new Error('Publish log JSON root is not an object.');
+      }
+
+      log = parsed;
+    } catch (error) {
+      invalidJsonCount += 1;
+      counts.skippedCount += 1;
+      addWrite(counts.actualWrites, 'publish_logs', 'skipped');
+      counts.warnings.push({
+        code: 'publish_log_invalid_json',
+        level: 'warning',
+        message: `Skipped publish log ${entry.fileName}: ${error instanceof Error ? error.message : 'invalid JSON'}.`,
+      });
+      continue;
+    }
+
+    const { publishVersion, usedFileNameFallback } = getPublishVersion(log, entry.fileName);
+
+    if (usedFileNameFallback) {
+      missingVersionCount += 1;
+    }
+
+    if (seenVersions.has(publishVersion)) {
+      duplicateCount += 1;
+      duplicateVersions.add(publishVersion);
+      counts.skippedCount += 1;
+      addWrite(counts.actualWrites, 'publish_logs', 'skipped');
+      continue;
+    }
+
+    seenVersions.add(publishVersion);
+
+    const status = normalizePublishStatus(log);
+    const startedAt = getPublishStartedAt(log);
+    const finishedAt = getPublishFinishedAt(log);
+
+    if (!startedAt) {
+      missingStartedAtCount += 1;
+    }
+
+    if (!finishedAt) {
+      missingFinishedAtCount += 1;
+    }
+
+    if (status === 'success') {
+      successLogCount += 1;
+    } else if (status === 'failed') {
+      failedLogCount += 1;
+    } else if (status === 'rollback') {
+      rollbackLogCount += 1;
+    } else {
+      unknownLogCount += 1;
+    }
+
+    const exists = await rowExists(
+      context.pool,
+      'SELECT COUNT(*) AS count FROM publish_logs WHERE publish_version = :publishVersion',
+      { publishVersion },
+    );
+
+    await context.pool.execute(
+      `INSERT INTO publish_logs (
+        publish_version,
+        publish_type,
+        target_type,
+        target_id,
+        status,
+        release_dir,
+        previous_version,
+        rollback_to_version,
+        summary,
+        error_message,
+        source_stats_json,
+        failed_routes_json,
+        routes_json,
+        raw_log_json,
+        started_at,
+        finished_at
+      ) VALUES (
+        :publishVersion,
+        :publishType,
+        :targetType,
+        :targetId,
+        :status,
+        :releaseDir,
+        :previousVersion,
+        :rollbackToVersion,
+        :summary,
+        :errorMessage,
+        :sourceStatsJson,
+        :failedRoutesJson,
+        :routesJson,
+        :rawLogJson,
+        :startedAt,
+        :finishedAt
+      )
+      ON DUPLICATE KEY UPDATE
+        publish_type = VALUES(publish_type),
+        target_type = VALUES(target_type),
+        target_id = VALUES(target_id),
+        status = VALUES(status),
+        release_dir = VALUES(release_dir),
+        previous_version = VALUES(previous_version),
+        rollback_to_version = VALUES(rollback_to_version),
+        summary = VALUES(summary),
+        error_message = VALUES(error_message),
+        source_stats_json = VALUES(source_stats_json),
+        failed_routes_json = VALUES(failed_routes_json),
+        routes_json = VALUES(routes_json),
+        raw_log_json = VALUES(raw_log_json),
+        started_at = VALUES(started_at),
+        finished_at = VALUES(finished_at),
+        deleted_at = NULL`,
+      {
+        publishVersion,
+        publishType: getPublishType(log, status),
+        targetType: firstString(log, 'targetType', 'target_type'),
+        targetId: asOptionalUnsignedInteger(log.targetId ?? log.target_id),
+        status,
+        releaseDir: firstString(log, 'releaseDir', 'release_dir', 'outputDir', 'outDir'),
+        previousVersion: firstString(log, 'previousVersion', 'previous_version'),
+        rollbackToVersion: firstString(log, 'rollbackToVersion', 'rollback_to_version'),
+        summary: getPublishSummary(log),
+        errorMessage: getPublishErrorMessage(log),
+        sourceStatsJson: getSourceStatsJson(log, entry.fileName),
+        failedRoutesJson: getJsonArrayString(log.failedRoutes ?? log.failed_routes),
+        routesJson: getJsonArrayString(log.routes ?? log.generatedRoutes ?? log.generated_routes),
+        rawLogJson: JSON.stringify(log),
+        startedAt,
+        finishedAt,
+      },
+    );
+
+    counts[exists ? 'updatedCount' : 'insertedCount'] += 1;
+    addWrite(counts.actualWrites, 'publish_logs', exists ? 'updated' : 'inserted');
+    publishLogsCount += 1;
+  }
+
+  if (missingVersionCount > 0) {
+    counts.warnings.push({
+      code: 'publish_log_missing_version',
+      level: 'info',
+      message: `${missingVersionCount} publish logs had no explicit version field; publish_version was derived from file name.`,
+    });
+  }
+
+  if (missingStartedAtCount > 0 || missingFinishedAtCount > 0) {
+    counts.warnings.push({
+      code: 'publish_log_missing_time_field',
+      level: 'info',
+      message: `${missingStartedAtCount} publish logs have no parseable started_at and ${missingFinishedAtCount} have no parseable finished_at.`,
+    });
+  }
+
+  if (duplicateCount > 0) {
+    counts.warnings.push({
+      code: 'publish_log_duplicate_version',
+      level: 'warning',
+      message: `${duplicateCount} publish log source entries were skipped across ${duplicateVersions.size} duplicate publish_version values.`,
+    });
+  }
+
+  counts.details = {
+    sourceCount: context.plan.sourceCount,
+    publishLogCount: publishLogsCount,
+    publishLogsCount,
+    invalidJsonCount,
+    missingVersionCount,
+    missingStartedAtCount,
+    missingFinishedAtCount,
+    duplicateCount,
+    duplicate: {
+      publish_logs: duplicateCount,
+    },
+    successLogCount,
+    failedLogCount,
+    rollbackLogCount,
+    unknownLogCount,
+    dedupeStrategy: {
+      publishLogs: ['publish_version'],
+    },
+    inserted: {
+      publish_logs: tableWriteCount(counts, 'publish_logs', 'inserted'),
+    },
+    updated: {
+      publish_logs: tableWriteCount(counts, 'publish_logs', 'updated'),
+    },
+    skipped: {
+      publish_logs: tableWriteCount(counts, 'publish_logs', 'skipped'),
+    },
+    jsonPrimarySource: true,
+    shadowIndexOnly: true,
+  };
+
+  return counts;
+}
+
 const migrators: Record<WritableContentModuleName, (context: MigrationContext) => Promise<CountableWrite>> = {
   articles: migrateArticles,
   cases: migrateCases,
@@ -4018,6 +4393,7 @@ const migrators: Record<WritableContentModuleName, (context: MigrationContext) =
   'home-video': migrateHomeVideo,
   'home-interactive-images': migrateHomeInteractiveImages,
   'media-library': migrateMediaLibrary,
+  'publish-logs': migratePublishLogs,
 };
 
 export function isWritableContentModule(moduleName: MigrationModuleName): moduleName is WritableContentModuleName {
@@ -4039,7 +4415,7 @@ export async function migrateLowRiskModule(context: MigrationContext): Promise<M
         warnings: [],
       },
       startedAt,
-      skippedReason: context.plan.skippedReason ?? 'not_implemented_in_22_3B_8',
+      skippedReason: context.plan.skippedReason ?? 'not_implemented_in_22_3B_9',
     });
   }
 
