@@ -17,6 +17,7 @@
     "typecheck:server": "tsc -p server/tsconfig.json --noEmit",
     "db:health": "tsx server/src/db/health.ts",
     "db:migrate": "tsx server/src/db/migrate.ts",
+    "compare:content": "tsx server/src/db/scripts/compare-content.ts",
     "migrate:content": "tsx server/src/db/scripts/migrate-content.ts",
     "migrate:content:dry-run": "tsx server/src/db/scripts/migrate-content.ts --dry-run"
   },
