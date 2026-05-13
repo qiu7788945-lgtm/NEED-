@@ -9,14 +9,18 @@ function printUsage(): void {
   console.log(`Usage:
   npm.cmd run compare:content
   npm.cmd run compare:content -- --module articles
+  npm.cmd run compare:content -- --module media-library
+  npm.cmd run compare:content -- --module cases
+  npm.cmd run compare:content -- --module solutions
+  npm.cmd run compare:content -- --module publish-logs
   npm.cmd run compare:content -- --module all
   npm.cmd run compare:content -- --format json
-  npm.cmd run compare:content -- --module contact-info --detail
+  npm.cmd run compare:content -- --module articles --detail
 
 Options:
   --module <name> Compare one module, or "all". Defaults to all.
   --format json   Output JSON report. JSON is the only format in 22-4.
-  --detail        Include 22-4B low-risk field checks. Enabled by default.`);
+  --detail        Include 22-4 detail field checks. Enabled by default.`);
 }
 
 function isMigrationModuleName(value: string): value is MigrationModuleName {

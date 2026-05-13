@@ -52,6 +52,29 @@ function mediaLibraryRecords(data: unknown): Record<string, unknown>[] {
   return Object.values(data).filter(isRecord);
 }
 
+function mediaLibraryStableKey(record: Record<string, unknown>): string | null {
+  const publicUrl = asString(record.publicUrl ?? record.public_url ?? record.url);
+
+  if (publicUrl) {
+    return keyed('public_url', publicUrl);
+  }
+
+  const filePath = asString(record.filePath ?? record.file_path ?? record.path);
+
+  if (filePath) {
+    return keyed('file_path', filePath);
+  }
+
+  const fileName = asString(record.fileName ?? record.file_name ?? record.storageFileName ?? record.storage_file_name ?? record.name);
+  const fileSize = stableValue(record.fileSize ?? record.file_size ?? record.size);
+
+  if (fileName && fileSize) {
+    return keyed('file_name_size', `${fileName}#${fileSize}`);
+  }
+
+  return null;
+}
+
 function getPublishVersion(log: Record<string, unknown>, fileName: string): string {
   return (
     stableValue(log.version)
@@ -153,10 +176,7 @@ function stableKeysForModule(moduleName: MigrationModuleName, data: unknown): st
   }
 
   if (moduleName === 'media-library') {
-    return compactKeys(mediaLibraryRecords(data).flatMap((record) => [
-      keyed('public_url', asString(record.publicUrl ?? record.public_url ?? record.url)),
-      keyed('file_path', asString(record.filePath ?? record.file_path ?? record.path)),
-    ]));
+    return compactKeys(mediaLibraryRecords(data).map(mediaLibraryStableKey));
   }
 
   if (moduleName === 'pages') {

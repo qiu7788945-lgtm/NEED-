@@ -8,6 +8,7 @@ import type {
   JsonSourceSnapshot,
   MysqlTargetSnapshot,
 } from './types.js';
+import { runCoreDetailCompare } from './core-detail-checks.js';
 
 const detailedModuleNames = [
   'pages',
@@ -1253,11 +1254,7 @@ export async function runDetailCompare(input: {
   mysqlTarget: MysqlTargetSnapshot;
 }): Promise<DetailCompareResult> {
   if (!isDetailedCompareModule(input.moduleName)) {
-    return {
-      fieldChecks: [],
-      warnings: [],
-      errors: [],
-    };
+    return runCoreDetailCompare(input);
   }
 
   switch (input.moduleName) {

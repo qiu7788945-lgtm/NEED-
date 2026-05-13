@@ -18,12 +18,22 @@ npm.cmd run compare:content -- --module contact-info
 npm.cmd run compare:content -- --module company-assets
 npm.cmd run compare:content -- --module home-video
 npm.cmd run compare:content -- --module home-interactive-images
+npm.cmd run compare:content -- --module articles
+npm.cmd run compare:content -- --module media-library
+npm.cmd run compare:content -- --module cases
+npm.cmd run compare:content -- --module solutions
+npm.cmd run compare:content -- --module publish-logs
 npm.cmd run compare:content -- --module all --detail
 npm.cmd run compare:content -- --module contact-info --detail
+npm.cmd run compare:content -- --module articles --detail
+npm.cmd run compare:content -- --module media-library --detail
+npm.cmd run compare:content -- --module cases --detail
+npm.cmd run compare:content -- --module solutions --detail
+npm.cmd run compare:content -- --module publish-logs --detail
 npm.cmd run compare:content -- --module all --format json
 ```
 
-`--detail` is accepted for 22-4B compatibility. Low-risk detail checks are enabled in the JSON report by default.
+`--detail` is accepted for compatibility. Detail checks are enabled in the JSON report by default for the modules covered by 22-4B and 22-4C.
 
 ## MySQL Configuration
 
@@ -62,6 +72,30 @@ Module detail behavior:
 
 `media_files` remains a shared table. 22-4B checks related media rows for `home-video` and `home-interactive-images` by association or URL, but it never uses the shared table's total count as a direct module failure condition.
 
+## 22-4C Core Detail Scope
+
+22-4C enhances core module detail comparison:
+
+- `articles`
+- `media-library`
+- `cases`
+- `solutions`
+- `publish-logs`
+
+The compare tool is still read-only in 22-4C. JSON remains the official website data source, and MySQL remains only a shadow comparison database. The tool still does not switch services, does not make the website read MySQL, and does not affect API output, frontend UI, admin UI, prerender, sitemap, or publish-log generation.
+
+Core module detail behavior:
+
+- `articles`: compares `source_id`, `slug`, `title`, summary/excerpt/description mapping, `category_slug`, status semantics, `sort_order`, `published_at`, article categories, SEO, and FAQ rows.
+- `media-library`: compares source media records to matching `media_files` rows by stable key priority: `public_url/url`, then `file_path`, then `file_name + file_size`. It checks URL/path, file names, display metadata, MIME/ext/size, category, alt text, description, status, and `metadata_json.sourceRecord` core field preservation.
+- `cases`: compares case identity and fields, cover metadata, `raw_json`, SEO/FAQ, and `case_images` by case plus `image_url` plus `sort_order`. Related `media_files` rows are checked by URL/path when present.
+- `solutions`: compares scene-solution records as scene solutions, not ordinary article pages. It checks `solutions`, `solution_groups`, `solution_media_items`, related media URL/path, SEO/FAQ, and `raw_json`.
+- `publish-logs`: compares current `server/data/publish-logs/*.json` files to the MySQL `publish_logs` shadow index, including publish version, status, routes, failed routes, source stats, time fields, and `raw_log_json` core field preservation.
+
+`media_files` is a shared table for `media-library`, `cases`, `solutions`, home modules, and company assets. Extra MySQL media rows that belong to other modules are reported as informational/warning context and do not directly make `media-library` fail. A `media-library` source record missing from `media_files` is still reported as `missing_in_mysql`, and a matching row with different core fields is still reported as `field_mismatch`.
+
+`publish_logs` is a shadow index only. Existing JSON publish logs remain the primary publish-log chain. If `build:prerender` creates a new JSON publish log after MySQL was last indexed, `compare:content -- --module publish-logs` may report `missing_in_mysql` for the new `publish_version`; that is a valid finding, not a tool failure.
+
 ## Report Shape
 
 The JSON report includes:
@@ -75,13 +109,13 @@ The JSON report includes:
 - `jsonCount`
 - `mysqlCount`
 - `status`
-- `detailStatus` for low-risk detail modules
+- `detailStatus` for detail modules
 - `stableKeyChecks`
 - `fieldChecks`
 - `warnings`
 - `errors`
 
-Low-risk `fieldChecks` entries include:
+`fieldChecks` entries include:
 
 - `fieldName`
 - `stableKey` when available
@@ -90,7 +124,7 @@ Low-risk `fieldChecks` entries include:
 - `status`
 - `message`
 
-Low-risk `detailStatus` values are:
+`detailStatus` values are:
 
 - `matched`
 - `field_mismatch`
@@ -98,14 +132,8 @@ Low-risk `detailStatus` values are:
 - `skipped_empty_source`
 - `failed`
 
-## Deferred to 22-4C
+## Deferred to 22-4D
 
-Deep comparison for these modules is intentionally deferred to 22-4C:
+22-4D remains a final compare-stage acceptance pass. It should focus on running the full command matrix against the current shadow database, reviewing report output, and confirming that no service switch, no MySQL runtime read path, no JSON mutation, no migration snapshot, no upload changes, and no prerender/sitemap/publish-log logic changes were introduced.
 
-- `articles`
-- `media-library`
-- `cases`
-- `solutions`
-- `publish-logs`
-
-Deferred checks include full article/case/solution field comparison, HTML content comparison, SEO and FAQ deep comparison, media-library metadata depth, publish log `raw_log_json` comparison, and any route, sitemap, or prerender output comparison.
+Any decision to change read services, make MySQL authoritative, alter route manifests, or change prerender/sitemap behavior is outside 22-4 and must not be done here.
