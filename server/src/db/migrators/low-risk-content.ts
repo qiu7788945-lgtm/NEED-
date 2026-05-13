@@ -12,6 +12,8 @@ import type {
 export const writableContentModules = [
   'articles',
   'cases',
+  'solutions',
+  'scenario-detail-pages',
   'pages',
   'contact-info',
   'company-assets',
@@ -2270,6 +2272,1374 @@ async function migrateCases(context: MigrationContext): Promise<CountableWrite> 
   return counts;
 }
 
+function tableWriteCount(
+  counts: CountableWrite,
+  table: string,
+  kind: 'inserted' | 'updated' | 'skipped',
+): number {
+  return counts.actualWrites.find((write) => write.table === table)?.[kind] ?? 0;
+}
+
+function getKeywords(record: Record<string, unknown>): string | null {
+  const rawKeywords = record.keywords ?? record.seoKeywords ?? record.seo_keywords;
+
+  if (Array.isArray(rawKeywords)) {
+    const keywords = rawKeywords
+      .map((keyword) => asNullableString(keyword))
+      .filter((keyword): keyword is string => Boolean(keyword));
+
+    return keywords.length > 0 ? keywords.join(',') : null;
+  }
+
+  return asNullableString(rawKeywords);
+}
+
+function getEnabledStatus(record: Record<string, unknown>, activeStatus = 'active'): string {
+  const status = asNullableString(record.status);
+
+  if (status) {
+    return status;
+  }
+
+  return asBoolean(record.enabled ?? record.is_enabled, true) ? activeStatus : 'inactive';
+}
+
+async function upsertOwnerSeo(input: {
+  context: MigrationContext;
+  counts: CountableWrite;
+  ownerType: 'solution' | 'solution_page';
+  sourceRecord: Record<string, unknown>;
+  ownerId: number;
+  ownerSourceId: string;
+  publishedAt: Date | null;
+}): Promise<number> {
+  const seoTitle = asNullableString(input.sourceRecord.seoTitle ?? input.sourceRecord.seo_title);
+  const seoDescription = asNullableString(
+    input.sourceRecord.seoDescription ?? input.sourceRecord.seo_description,
+  );
+  const keywords = getKeywords(input.sourceRecord);
+
+  if (!seoTitle && !seoDescription && !keywords) {
+    return 0;
+  }
+
+  const existingId = await findId(
+    input.context.pool,
+    `SELECT id
+     FROM seo_settings
+     WHERE owner_type = :ownerType
+       AND (owner_source_id = :ownerSourceId OR owner_id = :ownerId)
+     LIMIT 1`,
+    {
+      ownerType: input.ownerType,
+      ownerSourceId: input.ownerSourceId,
+      ownerId: input.ownerId,
+    },
+  );
+
+  if (existingId) {
+    await input.context.pool.execute(
+      `UPDATE seo_settings
+       SET owner_source_id = :ownerSourceId,
+           owner_id = :ownerId,
+           title = :title,
+           description = :description,
+           keywords = :keywords,
+           robots = 'index,follow',
+           published_at = :publishedAt,
+           deleted_at = NULL
+       WHERE id = :id`,
+      {
+        id: existingId,
+        ownerSourceId: input.ownerSourceId,
+        ownerId: input.ownerId,
+        title: seoTitle,
+        description: seoDescription,
+        keywords,
+        publishedAt: input.publishedAt,
+      },
+    );
+
+    input.counts.updatedCount += 1;
+    addWrite(input.counts.actualWrites, 'seo_settings', 'updated');
+    return 1;
+  }
+
+  await input.context.pool.execute(
+    `INSERT INTO seo_settings (
+      owner_type,
+      owner_source_id,
+      owner_id,
+      title,
+      description,
+      keywords,
+      robots,
+      published_at
+    ) VALUES (
+      :ownerType,
+      :ownerSourceId,
+      :ownerId,
+      :title,
+      :description,
+      :keywords,
+      'index,follow',
+      :publishedAt
+    )`,
+    {
+      ownerType: input.ownerType,
+      ownerSourceId: input.ownerSourceId,
+      ownerId: input.ownerId,
+      title: seoTitle,
+      description: seoDescription,
+      keywords,
+      publishedAt: input.publishedAt,
+    },
+  );
+
+  input.counts.insertedCount += 1;
+  addWrite(input.counts.actualWrites, 'seo_settings', 'inserted');
+  return 1;
+}
+
+async function upsertOwnerFaqItems(input: {
+  context: MigrationContext;
+  counts: CountableWrite;
+  ownerType: 'solution' | 'solution_page';
+  sourceRecord: Record<string, unknown>;
+  ownerId: number;
+  ownerSourceId: string;
+}): Promise<number> {
+  const rawFaqItems = input.sourceRecord.faqItems ?? input.sourceRecord.faq_items;
+  const faqItems = Array.isArray(rawFaqItems) ? rawFaqItems.filter(isRecord) : [];
+  let writtenCount = 0;
+
+  for (const [index, faqItem] of faqItems.entries()) {
+    const question = asNullableString(faqItem.question ?? faqItem.q);
+    const answer = asNullableString(faqItem.answer ?? faqItem.a);
+    const sortOrder = asNumber(faqItem.sortOrder ?? faqItem.sort_order, index + 1);
+
+    if (!question || !answer || question.length > 300) {
+      input.counts.skippedCount += 1;
+      addWrite(input.counts.actualWrites, 'faq_items', 'skipped');
+      input.counts.warnings.push({
+        code: `${input.ownerType}_faq_item_skipped`,
+        level: 'warning',
+        message: `Skipped ${input.ownerType} FAQ item at sort_order ${sortOrder} for ${input.ownerSourceId}.`,
+      });
+      continue;
+    }
+
+    const existingId = await findId(
+      input.context.pool,
+      `SELECT id
+       FROM faq_items
+       WHERE owner_type = :ownerType
+         AND owner_source_id = :ownerSourceId
+         AND sort_order = :sortOrder
+         AND question = :question
+       LIMIT 1`,
+      {
+        ownerType: input.ownerType,
+        ownerSourceId: input.ownerSourceId,
+        sortOrder,
+        question,
+      },
+    );
+
+    if (existingId) {
+      await input.context.pool.execute(
+        `UPDATE faq_items
+         SET owner_id = :ownerId,
+             answer = :answer,
+             status = :status,
+             deleted_at = NULL
+         WHERE id = :id`,
+        {
+          id: existingId,
+          ownerId: input.ownerId,
+          answer,
+          status: asString(faqItem.status, 'active'),
+        },
+      );
+
+      input.counts.updatedCount += 1;
+      addWrite(input.counts.actualWrites, 'faq_items', 'updated');
+      writtenCount += 1;
+      continue;
+    }
+
+    await input.context.pool.execute(
+      `INSERT INTO faq_items (
+        owner_type,
+        owner_source_id,
+        owner_id,
+        question,
+        answer,
+        sort_order,
+        status
+      ) VALUES (
+        :ownerType,
+        :ownerSourceId,
+        :ownerId,
+        :question,
+        :answer,
+        :sortOrder,
+        :status
+      )`,
+      {
+        ownerType: input.ownerType,
+        ownerSourceId: input.ownerSourceId,
+        ownerId: input.ownerId,
+        question,
+        answer,
+        sortOrder,
+        status: asString(faqItem.status, 'active'),
+      },
+    );
+
+    input.counts.insertedCount += 1;
+    addWrite(input.counts.actualWrites, 'faq_items', 'inserted');
+    writtenCount += 1;
+  }
+
+  return writtenCount;
+}
+
+function getSolutionTitle(solution: Record<string, unknown>): string {
+  return asString(solution.title ?? solution.name).trim();
+}
+
+function getSolutionSourceId(solution: Record<string, unknown>): string | null {
+  return asNullableString(solution.sourceId ?? solution.source_id ?? solution.id);
+}
+
+async function findSolutionId(pool: DbExecutor, sourceId: string | null, slug: string): Promise<number | null> {
+  if (sourceId) {
+    return findId(pool, 'SELECT id FROM solutions WHERE source_id = :sourceId OR slug = :slug LIMIT 1', {
+      sourceId,
+      slug,
+    });
+  }
+
+  return findId(pool, 'SELECT id FROM solutions WHERE slug = :slug LIMIT 1', { slug });
+}
+
+function buildSolutionGroupEntries(solution: Record<string, unknown>): Record<string, unknown>[] {
+  const rawGroups = solution.groups ?? solution.solutionGroups ?? solution.solution_groups ?? solution.caseGroups;
+  return Array.isArray(rawGroups) ? rawGroups.filter(isRecord) : [];
+}
+
+function buildSolutionMediaEntries(group: Record<string, unknown>): Record<string, unknown>[] {
+  const mediaSources = [group.items, group.mediaItems, group.media_items, group.images, group.videos];
+  const mediaItems: Record<string, unknown>[] = [];
+
+  for (const rawItems of mediaSources) {
+    if (!Array.isArray(rawItems)) {
+      continue;
+    }
+
+    for (const item of rawItems) {
+      if (typeof item === 'string') {
+        mediaItems.push({ mediaUrl: item });
+      } else if (isRecord(item)) {
+        mediaItems.push(item);
+      }
+    }
+  }
+
+  return mediaItems;
+}
+
+function getSolutionGroupSourceId(group: Record<string, unknown>): string | null {
+  return asNullableString(group.sourceId ?? group.source_id ?? group.id);
+}
+
+async function findSolutionGroupId(
+  pool: DbExecutor,
+  sourceId: string | null,
+  solutionId: number,
+  slug: string,
+): Promise<number | null> {
+  if (sourceId) {
+    return findId(
+      pool,
+      'SELECT id FROM solution_groups WHERE source_id = :sourceId OR (solution_id = :solutionId AND slug = :slug) LIMIT 1',
+      {
+        sourceId,
+        solutionId,
+        slug,
+      },
+    );
+  }
+
+  return findId(
+    pool,
+    'SELECT id FROM solution_groups WHERE solution_id = :solutionId AND slug = :slug LIMIT 1',
+    {
+      solutionId,
+      slug,
+    },
+  );
+}
+
+function getSolutionMediaSourceId(item: Record<string, unknown>): string | null {
+  return asNullableString(item.sourceId ?? item.source_id ?? item.id);
+}
+
+function getSolutionMediaUrl(item: Record<string, unknown>): string | null {
+  return normalizeMediaPath(firstString(item, 'mediaUrl', 'media_url', 'url', 'publicUrl', 'public_url', 'src'));
+}
+
+function normalizeSolutionFileType(item: Record<string, unknown>, mediaUrl: string): string {
+  const fileType = firstString(item, 'fileType', 'file_type', 'type');
+
+  if (fileType) {
+    return fileType.toLowerCase().slice(0, 30);
+  }
+
+  const fileExt = extFromFileName(mediaUrl);
+  return ['mp4', 'mov', 'webm', 'avi'].includes(fileExt ?? '') ? 'video' : 'image';
+}
+
+async function upsertSolutionMediaItems(input: {
+  context: MigrationContext;
+  counts: CountableWrite;
+  solution: Record<string, unknown>;
+  solutionId: number;
+  solutionSlug: string;
+  group: Record<string, unknown>;
+  groupId: number;
+  groupSourceId: string;
+  seenKeys: Set<string>;
+}): Promise<{
+  solutionMediaItemsCount: number;
+  mediaFilesCount: number;
+  missingMediaUrlCount: number;
+  duplicateCount: number;
+}> {
+  const mediaItems = buildSolutionMediaEntries(input.group);
+  let solutionMediaItemsCount = 0;
+  let mediaFilesCount = 0;
+  let missingMediaUrlCount = 0;
+  let duplicateCount = 0;
+
+  for (const [index, item] of mediaItems.entries()) {
+    const mediaUrl = getSolutionMediaUrl(item);
+    const sortOrder = asNumber(item.sortOrder ?? item.sort_order, index + 1);
+    const sourceId = getSolutionMediaSourceId(item);
+
+    if (!mediaUrl) {
+      missingMediaUrlCount += 1;
+      input.counts.skippedCount += 1;
+      addWrite(input.counts.actualWrites, 'solution_media_items', 'skipped');
+      input.counts.warnings.push({
+        code: 'solution_media_url_missing',
+        level: 'warning',
+        message: `Skipped solution media item at sort_order ${sortOrder} for group ${input.groupSourceId}; media_url is empty.`,
+      });
+      continue;
+    }
+
+    const dedupeKey = sourceId
+      ? `source:${sourceId}`
+      : `group:${input.groupId}:${mediaUrl}:${sortOrder}`;
+
+    if (input.seenKeys.has(dedupeKey)) {
+      duplicateCount += 1;
+      input.counts.skippedCount += 1;
+      addWrite(input.counts.actualWrites, 'solution_media_items', 'skipped');
+      continue;
+    }
+
+    input.seenKeys.add(dedupeKey);
+
+    const fileType = normalizeSolutionFileType(item, mediaUrl);
+    const fileName = firstString(item, 'mediaFileName', 'media_file_name', 'fileName', 'file_name')
+      ?? normalizeFileName(mediaUrl, null);
+    const mediaDisplayName = firstString(item, 'mediaDisplayName', 'media_display_name', 'displayName', 'title');
+    const mediaWrite = await upsertShadowMediaFile(input.context, input.counts, {
+      moduleName: 'solutions',
+      sourceKey: sourceId ?? `${input.groupSourceId}:media:${sortOrder}`,
+      role: 'solution_media_item',
+      publicUrl: mediaUrl,
+      filePath: firstString(item, 'filePath', 'file_path', 'path') ?? mediaUrl,
+      fileName,
+      originalName: firstString(item, 'originalName', 'original_name') ?? fileName,
+      displayName: mediaDisplayName,
+      fileSize: asOptionalUnsignedInteger(item.fileSize ?? item.file_size ?? item.size),
+      width: asOptionalUnsignedInteger(item.width),
+      height: asOptionalUnsignedInteger(item.height),
+      durationSeconds: asOptionalNumber(item.durationSeconds ?? item.duration_seconds ?? item.duration),
+      category: fileType === 'video' ? 'solution-video' : 'solution-image',
+      altText: firstString(item, 'altText', 'alt_text', 'alt', 'mediaDisplayName', 'media_display_name', 'title'),
+      description: firstString(item, 'description', 'caption'),
+      status: getEnabledStatus(item),
+      metadata: {
+        ownerType: 'solution',
+        solutionId: input.solutionId,
+        solutionSlug: input.solutionSlug,
+        groupId: input.groupId,
+        groupSourceId: input.groupSourceId,
+        sortOrder,
+        fileType,
+        sourceRecord: item,
+      },
+    });
+
+    if (mediaWrite.writeKind !== 'skipped') {
+      mediaFilesCount += 1;
+    }
+
+    const existingId = sourceId
+      ? await findId(
+          input.context.pool,
+          'SELECT id FROM solution_media_items WHERE source_id = :sourceId LIMIT 1',
+          { sourceId },
+        )
+      : await findId(
+          input.context.pool,
+          `SELECT id
+           FROM solution_media_items
+           WHERE group_id = :groupId
+             AND media_url = :mediaUrl
+             AND sort_order = :sortOrder
+           LIMIT 1`,
+          {
+            groupId: input.groupId,
+            mediaUrl,
+            sortOrder,
+          },
+        );
+
+    if (existingId) {
+      await input.context.pool.execute(
+        `UPDATE solution_media_items
+         SET group_id = :groupId,
+             media_id = :mediaId,
+             file_type = :fileType,
+             media_url = :mediaUrl,
+             media_file_name = :mediaFileName,
+             media_display_name = :mediaDisplayName,
+             alt_text = :altText,
+             caption = :caption,
+             sort_order = :sortOrder,
+             is_enabled = :isEnabled,
+             deleted_at = NULL
+         WHERE id = :id`,
+        {
+          id: existingId,
+          groupId: input.groupId,
+          mediaId: mediaWrite.mediaId,
+          fileType,
+          mediaUrl,
+          mediaFileName: fileName,
+          mediaDisplayName,
+          altText: firstString(item, 'altText', 'alt_text', 'alt'),
+          caption: firstString(item, 'caption'),
+          sortOrder,
+          isEnabled: asBoolean(item.enabled ?? item.is_enabled, true) ? 1 : 0,
+        },
+      );
+
+      input.counts.updatedCount += 1;
+      addWrite(input.counts.actualWrites, 'solution_media_items', 'updated');
+      solutionMediaItemsCount += 1;
+      continue;
+    }
+
+    await input.context.pool.execute(
+      `INSERT INTO solution_media_items (
+        group_id,
+        source_id,
+        media_id,
+        file_type,
+        media_url,
+        media_file_name,
+        media_display_name,
+        alt_text,
+        caption,
+        sort_order,
+        is_enabled
+      ) VALUES (
+        :groupId,
+        :sourceId,
+        :mediaId,
+        :fileType,
+        :mediaUrl,
+        :mediaFileName,
+        :mediaDisplayName,
+        :altText,
+        :caption,
+        :sortOrder,
+        :isEnabled
+      )
+      ON DUPLICATE KEY UPDATE
+        group_id = VALUES(group_id),
+        media_id = VALUES(media_id),
+        file_type = VALUES(file_type),
+        media_url = VALUES(media_url),
+        media_file_name = VALUES(media_file_name),
+        media_display_name = VALUES(media_display_name),
+        alt_text = VALUES(alt_text),
+        caption = VALUES(caption),
+        sort_order = VALUES(sort_order),
+        is_enabled = VALUES(is_enabled),
+        deleted_at = NULL`,
+      {
+        groupId: input.groupId,
+        sourceId,
+        mediaId: mediaWrite.mediaId,
+        fileType,
+        mediaUrl,
+        mediaFileName: fileName,
+        mediaDisplayName,
+        altText: firstString(item, 'altText', 'alt_text', 'alt'),
+        caption: firstString(item, 'caption'),
+        sortOrder,
+        isEnabled: asBoolean(item.enabled ?? item.is_enabled, true) ? 1 : 0,
+      },
+    );
+
+    input.counts.insertedCount += 1;
+    addWrite(input.counts.actualWrites, 'solution_media_items', 'inserted');
+    solutionMediaItemsCount += 1;
+  }
+
+  return {
+    solutionMediaItemsCount,
+    mediaFilesCount,
+    missingMediaUrlCount,
+    duplicateCount,
+  };
+}
+
+async function upsertSolutionGroups(input: {
+  context: MigrationContext;
+  counts: CountableWrite;
+  solution: Record<string, unknown>;
+  solutionId: number;
+  solutionSlug: string;
+}): Promise<{
+  solutionGroupsCount: number;
+  solutionMediaItemsCount: number;
+  mediaFilesCount: number;
+  missingMediaUrlCount: number;
+  duplicateCount: number;
+}> {
+  const groups = buildSolutionGroupEntries(input.solution);
+  const seenMediaKeys = new Set<string>();
+  let solutionGroupsCount = 0;
+  let solutionMediaItemsCount = 0;
+  let mediaFilesCount = 0;
+  let missingMediaUrlCount = 0;
+  let duplicateCount = 0;
+
+  for (const [index, group] of groups.entries()) {
+    const title = asString(group.title ?? group.name).trim();
+    const slug = asString(group.slug).trim();
+
+    if (!title || !slug) {
+      input.counts.skippedCount += 1;
+      addWrite(input.counts.actualWrites, 'solution_groups', 'skipped');
+      input.counts.warnings.push({
+        code: 'solution_group_missing_required_field',
+        level: 'warning',
+        message: `Skipped solution group at index ${index} for ${input.solutionSlug}; title and slug are required.`,
+      });
+      continue;
+    }
+
+    const sourceId = getSolutionGroupSourceId(group);
+    const sceneSlug = firstString(group, 'sceneSlug', 'scene_slug') ?? input.solutionSlug;
+    const exists = sourceId
+      ? await rowExists(
+          input.context.pool,
+          `SELECT COUNT(*) AS count
+           FROM solution_groups
+           WHERE source_id = :sourceId
+              OR (solution_id = :solutionId AND slug = :slug)`,
+          {
+            sourceId,
+            solutionId: input.solutionId,
+            slug,
+          },
+        )
+      : await rowExists(
+          input.context.pool,
+          'SELECT COUNT(*) AS count FROM solution_groups WHERE solution_id = :solutionId AND slug = :slug',
+          {
+            solutionId: input.solutionId,
+            slug,
+          },
+        );
+
+    await input.context.pool.execute(
+      `INSERT INTO solution_groups (
+        solution_id,
+        source_id,
+        title,
+        slug,
+        summary,
+        scene_slug,
+        sort_order,
+        is_enabled
+      ) VALUES (
+        :solutionId,
+        :sourceId,
+        :title,
+        :slug,
+        :summary,
+        :sceneSlug,
+        :sortOrder,
+        :isEnabled
+      )
+      ON DUPLICATE KEY UPDATE
+        solution_id = VALUES(solution_id),
+        title = VALUES(title),
+        summary = VALUES(summary),
+        scene_slug = VALUES(scene_slug),
+        sort_order = VALUES(sort_order),
+        is_enabled = VALUES(is_enabled),
+        deleted_at = NULL`,
+      {
+        solutionId: input.solutionId,
+        sourceId,
+        title,
+        slug,
+        summary: asNullableString(group.summary ?? group.description),
+        sceneSlug,
+        sortOrder: asNumber(group.sortOrder ?? group.sort_order, index + 1),
+        isEnabled: asBoolean(group.enabled ?? group.is_enabled, true) ? 1 : 0,
+      },
+    );
+
+    input.counts[exists ? 'updatedCount' : 'insertedCount'] += 1;
+    addWrite(input.counts.actualWrites, 'solution_groups', exists ? 'updated' : 'inserted');
+    solutionGroupsCount += 1;
+
+    const groupId = await findSolutionGroupId(input.context.pool, sourceId, input.solutionId, slug);
+
+    if (!groupId) {
+      input.counts.warnings.push({
+        code: 'solution_group_id_missing',
+        level: 'warning',
+        message: `Could not resolve solution group id for "${input.solutionSlug}/${slug}"; media items were skipped.`,
+      });
+      continue;
+    }
+
+    const mediaCounts = await upsertSolutionMediaItems({
+      context: input.context,
+      counts: input.counts,
+      solution: input.solution,
+      solutionId: input.solutionId,
+      solutionSlug: input.solutionSlug,
+      group,
+      groupId,
+      groupSourceId: sourceId ?? `${input.solutionSlug}/${slug}`,
+      seenKeys: seenMediaKeys,
+    });
+
+    solutionMediaItemsCount += mediaCounts.solutionMediaItemsCount;
+    mediaFilesCount += mediaCounts.mediaFilesCount;
+    missingMediaUrlCount += mediaCounts.missingMediaUrlCount;
+    duplicateCount += mediaCounts.duplicateCount;
+  }
+
+  return {
+    solutionGroupsCount,
+    solutionMediaItemsCount,
+    mediaFilesCount,
+    missingMediaUrlCount,
+    duplicateCount,
+  };
+}
+
+async function migrateSolutions(context: MigrationContext): Promise<CountableWrite> {
+  const source = await loadSource(context.definition);
+  const solutions = Array.isArray(source.data) ? source.data.filter(isRecord) : [];
+  const counts = emptyWrites();
+  let solutionsCount = 0;
+  let solutionGroupsCount = 0;
+  let solutionMediaItemsCount = 0;
+  let mediaFilesCount = 0;
+  let seoCount = 0;
+  let faqCount = 0;
+  let skippedSolutionCount = 0;
+  let missingMediaUrlCount = 0;
+  let duplicateCount = 0;
+
+  for (const [index, solution] of solutions.entries()) {
+    const title = getSolutionTitle(solution);
+    const slug = asString(solution.slug).trim();
+
+    if (!title || !slug) {
+      skippedSolutionCount += 1;
+      counts.skippedCount += 1;
+      addWrite(counts.actualWrites, 'solutions', 'skipped');
+      counts.warnings.push({
+        code: 'solution_missing_required_field',
+        level: 'warning',
+        message: `Skipped solution at index ${index}; title/name and slug are required.`,
+      });
+      continue;
+    }
+
+    const sourceId = getSolutionSourceId(solution);
+    const ownerSourceId = sourceId ?? slug;
+    const status = getEnabledStatus(solution);
+    const publishedAt = status === 'published'
+      ? asDate(solution.publishedAt ?? solution.published_at ?? solution.updatedAt ?? solution.createdAt)
+      : null;
+    const coverUrl = normalizeMediaPath(firstString(solution, 'coverUrl', 'cover_url'));
+    const coverFileName = firstString(solution, 'coverFileName', 'cover_file_name') ?? normalizeFileName(coverUrl, null);
+    const coverMedia = coverUrl
+      ? await upsertShadowMediaFile(context, counts, {
+          moduleName: 'solutions',
+          sourceKey: `${ownerSourceId}:cover`,
+          role: 'solution_cover',
+          publicUrl: coverUrl,
+          filePath: coverUrl,
+          fileName: coverFileName,
+          originalName: coverFileName,
+          displayName: firstString(solution, 'coverDisplayName', 'cover_display_name'),
+          category: 'solution-cover',
+          altText: title,
+          description: asNullableString(solution.summary ?? solution.description),
+          status: 'active',
+          metadata: {
+            ownerType: 'solution',
+            ownerSourceId,
+            slug,
+            sourceRecord: {
+              coverUrl,
+              coverFileName,
+              coverDisplayName: firstString(solution, 'coverDisplayName', 'cover_display_name'),
+            },
+          },
+        })
+      : {
+          mediaId: null,
+          writeKind: 'skipped' as const,
+          stableKey: null,
+        };
+
+    if (coverMedia.writeKind !== 'skipped') {
+      mediaFilesCount += 1;
+    }
+
+    const exists = sourceId
+      ? await rowExists(
+          context.pool,
+          'SELECT COUNT(*) AS count FROM solutions WHERE source_id = :sourceId OR slug = :slug',
+          { sourceId, slug },
+        )
+      : await rowExists(context.pool, 'SELECT COUNT(*) AS count FROM solutions WHERE slug = :slug', { slug });
+
+    await context.pool.execute(
+      `INSERT INTO solutions (
+        source_id,
+        title,
+        slug,
+        summary,
+        cover_media_id,
+        cover_url,
+        raw_json,
+        status,
+        sort_order,
+        published_at
+      ) VALUES (
+        :sourceId,
+        :title,
+        :slug,
+        :summary,
+        :coverMediaId,
+        :coverUrl,
+        :rawJson,
+        :status,
+        :sortOrder,
+        :publishedAt
+      )
+      ON DUPLICATE KEY UPDATE
+        source_id = VALUES(source_id),
+        title = VALUES(title),
+        summary = VALUES(summary),
+        cover_media_id = VALUES(cover_media_id),
+        cover_url = VALUES(cover_url),
+        raw_json = VALUES(raw_json),
+        status = VALUES(status),
+        sort_order = VALUES(sort_order),
+        published_at = VALUES(published_at),
+        deleted_at = NULL`,
+      {
+        sourceId,
+        title,
+        slug,
+        summary: asNullableString(solution.summary ?? solution.description),
+        coverMediaId: coverMedia.mediaId,
+        coverUrl,
+        rawJson: JSON.stringify(solution),
+        status,
+        sortOrder: asNumber(solution.sortOrder ?? solution.sort_order, index + 1),
+        publishedAt,
+      },
+    );
+
+    counts[exists ? 'updatedCount' : 'insertedCount'] += 1;
+    addWrite(counts.actualWrites, 'solutions', exists ? 'updated' : 'inserted');
+    solutionsCount += 1;
+
+    const solutionId = await findSolutionId(context.pool, sourceId, slug);
+
+    if (!solutionId) {
+      counts.warnings.push({
+        code: 'solution_id_missing',
+        level: 'warning',
+        message: `Could not resolve solution id for slug "${slug}"; groups, media, SEO, and FAQ rows were skipped.`,
+      });
+      continue;
+    }
+
+    const groupCounts = await upsertSolutionGroups({
+      context,
+      counts,
+      solution,
+      solutionId,
+      solutionSlug: slug,
+    });
+
+    solutionGroupsCount += groupCounts.solutionGroupsCount;
+    solutionMediaItemsCount += groupCounts.solutionMediaItemsCount;
+    mediaFilesCount += groupCounts.mediaFilesCount;
+    missingMediaUrlCount += groupCounts.missingMediaUrlCount;
+    duplicateCount += groupCounts.duplicateCount;
+    seoCount += await upsertOwnerSeo({
+      context,
+      counts,
+      ownerType: 'solution',
+      sourceRecord: solution,
+      ownerId: solutionId,
+      ownerSourceId,
+      publishedAt,
+    });
+    faqCount += await upsertOwnerFaqItems({
+      context,
+      counts,
+      ownerType: 'solution',
+      sourceRecord: solution,
+      ownerId: solutionId,
+      ownerSourceId,
+    });
+  }
+
+  if (seoCount === 0) {
+    counts.warnings.push({
+      code: 'solutions_seo_empty',
+      level: 'info',
+      message: 'No solution SEO fields were found; seo_settings was skipped for solutions.',
+    });
+  }
+
+  if (faqCount === 0) {
+    counts.warnings.push({
+      code: 'solutions_faq_empty',
+      level: 'info',
+      message: 'No solution FAQ items were found; faq_items was skipped for solutions.',
+    });
+  }
+
+  counts.details = {
+    sourceCount: context.plan.sourceCount,
+    solutionCount: solutionsCount,
+    solutionsCount,
+    solutionGroupCount: solutionGroupsCount,
+    solutionGroupsCount,
+    solutionMediaItemCount: solutionMediaItemsCount,
+    solutionMediaItemsCount,
+    mediaFilesCount,
+    seoCount,
+    faqCount,
+    skippedSolutionCount,
+    missingMediaUrlCount,
+    duplicateCount,
+    duplicate: {
+      solution_media_items: duplicateCount,
+      media_files: 0,
+    },
+    dedupeStrategy: {
+      solutions: ['source_id', 'slug'],
+      solutionGroups: ['source_id', 'solution_id+slug'],
+      solutionMediaItems: ['source_id', 'group_id+media_url+sort_order'],
+      mediaFiles: ['public_url', 'file_path', 'file_name+file_size'],
+    },
+    inserted: {
+      solutions: tableWriteCount(counts, 'solutions', 'inserted'),
+      solution_groups: tableWriteCount(counts, 'solution_groups', 'inserted'),
+      solution_media_items: tableWriteCount(counts, 'solution_media_items', 'inserted'),
+      media_files: tableWriteCount(counts, 'media_files', 'inserted'),
+      seo_settings: tableWriteCount(counts, 'seo_settings', 'inserted'),
+      faq_items: tableWriteCount(counts, 'faq_items', 'inserted'),
+    },
+    updated: {
+      solutions: tableWriteCount(counts, 'solutions', 'updated'),
+      solution_groups: tableWriteCount(counts, 'solution_groups', 'updated'),
+      solution_media_items: tableWriteCount(counts, 'solution_media_items', 'updated'),
+      media_files: tableWriteCount(counts, 'media_files', 'updated'),
+      seo_settings: tableWriteCount(counts, 'seo_settings', 'updated'),
+      faq_items: tableWriteCount(counts, 'faq_items', 'updated'),
+    },
+    skipped: {
+      solutions: tableWriteCount(counts, 'solutions', 'skipped'),
+      solution_groups: tableWriteCount(counts, 'solution_groups', 'skipped'),
+      solution_media_items: tableWriteCount(counts, 'solution_media_items', 'skipped'),
+      media_files: tableWriteCount(counts, 'media_files', 'skipped'),
+      seo_settings: tableWriteCount(counts, 'seo_settings', 'skipped'),
+      faq_items: tableWriteCount(counts, 'faq_items', 'skipped'),
+    },
+    faqSkippedReason: faqCount === 0 ? 'source_has_no_faq_items' : null,
+    seoSkippedReason: seoCount === 0 ? 'source_has_no_seo_fields' : null,
+  };
+
+  return counts;
+}
+
+function buildScenarioPageEntries(data: unknown): Record<string, unknown>[] {
+  return Array.isArray(data) ? data.filter(isRecord) : [];
+}
+
+function getScenarioPageSourceId(page: Record<string, unknown>): string | null {
+  return asNullableString(page.sourceId ?? page.source_id ?? page.id);
+}
+
+function lastRouteSegment(routePath: string | null): string | null {
+  if (!routePath) {
+    return null;
+  }
+
+  return routePath.split('/').filter(Boolean).at(-1) ?? null;
+}
+
+async function resolveScenarioPageSolutionId(
+  pool: DbExecutor,
+  page: Record<string, unknown>,
+): Promise<number | null> {
+  const solutionSlug = firstString(page, 'solutionSlug', 'solution_slug', 'sceneSlug', 'scene_slug');
+  const solutionSourceId = firstString(page, 'solutionSourceId', 'solution_source_id');
+
+  if (solutionSourceId) {
+    const bySourceId = await findId(pool, 'SELECT id FROM solutions WHERE source_id = :sourceId LIMIT 1', {
+      sourceId: solutionSourceId,
+    });
+
+    if (bySourceId) {
+      return bySourceId;
+    }
+  }
+
+  if (solutionSlug) {
+    return findId(pool, 'SELECT id FROM solutions WHERE slug = :slug LIMIT 1', { slug: solutionSlug });
+  }
+
+  return null;
+}
+
+async function findSolutionPageId(input: {
+  pool: DbExecutor;
+  sourceId: string | null;
+  routePath: string | null;
+  solutionId: number | null;
+  slug: string;
+}): Promise<number | null> {
+  if (input.sourceId) {
+    const bySourceId = await findId(input.pool, 'SELECT id FROM solution_pages WHERE source_id = :sourceId LIMIT 1', {
+      sourceId: input.sourceId,
+    });
+
+    if (bySourceId) {
+      return bySourceId;
+    }
+  }
+
+  if (input.routePath) {
+    const byRoutePath = await findId(input.pool, 'SELECT id FROM solution_pages WHERE route_path = :routePath LIMIT 1', {
+      routePath: input.routePath,
+    });
+
+    if (byRoutePath) {
+      return byRoutePath;
+    }
+  }
+
+  if (input.solutionId) {
+    return findId(
+      input.pool,
+      'SELECT id FROM solution_pages WHERE solution_id = :solutionId AND slug = :slug LIMIT 1',
+      {
+        solutionId: input.solutionId,
+        slug: input.slug,
+      },
+    );
+  }
+
+  return null;
+}
+
+function buildScenarioPageBlocks(page: Record<string, unknown>): Record<string, unknown>[] {
+  const rawBlocks = page.blocks
+    ?? page.pageBlocks
+    ?? page.page_blocks
+    ?? page.solutionPageBlocks
+    ?? page.solution_page_blocks
+    ?? page.contentBlocks
+    ?? page.content_blocks
+    ?? page.sections;
+
+  return Array.isArray(rawBlocks) ? rawBlocks.filter(isRecord) : [];
+}
+
+async function upsertScenarioPageBlocks(input: {
+  context: MigrationContext;
+  counts: CountableWrite;
+  page: Record<string, unknown>;
+  solutionPageId: number;
+  ownerSourceId: string;
+}): Promise<number> {
+  const blocks = buildScenarioPageBlocks(input.page);
+  let blockCount = 0;
+
+  for (const [index, block] of blocks.entries()) {
+    const blockType = firstString(block, 'blockType', 'block_type', 'type') ?? 'content';
+    const sortOrder = asNumber(block.sortOrder ?? block.sort_order, index + 1);
+    const existingId = await findId(
+      input.context.pool,
+      `SELECT id
+       FROM solution_page_blocks
+       WHERE solution_page_id = :solutionPageId
+         AND block_type = :blockType
+         AND sort_order = :sortOrder
+       LIMIT 1`,
+      {
+        solutionPageId: input.solutionPageId,
+        blockType,
+        sortOrder,
+      },
+    );
+
+    if (existingId) {
+      await input.context.pool.execute(
+        `UPDATE solution_page_blocks
+         SET block_data_json = :blockDataJson,
+             is_enabled = :isEnabled,
+             deleted_at = NULL
+         WHERE id = :id`,
+        {
+          id: existingId,
+          blockDataJson: JSON.stringify(block),
+          isEnabled: asBoolean(block.enabled ?? block.is_enabled, true) ? 1 : 0,
+        },
+      );
+
+      input.counts.updatedCount += 1;
+      addWrite(input.counts.actualWrites, 'solution_page_blocks', 'updated');
+      blockCount += 1;
+      continue;
+    }
+
+    await input.context.pool.execute(
+      `INSERT INTO solution_page_blocks (
+        solution_page_id,
+        block_type,
+        block_data_json,
+        sort_order,
+        is_enabled
+      ) VALUES (
+        :solutionPageId,
+        :blockType,
+        :blockDataJson,
+        :sortOrder,
+        :isEnabled
+      )`,
+      {
+        solutionPageId: input.solutionPageId,
+        blockType,
+        blockDataJson: JSON.stringify(block),
+        sortOrder,
+        isEnabled: asBoolean(block.enabled ?? block.is_enabled, true) ? 1 : 0,
+      },
+    );
+
+    input.counts.insertedCount += 1;
+    addWrite(input.counts.actualWrites, 'solution_page_blocks', 'inserted');
+    blockCount += 1;
+  }
+
+  if (blocks.length === 0) {
+    input.counts.warnings.push({
+      code: 'scenario_page_blocks_empty',
+      level: 'info',
+      message: `Scenario detail page ${input.ownerSourceId} has no explicit blocks; solution_page_blocks was skipped.`,
+    });
+  }
+
+  return blockCount;
+}
+
+async function migrateScenarioDetailPages(context: MigrationContext): Promise<CountableWrite> {
+  const source = await loadSource(context.definition);
+  const pages = buildScenarioPageEntries(source.data);
+  const counts = emptyWrites();
+  let solutionPagesCount = 0;
+  let solutionPageBlocksCount = 0;
+  let mediaFilesCount = 0;
+  let seoCount = 0;
+  let faqCount = 0;
+  let skippedPageCount = 0;
+
+  if (pages.length === 0) {
+    counts.warnings.push({
+      code: 'scenario_detail_pages_empty_source',
+      level: 'info',
+      message: 'scenario-detail-pages source is empty; solution_pages and solution_page_blocks were not written.',
+    });
+    counts.details = {
+      sourceCount: context.plan.sourceCount,
+      emptySource: true,
+      emptySourceWarning: 'scenario-detail-pages source is empty',
+      solutionPageCount: solutionPagesCount,
+      solutionPagesCount,
+      solutionPageBlockCount: solutionPageBlocksCount,
+      solutionPageBlocksCount,
+      mediaFilesCount,
+      seoCount,
+      faqCount,
+      skippedPageCount,
+    };
+    return counts;
+  }
+
+  for (const [index, page] of pages.entries()) {
+    const title = asString(page.title ?? page.name).trim();
+    const routePath = normalizeMediaPath(firstString(page, 'routePath', 'route_path', 'path'));
+    const slug = asString(page.slug ?? lastRouteSegment(routePath) ?? getScenarioPageSourceId(page)).trim();
+
+    if (!title || !slug) {
+      skippedPageCount += 1;
+      counts.skippedCount += 1;
+      addWrite(counts.actualWrites, 'solution_pages', 'skipped');
+      counts.warnings.push({
+        code: 'scenario_page_missing_required_field',
+        level: 'warning',
+        message: `Skipped scenario detail page at index ${index}; title and slug are required.`,
+      });
+      continue;
+    }
+
+    const sourceId = getScenarioPageSourceId(page);
+    const ownerSourceId = sourceId ?? routePath ?? slug;
+    const solutionId = await resolveScenarioPageSolutionId(context.pool, page);
+    const status = getEnabledStatus(page, 'published');
+    const publishedAt = status === 'published'
+      ? asDate(page.publishedAt ?? page.published_at ?? page.updatedAt ?? page.createdAt)
+      : null;
+    const coverUrl = normalizeMediaPath(firstString(page, 'coverUrl', 'cover_url'));
+    const coverFileName = firstString(page, 'coverFileName', 'cover_file_name') ?? normalizeFileName(coverUrl, null);
+    const coverMedia = coverUrl
+      ? await upsertShadowMediaFile(context, counts, {
+          moduleName: 'scenario-detail-pages',
+          sourceKey: `${ownerSourceId}:cover`,
+          role: 'solution_page_cover',
+          publicUrl: coverUrl,
+          filePath: coverUrl,
+          fileName: coverFileName,
+          originalName: coverFileName,
+          displayName: firstString(page, 'coverDisplayName', 'cover_display_name'),
+          category: 'solution-page-cover',
+          altText: title,
+          description: asNullableString(page.summary ?? page.description),
+          status: 'active',
+          metadata: {
+            ownerType: 'solution_page',
+            ownerSourceId,
+            routePath,
+            slug,
+          },
+        })
+      : {
+          mediaId: null,
+          writeKind: 'skipped' as const,
+          stableKey: null,
+        };
+
+    if (coverMedia.writeKind !== 'skipped') {
+      mediaFilesCount += 1;
+    }
+
+    const existingId = await findSolutionPageId({
+      pool: context.pool,
+      sourceId,
+      routePath,
+      solutionId,
+      slug,
+    });
+
+    await context.pool.execute(
+      `INSERT INTO solution_pages (
+        solution_id,
+        source_id,
+        title,
+        slug,
+        route_path,
+        summary,
+        cover_media_id,
+        cover_url,
+        status,
+        sort_order,
+        published_at
+      ) VALUES (
+        :solutionId,
+        :sourceId,
+        :title,
+        :slug,
+        :routePath,
+        :summary,
+        :coverMediaId,
+        :coverUrl,
+        :status,
+        :sortOrder,
+        :publishedAt
+      )
+      ON DUPLICATE KEY UPDATE
+        solution_id = VALUES(solution_id),
+        title = VALUES(title),
+        route_path = VALUES(route_path),
+        summary = VALUES(summary),
+        cover_media_id = VALUES(cover_media_id),
+        cover_url = VALUES(cover_url),
+        status = VALUES(status),
+        sort_order = VALUES(sort_order),
+        published_at = VALUES(published_at),
+        deleted_at = NULL`,
+      {
+        solutionId,
+        sourceId,
+        title,
+        slug,
+        routePath,
+        summary: asNullableString(page.summary ?? page.description),
+        coverMediaId: coverMedia.mediaId,
+        coverUrl,
+        status,
+        sortOrder: asNumber(page.sortOrder ?? page.sort_order, index + 1),
+        publishedAt,
+      },
+    );
+
+    counts[existingId ? 'updatedCount' : 'insertedCount'] += 1;
+    addWrite(counts.actualWrites, 'solution_pages', existingId ? 'updated' : 'inserted');
+    solutionPagesCount += 1;
+
+    const solutionPageId = await findSolutionPageId({
+      pool: context.pool,
+      sourceId,
+      routePath,
+      solutionId,
+      slug,
+    });
+
+    if (!solutionPageId) {
+      counts.warnings.push({
+        code: 'scenario_page_id_missing',
+        level: 'warning',
+        message: `Could not resolve solution page id for "${ownerSourceId}"; blocks, SEO, and FAQ rows were skipped.`,
+      });
+      continue;
+    }
+
+    solutionPageBlocksCount += await upsertScenarioPageBlocks({
+      context,
+      counts,
+      page,
+      solutionPageId,
+      ownerSourceId,
+    });
+    seoCount += await upsertOwnerSeo({
+      context,
+      counts,
+      ownerType: 'solution_page',
+      sourceRecord: page,
+      ownerId: solutionPageId,
+      ownerSourceId,
+      publishedAt,
+    });
+    faqCount += await upsertOwnerFaqItems({
+      context,
+      counts,
+      ownerType: 'solution_page',
+      sourceRecord: page,
+      ownerId: solutionPageId,
+      ownerSourceId,
+    });
+  }
+
+  if (seoCount === 0) {
+    counts.warnings.push({
+      code: 'scenario_detail_pages_seo_empty',
+      level: 'info',
+      message: 'No scenario detail page SEO fields were found; seo_settings was skipped for solution pages.',
+    });
+  }
+
+  if (faqCount === 0) {
+    counts.warnings.push({
+      code: 'scenario_detail_pages_faq_empty',
+      level: 'info',
+      message: 'No scenario detail page FAQ items were found; faq_items was skipped for solution pages.',
+    });
+  }
+
+  counts.details = {
+    sourceCount: context.plan.sourceCount,
+    emptySource: false,
+    solutionPageCount: solutionPagesCount,
+    solutionPagesCount,
+    solutionPageBlockCount: solutionPageBlocksCount,
+    solutionPageBlocksCount,
+    mediaFilesCount,
+    seoCount,
+    faqCount,
+    skippedPageCount,
+    dedupeStrategy: {
+      solutionPages: ['source_id', 'route_path', 'solution_id+slug'],
+      solutionPageBlocks: ['solution_page_id', 'block_type', 'sort_order'],
+    },
+    inserted: {
+      solution_pages: tableWriteCount(counts, 'solution_pages', 'inserted'),
+      solution_page_blocks: tableWriteCount(counts, 'solution_page_blocks', 'inserted'),
+      media_files: tableWriteCount(counts, 'media_files', 'inserted'),
+      seo_settings: tableWriteCount(counts, 'seo_settings', 'inserted'),
+      faq_items: tableWriteCount(counts, 'faq_items', 'inserted'),
+    },
+    updated: {
+      solution_pages: tableWriteCount(counts, 'solution_pages', 'updated'),
+      solution_page_blocks: tableWriteCount(counts, 'solution_page_blocks', 'updated'),
+      media_files: tableWriteCount(counts, 'media_files', 'updated'),
+      seo_settings: tableWriteCount(counts, 'seo_settings', 'updated'),
+      faq_items: tableWriteCount(counts, 'faq_items', 'updated'),
+    },
+    skipped: {
+      solution_pages: tableWriteCount(counts, 'solution_pages', 'skipped'),
+      solution_page_blocks: tableWriteCount(counts, 'solution_page_blocks', 'skipped'),
+      media_files: tableWriteCount(counts, 'media_files', 'skipped'),
+      seo_settings: tableWriteCount(counts, 'seo_settings', 'skipped'),
+      faq_items: tableWriteCount(counts, 'faq_items', 'skipped'),
+    },
+    faqSkippedReason: faqCount === 0 ? 'source_has_no_faq_items' : null,
+    seoSkippedReason: seoCount === 0 ? 'source_has_no_seo_fields' : null,
+  };
+
+  return counts;
+}
+
 async function migratePages(context: MigrationContext): Promise<CountableWrite> {
   const source = await loadSource(context.definition);
   const pages = Array.isArray(source.data) ? source.data.filter(isRecord) : [];
@@ -2640,6 +4010,8 @@ async function migrateHomeInteractiveImages(context: MigrationContext): Promise<
 const migrators: Record<WritableContentModuleName, (context: MigrationContext) => Promise<CountableWrite>> = {
   articles: migrateArticles,
   cases: migrateCases,
+  solutions: migrateSolutions,
+  'scenario-detail-pages': migrateScenarioDetailPages,
   pages: migratePages,
   'contact-info': migrateContactInfo,
   'company-assets': migrateCompanyAssets,
@@ -2667,7 +4039,7 @@ export async function migrateLowRiskModule(context: MigrationContext): Promise<M
         warnings: [],
       },
       startedAt,
-      skippedReason: context.plan.skippedReason ?? 'not_implemented_in_22_3B_7',
+      skippedReason: context.plan.skippedReason ?? 'not_implemented_in_22_3B_8',
     });
   }
 

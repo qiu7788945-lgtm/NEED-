@@ -28,7 +28,7 @@ Options:
   --module <name> Run one module plan, or "all".
   --fail-fast      Stop plan generation after the first module error.
   --write          Create a JSON snapshot, write enabled shadow modules, and log all modules.
-                   Does not switch any service or write unreleased modules in 22-3B-7.`);
+                   Does not switch any service or write unreleased modules in 22-3B-8.`);
 }
 
 function isMigrationModuleName(value: string): value is MigrationModuleName {
@@ -113,7 +113,7 @@ async function buildModulePlan(
     sourceCount: source.sourceCount,
     sourceHash: source.sourceHash,
     businessWritesEnabled,
-    skippedReason: businessWritesEnabled ? null : 'not_implemented_in_22_3B_7',
+    skippedReason: businessWritesEnabled ? null : 'not_implemented_in_22_3B_8',
     upsertKeys: definition.upsertKeys,
     plannedWrites: definition.plannedWrites,
     warnings: [

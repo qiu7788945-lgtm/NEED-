@@ -142,7 +142,18 @@ export const moduleDefinitions: ModuleDefinition[] = [
     plannedWrites: [
       {
         table: 'solutions',
-        fields: ['source_id', 'title', 'slug', 'summary', 'raw_json', 'status', 'sort_order'],
+        fields: [
+          'source_id',
+          'title',
+          'slug',
+          'summary',
+          'cover_media_id',
+          'cover_url',
+          'raw_json',
+          'status',
+          'sort_order',
+          'published_at',
+        ],
         purpose: 'Solution scene primary records.',
       },
       {
@@ -164,6 +175,7 @@ export const moduleDefinitions: ModuleDefinition[] = [
         fields: [
           'group_id',
           'source_id',
+          'media_id',
           'file_type',
           'media_url',
           'media_file_name',
@@ -177,8 +189,18 @@ export const moduleDefinitions: ModuleDefinition[] = [
       },
       {
         table: 'media_files',
-        fields: sharedMediaFields,
+        fields: [...sharedMediaFields, 'width', 'height', 'duration_seconds'],
         purpose: 'Solution image and video metadata.',
+      },
+      {
+        table: 'seo_settings',
+        fields: sharedSeoFields,
+        purpose: 'Solution SEO fields.',
+      },
+      {
+        table: 'faq_items',
+        fields: sharedFaqFields,
+        purpose: 'Solution FAQ items.',
       },
     ],
   },
@@ -192,7 +214,19 @@ export const moduleDefinitions: ModuleDefinition[] = [
     plannedWrites: [
       {
         table: 'solution_pages',
-        fields: ['solution_id', 'source_id', 'title', 'slug', 'route_path', 'summary', 'status', 'sort_order'],
+        fields: [
+          'solution_id',
+          'source_id',
+          'title',
+          'slug',
+          'route_path',
+          'summary',
+          'cover_media_id',
+          'cover_url',
+          'status',
+          'sort_order',
+          'published_at',
+        ],
         purpose: 'Scenario detail pages.',
       },
       {
