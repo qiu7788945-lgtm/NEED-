@@ -15,6 +15,8 @@ function buildDetailsJson(
   result: ModuleMigrationResult,
   snapshot: ContentSnapshotResult,
 ): string {
+  const moduleStats = result.details ?? {};
+
   return JSON.stringify({
     businessWritesEnabled: result.status === 'success',
     moduleName: modulePlan.moduleName,
@@ -24,6 +26,8 @@ function buildDetailsJson(
     warnings: result.warnings,
     schemaCompatibility: modulePlan.schemaCompatibility,
     skippedReason: result.skippedReason,
+    ...moduleStats,
+    moduleStats,
   });
 }
 

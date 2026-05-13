@@ -10,6 +10,7 @@ import type {
 } from '../migration/types.js';
 
 export const writableContentModules = [
+  'articles',
   'pages',
   'contact-info',
   'company-assets',
@@ -33,6 +34,7 @@ type CountableWrite = {
   skippedCount: number;
   actualWrites: ActualTableWrite[];
   warnings: MigrationWarning[];
+  details?: Record<string, unknown>;
 };
 
 type IdRow = RowDataPacket & {
@@ -65,6 +67,21 @@ function asBoolean(value: unknown, fallback = true): boolean {
 
 function asNumber(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function asDate(value: unknown): Date | null {
+  const text = asNullableString(value);
+
+  if (!text) {
+    return null;
+  }
+
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function categoryNameFromSlug(slug: string): string {
+  return slug.replace(/[-_]+/g, ' ');
 }
 
 function normalizeFileName(publicUrl: string | null, fallback: string | null): string | null {
@@ -257,6 +274,7 @@ function finishResult(input: {
   warnings?: MigrationWarning[];
   errorMessage?: string | null;
   skippedReason?: string | null;
+  details?: Record<string, unknown>;
 }): ModuleMigrationResult {
   const warnings = input.warnings ?? input.plan.warnings;
 
@@ -275,9 +293,495 @@ function finishResult(input: {
     actualWrites: input.counts.actualWrites,
     warnings,
     skippedReason: input.skippedReason ?? input.plan.skippedReason,
+    details: input.details ?? input.counts.details,
     startedAt: input.startedAt,
     finishedAt: new Date(),
   };
+}
+
+function getArticleSourceId(article: Record<string, unknown>): string | null {
+  return asNullableString(article.sourceId ?? article.source_id ?? article.id);
+}
+
+function getArticleCategorySlug(article: Record<string, unknown>): string | null {
+  return asNullableString(article.categorySlug ?? article.category_slug ?? article.category ?? article['\u5206\u7c7b']);
+}
+
+function getArticleStatus(article: Record<string, unknown>): string {
+  const status = asNullableString(article.status);
+
+  if (status) {
+    return status;
+  }
+
+  return asBoolean(article.published ?? article.enabled, false) ? 'published' : 'draft';
+}
+
+function getArticleTagsJson(article: Record<string, unknown>): string | null {
+  if (!Array.isArray(article.tags)) {
+    return null;
+  }
+
+  const tags = article.tags
+    .map((tag) => asNullableString(tag))
+    .filter((tag): tag is string => Boolean(tag));
+
+  return tags.length > 0 ? JSON.stringify(tags) : null;
+}
+
+async function upsertArticleCategories(
+  context: MigrationContext,
+  articles: Record<string, unknown>[],
+  counts: CountableWrite,
+): Promise<Map<string, number>> {
+  const categorySortOrders = new Map<string, number>();
+  const categoryIdBySlug = new Map<string, number>();
+
+  for (const article of articles) {
+    const categorySlug = getArticleCategorySlug(article);
+
+    if (categorySlug && !categorySortOrders.has(categorySlug)) {
+      categorySortOrders.set(categorySlug, categorySortOrders.size + 1);
+    }
+  }
+
+  for (const [slug, sortOrder] of categorySortOrders.entries()) {
+    const exists = await rowExists(
+      context.pool,
+      'SELECT COUNT(*) AS count FROM article_categories WHERE slug = :slug',
+      { slug },
+    );
+
+    await context.pool.execute(
+      `INSERT INTO article_categories (
+        name,
+        slug,
+        description,
+        sort_order,
+        status
+      ) VALUES (
+        :name,
+        :slug,
+        NULL,
+        :sortOrder,
+        'active'
+      )
+      ON DUPLICATE KEY UPDATE
+        name = VALUES(name),
+        sort_order = VALUES(sort_order),
+        status = VALUES(status),
+        deleted_at = NULL`,
+      {
+        name: categoryNameFromSlug(slug),
+        slug,
+        sortOrder,
+      },
+    );
+
+    counts[exists ? 'updatedCount' : 'insertedCount'] += 1;
+    addWrite(counts.actualWrites, 'article_categories', exists ? 'updated' : 'inserted');
+
+    const categoryId = await findId(context.pool, 'SELECT id FROM article_categories WHERE slug = :slug LIMIT 1', {
+      slug,
+    });
+
+    if (categoryId) {
+      categoryIdBySlug.set(slug, categoryId);
+    } else {
+      counts.warnings.push({
+        code: 'article_category_id_missing',
+        level: 'warning',
+        message: `Could not resolve article category id for slug "${slug}".`,
+      });
+    }
+  }
+
+  return categoryIdBySlug;
+}
+
+async function findArticleId(
+  pool: DbExecutor,
+  sourceId: string | null,
+  slug: string,
+): Promise<number | null> {
+  if (sourceId) {
+    return findId(pool, 'SELECT id FROM articles WHERE source_id = :sourceId OR slug = :slug LIMIT 1', {
+      sourceId,
+      slug,
+    });
+  }
+
+  return findId(pool, 'SELECT id FROM articles WHERE slug = :slug LIMIT 1', { slug });
+}
+
+async function upsertArticleSeo(input: {
+  context: MigrationContext;
+  counts: CountableWrite;
+  article: Record<string, unknown>;
+  articleId: number;
+  ownerSourceId: string;
+  publishedAt: Date | null;
+}): Promise<number> {
+  const seoTitle = asNullableString(input.article.seoTitle ?? input.article.seo_title);
+  const seoDescription = asNullableString(input.article.seoDescription ?? input.article.seo_description);
+  const keywords = asNullableString(input.article.keywords);
+
+  if (!seoTitle && !seoDescription && !keywords) {
+    return 0;
+  }
+
+  const existingId = await findId(
+    input.context.pool,
+    `SELECT id
+     FROM seo_settings
+     WHERE owner_type = 'article'
+       AND (owner_source_id = :ownerSourceId OR owner_id = :ownerId)
+     LIMIT 1`,
+    {
+      ownerSourceId: input.ownerSourceId,
+      ownerId: input.articleId,
+    },
+  );
+
+  if (existingId) {
+    await input.context.pool.execute(
+      `UPDATE seo_settings
+       SET owner_source_id = :ownerSourceId,
+           owner_id = :ownerId,
+           title = :title,
+           description = :description,
+           keywords = :keywords,
+           robots = 'index,follow',
+           published_at = :publishedAt,
+           deleted_at = NULL
+       WHERE id = :id`,
+      {
+        id: existingId,
+        ownerSourceId: input.ownerSourceId,
+        ownerId: input.articleId,
+        title: seoTitle,
+        description: seoDescription,
+        keywords,
+        publishedAt: input.publishedAt,
+      },
+    );
+
+    input.counts.updatedCount += 1;
+    addWrite(input.counts.actualWrites, 'seo_settings', 'updated');
+    return 1;
+  }
+
+  await input.context.pool.execute(
+    `INSERT INTO seo_settings (
+      owner_type,
+      owner_source_id,
+      owner_id,
+      title,
+      description,
+      keywords,
+      robots,
+      published_at
+    ) VALUES (
+      'article',
+      :ownerSourceId,
+      :ownerId,
+      :title,
+      :description,
+      :keywords,
+      'index,follow',
+      :publishedAt
+    )`,
+    {
+      ownerSourceId: input.ownerSourceId,
+      ownerId: input.articleId,
+      title: seoTitle,
+      description: seoDescription,
+      keywords,
+      publishedAt: input.publishedAt,
+    },
+  );
+
+  input.counts.insertedCount += 1;
+  addWrite(input.counts.actualWrites, 'seo_settings', 'inserted');
+  return 1;
+}
+
+async function upsertArticleFaqItems(input: {
+  context: MigrationContext;
+  counts: CountableWrite;
+  article: Record<string, unknown>;
+  articleId: number;
+  ownerSourceId: string;
+}): Promise<number> {
+  const rawFaqItems = input.article.faqItems ?? input.article.faq_items;
+  const faqItems = Array.isArray(rawFaqItems) ? rawFaqItems.filter(isRecord) : [];
+  let writtenCount = 0;
+
+  for (const [index, faqItem] of faqItems.entries()) {
+    const question = asNullableString(faqItem.question ?? faqItem.q);
+    const answer = asNullableString(faqItem.answer ?? faqItem.a);
+    const sortOrder = asNumber(faqItem.sortOrder ?? faqItem.sort_order, index + 1);
+
+    if (!question || !answer || question.length > 300) {
+      input.counts.skippedCount += 1;
+      addWrite(input.counts.actualWrites, 'faq_items', 'skipped');
+      input.counts.warnings.push({
+        code: 'article_faq_item_skipped',
+        level: 'warning',
+        message: `Skipped article FAQ item at sort_order ${sortOrder} for ${input.ownerSourceId}.`,
+      });
+      continue;
+    }
+
+    const existingId = await findId(
+      input.context.pool,
+      `SELECT id
+       FROM faq_items
+       WHERE owner_type = 'article'
+         AND owner_source_id = :ownerSourceId
+         AND sort_order = :sortOrder
+         AND question = :question
+       LIMIT 1`,
+      {
+        ownerSourceId: input.ownerSourceId,
+        sortOrder,
+        question,
+      },
+    );
+
+    if (existingId) {
+      await input.context.pool.execute(
+        `UPDATE faq_items
+         SET owner_id = :ownerId,
+             answer = :answer,
+             status = :status,
+             deleted_at = NULL
+         WHERE id = :id`,
+        {
+          id: existingId,
+          ownerId: input.articleId,
+          answer,
+          status: asString(faqItem.status, 'active'),
+        },
+      );
+
+      input.counts.updatedCount += 1;
+      addWrite(input.counts.actualWrites, 'faq_items', 'updated');
+      writtenCount += 1;
+      continue;
+    }
+
+    await input.context.pool.execute(
+      `INSERT INTO faq_items (
+        owner_type,
+        owner_source_id,
+        owner_id,
+        question,
+        answer,
+        sort_order,
+        status
+      ) VALUES (
+        'article',
+        :ownerSourceId,
+        :ownerId,
+        :question,
+        :answer,
+        :sortOrder,
+        :status
+      )`,
+      {
+        ownerSourceId: input.ownerSourceId,
+        ownerId: input.articleId,
+        question,
+        answer,
+        sortOrder,
+        status: asString(faqItem.status, 'active'),
+      },
+    );
+
+    input.counts.insertedCount += 1;
+    addWrite(input.counts.actualWrites, 'faq_items', 'inserted');
+    writtenCount += 1;
+  }
+
+  return writtenCount;
+}
+
+async function migrateArticles(context: MigrationContext): Promise<CountableWrite> {
+  const source = await loadSource(context.definition);
+  const articles = Array.isArray(source.data) ? source.data.filter(isRecord) : [];
+  const counts = emptyWrites();
+  const categoryIdBySlug = await upsertArticleCategories(context, articles, counts);
+  let articleCount = 0;
+  let seoCount = 0;
+  let faqCount = 0;
+  let skippedArticleCount = 0;
+  const hasExplicitBlocks = articles.some((article) => Array.isArray(article.blocks) && article.blocks.length > 0);
+
+  for (const [index, article] of articles.entries()) {
+    const title = asString(article.title).trim();
+    const slug = asString(article.slug).trim();
+
+    if (!title || !slug) {
+      skippedArticleCount += 1;
+      counts.skippedCount += 1;
+      addWrite(counts.actualWrites, 'articles', 'skipped');
+      counts.warnings.push({
+        code: 'article_missing_required_field',
+        level: 'warning',
+        message: `Skipped article at index ${index}; title and slug are required.`,
+      });
+      continue;
+    }
+
+    const sourceId = getArticleSourceId(article);
+    const categorySlug = getArticleCategorySlug(article);
+    const categoryId = categorySlug ? categoryIdBySlug.get(categorySlug) ?? null : null;
+    const status = getArticleStatus(article);
+    const publishedAt = status === 'published'
+      ? asDate(article.publishedAt ?? article.published_at ?? article.updatedAt ?? article.createdAt)
+      : null;
+    const exists = sourceId
+      ? await rowExists(
+          context.pool,
+          'SELECT COUNT(*) AS count FROM articles WHERE source_id = :sourceId OR slug = :slug',
+          { sourceId, slug },
+        )
+      : await rowExists(context.pool, 'SELECT COUNT(*) AS count FROM articles WHERE slug = :slug', { slug });
+
+    await context.pool.execute(
+      `INSERT INTO articles (
+        source_id,
+        category_id,
+        category_slug,
+        title,
+        slug,
+        summary,
+        content,
+        cover_media_id,
+        cover_url,
+        tags_json,
+        status,
+        sort_order,
+        is_home_featured,
+        published_at
+      ) VALUES (
+        :sourceId,
+        :categoryId,
+        :categorySlug,
+        :title,
+        :slug,
+        :summary,
+        :content,
+        NULL,
+        :coverUrl,
+        :tagsJson,
+        :status,
+        :sortOrder,
+        :isHomeFeatured,
+        :publishedAt
+      )
+      ON DUPLICATE KEY UPDATE
+        source_id = VALUES(source_id),
+        category_id = VALUES(category_id),
+        category_slug = VALUES(category_slug),
+        title = VALUES(title),
+        summary = VALUES(summary),
+        content = VALUES(content),
+        cover_url = VALUES(cover_url),
+        tags_json = VALUES(tags_json),
+        status = VALUES(status),
+        sort_order = VALUES(sort_order),
+        is_home_featured = VALUES(is_home_featured),
+        published_at = VALUES(published_at),
+        deleted_at = NULL`,
+      {
+        sourceId,
+        categoryId,
+        categorySlug,
+        title,
+        slug,
+        summary: asNullableString(article.summary),
+        content: asNullableString(article.content ?? article.content_html ?? article.body),
+        coverUrl: asNullableString(article.coverUrl ?? article.cover_url),
+        tagsJson: getArticleTagsJson(article),
+        status,
+        sortOrder: asNumber(article.sortOrder ?? article.sort_order, index + 1),
+        isHomeFeatured: asBoolean(article.isHomeFeatured ?? article.is_home_featured, false) ? 1 : 0,
+        publishedAt,
+      },
+    );
+
+    counts[exists ? 'updatedCount' : 'insertedCount'] += 1;
+    addWrite(counts.actualWrites, 'articles', exists ? 'updated' : 'inserted');
+    articleCount += 1;
+
+    const articleId = await findArticleId(context.pool, sourceId, slug);
+    const ownerSourceId = sourceId ?? slug;
+
+    if (!articleId) {
+      counts.warnings.push({
+        code: 'article_id_missing',
+        level: 'warning',
+        message: `Could not resolve article id for slug "${slug}"; SEO and FAQ rows skipped.`,
+      });
+      continue;
+    }
+
+    seoCount += await upsertArticleSeo({
+      context,
+      counts,
+      article,
+      articleId,
+      ownerSourceId,
+      publishedAt,
+    });
+    faqCount += await upsertArticleFaqItems({
+      context,
+      counts,
+      article,
+      articleId,
+      ownerSourceId,
+    });
+  }
+
+  if (seoCount === 0) {
+    counts.warnings.push({
+      code: 'articles_seo_empty',
+      level: 'info',
+      message: 'No article SEO fields were found; seo_settings was skipped for articles.',
+    });
+  }
+
+  if (faqCount === 0) {
+    counts.warnings.push({
+      code: 'articles_faq_empty',
+      level: 'info',
+      message: 'No article FAQ items were found; faq_items was skipped for articles.',
+    });
+  }
+
+  if (!hasExplicitBlocks) {
+    counts.warnings.push({
+      code: 'article_blocks_not_written',
+      level: 'info',
+      message: 'articles.json stores article body as whole content; article_blocks was not written.',
+    });
+  }
+
+  counts.details = {
+    categoryCount: categoryIdBySlug.size,
+    articleCount,
+    seoCount,
+    faqCount,
+    articleBlockCount: 0,
+    skippedArticleCount,
+    articleBlocksSkippedReason: hasExplicitBlocks ? null : 'source_has_whole_content_without_blocks',
+    faqSkippedReason: faqCount === 0 ? 'source_has_no_faq_items' : null,
+    seoSkippedReason: seoCount === 0 ? 'source_has_no_seo_fields' : null,
+  };
+
+  return counts;
 }
 
 async function migratePages(context: MigrationContext): Promise<CountableWrite> {
@@ -648,6 +1152,7 @@ async function migrateHomeInteractiveImages(context: MigrationContext): Promise<
 }
 
 const migrators: Record<WritableContentModuleName, (context: MigrationContext) => Promise<CountableWrite>> = {
+  articles: migrateArticles,
   pages: migratePages,
   'contact-info': migrateContactInfo,
   'company-assets': migrateCompanyAssets,
@@ -674,7 +1179,7 @@ export async function migrateLowRiskModule(context: MigrationContext): Promise<M
         warnings: [],
       },
       startedAt,
-      skippedReason: context.plan.skippedReason ?? 'not_implemented_in_22_3B_3',
+      skippedReason: context.plan.skippedReason ?? 'not_implemented_in_22_3B_5',
     });
   }
 

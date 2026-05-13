@@ -1,7 +1,7 @@
 import type { MigrationModuleName, ModuleDefinition } from '../migration/types.js';
 
-const sharedSeoFields = ['owner_type', 'owner_source_id', 'title', 'description', 'keywords'];
-const sharedFaqFields = ['owner_type', 'owner_source_id', 'question', 'answer', 'sort_order', 'status'];
+const sharedSeoFields = ['owner_type', 'owner_source_id', 'owner_id', 'title', 'description', 'keywords'];
+const sharedFaqFields = ['owner_type', 'owner_source_id', 'owner_id', 'question', 'answer', 'sort_order', 'status'];
 const sharedMediaFields = [
   'file_name',
   'original_name',
@@ -35,13 +35,19 @@ export const moduleDefinitions: ModuleDefinition[] = [
         table: 'articles',
         fields: [
           'source_id',
+          'category_id',
           'category_slug',
           'title',
           'slug',
           'summary',
           'content',
+          'cover_media_id',
+          'cover_url',
+          'tags_json',
           'status',
           'sort_order',
+          'is_home_featured',
+          'published_at',
         ],
         purpose: 'Article primary records from articles.json.',
       },

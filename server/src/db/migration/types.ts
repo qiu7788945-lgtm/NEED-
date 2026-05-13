@@ -119,6 +119,7 @@ export type ModuleMigrationResult = {
   actualWrites: ActualTableWrite[];
   warnings: MigrationWarning[];
   skippedReason: string | null;
+  details?: Record<string, unknown>;
   startedAt: Date;
   finishedAt: Date;
 };
