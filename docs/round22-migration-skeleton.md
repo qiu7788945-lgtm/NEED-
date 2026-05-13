@@ -1,10 +1,10 @@
 # Round 22 Migration Skeleton
 
-This document describes the Round 22 content migration skeleton through 22-3B-5.
+This document describes the Round 22 content migration skeleton through 22-3B-6.
 
 The skeleton can read JSON sources, compute canonical SHA256 hashes, identify migration modules, print dry-run plans, check planned tables and fields against `server/src/db/migrations/001_initial_schema.sql`, create pre-write JSON snapshots, write selected shadow business tables, and write `migration_logs` records for every selected module.
 
-It migrates only the low-risk modules opened in 22-3B-3 plus `articles` opened in 22-3B-5.
+It migrates only the low-risk modules opened in 22-3B-3, `articles` opened in 22-3B-5, plus `media-library` opened in 22-3B-6.
 It does not migrate the remaining medium-risk or high-risk business data.
 It does not switch any service to MySQL.
 
@@ -16,6 +16,7 @@ JSON remains the only primary data source in 22-3. MySQL remains a shadow databa
 npm.cmd run migrate:content:dry-run
 npm.cmd run migrate:content
 npm.cmd run migrate:content -- --module articles
+npm.cmd run migrate:content -- --module media-library
 npm.cmd run migrate:content -- --module all --fail-fast
 npm.cmd run migrate:content -- --write
 ```
@@ -31,7 +32,7 @@ Dry-run reads JSON and prints the migration plan only. It does not create snapsh
 3. Checks schema compatibility.
 4. Creates a unique JSON snapshot under `server/data-backups/mysql-migration/`.
 5. Writes `source-manifest.json` into the snapshot directory.
-6. Writes only the modules enabled through 22-3B-5.
+6. Writes only the modules enabled through 22-3B-6.
 7. Writes one `migration_logs` record per selected source module.
 8. Leaves all unopened medium-risk and high-risk business tables untouched.
 
@@ -39,7 +40,7 @@ If MySQL is not configured, `--write` fails before creating a snapshot and befor
 
 ## Writable Modules
 
-Only these modules can write business tables through 22-3B-5:
+Only these modules can write business tables through 22-3B-6:
 
 - `articles`
 - `pages`
@@ -47,6 +48,7 @@ Only these modules can write business tables through 22-3B-5:
 - `company-assets`
 - `home-video`
 - `home-interactive-images`
+- `media-library`
 
 The writable tables are limited to:
 
@@ -60,20 +62,19 @@ The writable tables are limited to:
 - `company_assets`
 - `home_video`
 - `home_interactive_images`
-- `media_files`, only for media referenced by the opened low-risk media modules
+- `media_files`, for media referenced by opened modules and the media-library shadow migration
 - `migration_logs`
 
 `article_blocks` remains unused while `articles.json` stores article body as whole `content` without explicit block records.
 
-These modules remain plan-only / not implemented in 22-3B-5:
+These modules remain plan-only / not implemented in 22-3B-6:
 
 - `cases`
 - `solutions`
 - `scenario-detail-pages`
-- `media-library`
 - `publish-logs`
 
-When `npm.cmd run migrate:content -- --write --module all` is used, only the six writable modules are allowed to write business tables. The plan-only modules receive `migration_logs` records with `status = not_implemented` and `skippedReason = not_implemented_in_22_3B_5`.
+When `npm.cmd run migrate:content -- --write --module all` is used, only the seven writable modules are allowed to write business tables. The plan-only modules receive `migration_logs` records with `status = not_implemented` and `skippedReason = not_implemented_in_22_3B_6`.
 
 ## Repeat Runs
 
@@ -88,7 +89,8 @@ Low-risk writes use idempotent upsert keys:
 - `company-assets`: `asset_key`
 - `home-video`: `singleton_key = home_video`
 - `home-interactive-images`: `slot_number`
-- `media_files`: `public_url`
+- media files from opened low-risk modules: `public_url`
+- `media-library`: `public_url`, then `file_path`, then `file_name + file_size`
 
 If a module has already recorded the same `source_hash` with a successful migration status, a later `--write` run skips that module and records `status = skipped_success_hash`. MySQL rows that do not exist in JSON are not hard-deleted in this stage.
 
@@ -145,6 +147,8 @@ Rows are inserted with an upsert on the existing `(migration_key, source_hash)` 
 
 For `articles`, `details_json` records direct counters for `categoryCount`, `articleCount`, `seoCount`, `faqCount`, `articleBlockCount`, and `skippedArticleCount`. It also records skip reasons when the source has no FAQ items or no explicit block records.
 
+For `media-library`, `details_json` records direct counters for `sourceCount`, `mediaFilesCount`, `missingPublicUrlCount`, `missingFilePathCount`, `missingStableKeyCount`, `missingWritablePathCount`, `duplicateCount`, `duplicateKeyCount`, `uniqueStableKeyCount`, `dedupeStrategy`, and per-table inserted / updated / skipped / duplicate counts.
+
 ## 22-3B-5 Articles
 
 22-3B-5 opens `articles` as the next shadow-write module. It writes `article_categories`, `articles`, article `seo_settings`, article `faq_items` when source FAQ exists, and `migration_logs`.
@@ -152,6 +156,22 @@ For `articles`, `details_json` records direct counters for `categoryCount`, `art
 `articles.json` currently stores article body in a whole `content` field. Because it does not provide explicit block records, the migration does not split content into `article_blocks` in this step.
 
 Article slugs are preserved exactly from JSON. Article categories are derived from source category slugs and upserted by `article_categories.slug`. Article rows are upserted by `source_id` when present and by `slug` as the stable fallback. Repeated runs with the same successful `source_hash` are skipped through `migration_logs`; changed sources update existing rows through the same upsert keys instead of inserting duplicates.
+
+## 22-3B-6 Media Library
+
+22-3B-6 opens `media-library` as a shadow-write module. It writes only `media_files` and `migration_logs`.
+
+The media library source currently stores records as a keyed object in `media-library.json`. The top-level key is preserved as `sourceKey` in `metadata_json`. The migration keeps the storage `file_name`, original upload name, display name / title, source URL, category, alt text, description, dimensions, duration, status, and the raw source record in `metadata_json`.
+
+Deduplication uses this priority:
+
+1. `public_url`
+2. `file_path`
+3. `file_name + file_size`
+
+When source `file_path` is missing but `public_url` exists, the migration records a warning and writes the normalized `public_url` as the shadow `file_path` fallback. When `public_url` is missing but `file_path` exists, it records a warning and uses `file_path` as the writable URL fallback because the current `media_files.public_url` column is required. If a record can only form `file_name + file_size`, it can update an existing matching row; a new row is skipped when no public URL or file path exists because the current schema cannot store a fresh media row without a non-null `public_url`.
+
+Source duplicate stable keys are skipped within the same run and counted in `details_json`. Existing MySQL rows that match the stable key are updated rather than duplicated. No upload files are moved, deleted, or renamed.
 
 ## Boundaries
 
@@ -169,11 +189,10 @@ Formal production backup strategy is deferred to Round 24 deployment preparation
 
 ## 22-3 Next Boundaries
 
-Recommended order after 22-3B-5:
+Recommended order after 22-3B-6:
 
-1. 22-3B-6: `media-library` dedupe strategy / shadow migration
-2. 22-3B-7: `cases`
-3. 22-3B-8: `solutions` + `scenario-detail-pages`
-4. 22-3B-9: `publish-logs` shadow index + 22-3 full acceptance
+1. 22-3B-7: `cases`
+2. 22-3B-8: `solutions` + `scenario-detail-pages`
+3. 22-3B-9: `publish-logs` shadow index + 22-3 full acceptance
 
 `solutions` should stay last because it spans scene solution records, grouped galleries, images, videos, and display-oriented detail pages. Its write surface and route/content coupling are the highest-risk part of the Round 22 shadow migration.

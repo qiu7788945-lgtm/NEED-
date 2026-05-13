@@ -16,6 +16,7 @@ export const writableContentModules = [
   'company-assets',
   'home-video',
   'home-interactive-images',
+  'media-library',
 ] as const satisfies MigrationModuleName[];
 
 type WritableContentModuleName = (typeof writableContentModules)[number];
@@ -126,6 +127,47 @@ function mimeFromFileName(fileName: string): string | null {
   }
 
   return null;
+}
+
+function normalizeMediaPath(value: string | null): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim().replace(/\\/g, '/');
+
+  if (!normalized) {
+    return null;
+  }
+
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(normalized) || normalized.startsWith('/')) {
+    return normalized;
+  }
+
+  return normalized.startsWith('uploads/') ? `/${normalized}` : normalized;
+}
+
+function asOptionalNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === 'string' && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function asOptionalUnsignedInteger(value: unknown): number | null {
+  const numberValue = asOptionalNumber(value);
+
+  if (numberValue === null || numberValue < 0) {
+    return null;
+  }
+
+  return Math.trunc(numberValue);
 }
 
 function emptyWrites(): CountableWrite {
@@ -784,6 +826,538 @@ async function migrateArticles(context: MigrationContext): Promise<CountableWrit
   return counts;
 }
 
+type MediaLibraryEntry = {
+  sourceKey: string;
+  record: Record<string, unknown>;
+};
+
+type MediaStableKey =
+  | {
+      type: 'public_url';
+      value: string;
+    }
+  | {
+      type: 'file_path';
+      value: string;
+    }
+  | {
+      type: 'file_name_size';
+      value: string;
+      fileName: string;
+      fileSize: number;
+    };
+
+type PreparedMediaFile = {
+  sourceKey: string;
+  sourceRecord: Record<string, unknown>;
+  fileName: string | null;
+  originalName: string | null;
+  displayName: string | null;
+  publicUrl: string | null;
+  sourceFilePath: string | null;
+  filePathForWrite: string | null;
+  publicUrlForWrite: string | null;
+  mimeType: string | null;
+  fileExt: string | null;
+  fileSize: number;
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
+  category: string;
+  altText: string | null;
+  description: string | null;
+  status: string;
+  stableKey: MediaStableKey | null;
+};
+
+function firstString(record: Record<string, unknown>, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const value = asNullableString(record[key]);
+
+    if (value) {
+      return value;
+    }
+  }
+
+  return null;
+}
+
+function buildMediaLibraryEntries(data: unknown): MediaLibraryEntry[] {
+  if (Array.isArray(data)) {
+    return data
+      .map((item, index) => {
+        if (!isRecord(item)) {
+          return null;
+        }
+
+        return {
+          sourceKey: firstString(item, 'sourceKey', 'source_key', 'key', 'id', 'fileName', 'file_name') ?? `index-${index + 1}`,
+          record: item,
+        };
+      })
+      .filter((entry): entry is MediaLibraryEntry => Boolean(entry));
+  }
+
+  if (!isRecord(data)) {
+    return [];
+  }
+
+  return Object.entries(data)
+    .map(([sourceKey, item]) => {
+      if (!isRecord(item)) {
+        return null;
+      }
+
+      return {
+        sourceKey,
+        record: item,
+      };
+    })
+    .filter((entry): entry is MediaLibraryEntry => Boolean(entry));
+}
+
+function normalizeMediaCategory(category: string | null): string {
+  const fallback = 'general';
+  const normalized = category ?? fallback;
+
+  return normalized.length > 80 ? normalized.slice(0, 80) : normalized;
+}
+
+function getMediaFileName(entry: MediaLibraryEntry, publicUrl: string | null): string | null {
+  const explicitFileName = firstString(
+    entry.record,
+    'fileName',
+    'file_name',
+    'storageFileName',
+    'storage_file_name',
+    'name',
+  );
+
+  if (explicitFileName) {
+    return explicitFileName;
+  }
+
+  return normalizeFileName(publicUrl, null) ?? entry.sourceKey;
+}
+
+function getMediaStatus(record: Record<string, unknown>): string {
+  const status = firstString(record, 'status');
+
+  if (status) {
+    return status;
+  }
+
+  return asBoolean(record.enabled ?? record.is_enabled, true) ? 'active' : 'inactive';
+}
+
+function buildMediaStableKey(input: {
+  publicUrl: string | null;
+  filePath: string | null;
+  fileName: string | null;
+  fileSize: number;
+}): MediaStableKey | null {
+  if (input.publicUrl) {
+    return {
+      type: 'public_url',
+      value: input.publicUrl,
+    };
+  }
+
+  if (input.filePath) {
+    return {
+      type: 'file_path',
+      value: input.filePath,
+    };
+  }
+
+  if (input.fileName && input.fileSize >= 0) {
+    return {
+      type: 'file_name_size',
+      value: `${input.fileName}#${input.fileSize}`,
+      fileName: input.fileName,
+      fileSize: input.fileSize,
+    };
+  }
+
+  return null;
+}
+
+function prepareMediaFile(entry: MediaLibraryEntry): PreparedMediaFile {
+  const publicUrl = normalizeMediaPath(firstString(entry.record, 'publicUrl', 'public_url', 'url'));
+  const sourceFilePath = normalizeMediaPath(firstString(entry.record, 'filePath', 'file_path', 'path'));
+  const fileName = getMediaFileName(entry, publicUrl);
+  const originalName = firstString(entry.record, 'originalName', 'original_name');
+  const displayName = firstString(entry.record, 'displayName', 'display_name', 'title');
+  const fileSize = asOptionalUnsignedInteger(entry.record.fileSize ?? entry.record.file_size ?? entry.record.size) ?? 0;
+  const fileExt = firstString(entry.record, 'fileExt', 'file_ext') ?? (fileName ? extFromFileName(fileName) : null);
+  const mimeType = firstString(entry.record, 'mimeType', 'mime_type') ?? (fileName ? mimeFromFileName(fileName) : null);
+  const filePathForWrite = sourceFilePath ?? publicUrl;
+  const publicUrlForWrite = publicUrl ?? sourceFilePath;
+
+  return {
+    sourceKey: entry.sourceKey,
+    sourceRecord: entry.record,
+    fileName,
+    originalName,
+    displayName,
+    publicUrl,
+    sourceFilePath,
+    filePathForWrite,
+    publicUrlForWrite,
+    mimeType,
+    fileExt,
+    fileSize,
+    width: asOptionalUnsignedInteger(entry.record.width),
+    height: asOptionalUnsignedInteger(entry.record.height),
+    durationSeconds: asOptionalNumber(entry.record.durationSeconds ?? entry.record.duration_seconds ?? entry.record.duration),
+    category: normalizeMediaCategory(firstString(entry.record, 'category', 'fileType', 'file_type')),
+    altText: firstString(entry.record, 'altText', 'alt_text', 'alt', 'displayName', 'display_name', 'title'),
+    description: firstString(entry.record, 'description', 'caption'),
+    status: getMediaStatus(entry.record),
+    stableKey: buildMediaStableKey({
+      publicUrl,
+      filePath: sourceFilePath,
+      fileName,
+      fileSize,
+    }),
+  };
+}
+
+function buildMediaLibraryMetadata(prepared: PreparedMediaFile): string {
+  return JSON.stringify({
+    moduleName: 'media-library',
+    sourceKey: prepared.sourceKey,
+    displayName: prepared.displayName,
+    title: firstString(prepared.sourceRecord, 'title'),
+    fileType: firstString(prepared.sourceRecord, 'fileType', 'file_type'),
+    ownerType: firstString(prepared.sourceRecord, 'ownerType', 'owner_type'),
+    ownerId: prepared.sourceRecord.ownerId ?? prepared.sourceRecord.owner_id ?? null,
+    ownerSlug: firstString(prepared.sourceRecord, 'ownerSlug', 'owner_slug'),
+    groupKey: firstString(prepared.sourceRecord, 'groupKey', 'group_key'),
+    slotNo: asOptionalUnsignedInteger(prepared.sourceRecord.slotNo ?? prepared.sourceRecord.slot_no),
+    caption: firstString(prepared.sourceRecord, 'caption'),
+    enabled: asBoolean(prepared.sourceRecord.enabled ?? prepared.sourceRecord.is_enabled, true),
+    sortOrder: asOptionalUnsignedInteger(prepared.sourceRecord.sortOrder ?? prepared.sourceRecord.sort_order),
+    createdAt: firstString(prepared.sourceRecord, 'createdAt', 'created_at'),
+    dedupeKey: prepared.stableKey
+      ? {
+          type: prepared.stableKey.type,
+          value: prepared.stableKey.value,
+        }
+      : null,
+    sourceRecord: prepared.sourceRecord,
+  });
+}
+
+async function findMediaFileByStableKey(
+  pool: DbExecutor,
+  stableKey: MediaStableKey,
+): Promise<number | null> {
+  if (stableKey.type === 'public_url') {
+    return findId(pool, 'SELECT id FROM media_files WHERE public_url = :publicUrl LIMIT 1', {
+      publicUrl: stableKey.value,
+    });
+  }
+
+  if (stableKey.type === 'file_path') {
+    return findId(pool, 'SELECT id FROM media_files WHERE file_path = :filePath LIMIT 1', {
+      filePath: stableKey.value,
+    });
+  }
+
+  return findId(
+    pool,
+    'SELECT id FROM media_files WHERE file_name = :fileName AND file_size = :fileSize LIMIT 1',
+    {
+      fileName: stableKey.fileName,
+      fileSize: stableKey.fileSize,
+    },
+  );
+}
+
+async function writePreparedMediaFile(
+  context: MigrationContext,
+  prepared: PreparedMediaFile,
+  existingId: number | null,
+): Promise<'inserted' | 'updated' | 'skipped'> {
+  if (!prepared.fileName) {
+    return 'skipped';
+  }
+
+  if (existingId) {
+    await context.pool.execute(
+      `UPDATE media_files
+       SET file_name = :fileName,
+           original_name = :originalName,
+           file_path = COALESCE(:filePath, file_path),
+           public_url = COALESCE(:publicUrl, public_url),
+           mime_type = :mimeType,
+           file_ext = :fileExt,
+           file_size = :fileSize,
+           width = :width,
+           height = :height,
+           duration_seconds = :durationSeconds,
+           category = :category,
+           alt_text = :altText,
+           description = :description,
+           metadata_json = :metadataJson,
+           status = :status,
+           deleted_at = NULL
+       WHERE id = :id`,
+      {
+        id: existingId,
+        fileName: prepared.fileName,
+        originalName: prepared.originalName ?? prepared.fileName,
+        filePath: prepared.filePathForWrite,
+        publicUrl: prepared.publicUrlForWrite,
+        mimeType: prepared.mimeType,
+        fileExt: prepared.fileExt,
+        fileSize: prepared.fileSize,
+        width: prepared.width,
+        height: prepared.height,
+        durationSeconds: prepared.durationSeconds,
+        category: prepared.category,
+        altText: prepared.altText,
+        description: prepared.description,
+        metadataJson: buildMediaLibraryMetadata(prepared),
+        status: prepared.status,
+      },
+    );
+
+    return 'updated';
+  }
+
+  if (!prepared.publicUrlForWrite) {
+    return 'skipped';
+  }
+
+  await context.pool.execute(
+    `INSERT INTO media_files (
+      file_name,
+      original_name,
+      file_path,
+      public_url,
+      mime_type,
+      file_ext,
+      file_size,
+      width,
+      height,
+      duration_seconds,
+      category,
+      alt_text,
+      description,
+      metadata_json,
+      status
+    ) VALUES (
+      :fileName,
+      :originalName,
+      :filePath,
+      :publicUrl,
+      :mimeType,
+      :fileExt,
+      :fileSize,
+      :width,
+      :height,
+      :durationSeconds,
+      :category,
+      :altText,
+      :description,
+      :metadataJson,
+      :status
+    )
+    ON DUPLICATE KEY UPDATE
+      file_name = VALUES(file_name),
+      original_name = VALUES(original_name),
+      file_path = VALUES(file_path),
+      mime_type = VALUES(mime_type),
+      file_ext = VALUES(file_ext),
+      file_size = VALUES(file_size),
+      width = VALUES(width),
+      height = VALUES(height),
+      duration_seconds = VALUES(duration_seconds),
+      category = VALUES(category),
+      alt_text = VALUES(alt_text),
+      description = VALUES(description),
+      metadata_json = VALUES(metadata_json),
+      status = VALUES(status),
+      deleted_at = NULL`,
+    {
+      fileName: prepared.fileName,
+      originalName: prepared.originalName ?? prepared.fileName,
+      filePath: prepared.filePathForWrite,
+      publicUrl: prepared.publicUrlForWrite,
+      mimeType: prepared.mimeType,
+      fileExt: prepared.fileExt,
+      fileSize: prepared.fileSize,
+      width: prepared.width,
+      height: prepared.height,
+      durationSeconds: prepared.durationSeconds,
+      category: prepared.category,
+      altText: prepared.altText,
+      description: prepared.description,
+      metadataJson: buildMediaLibraryMetadata(prepared),
+      status: prepared.status,
+    },
+  );
+
+  return 'inserted';
+}
+
+async function migrateMediaLibrary(context: MigrationContext): Promise<CountableWrite> {
+  const source = await loadSource(context.definition);
+  const entries = buildMediaLibraryEntries(source.data);
+  const counts = emptyWrites();
+  const nonRecordSkippedCount = Math.max(0, context.plan.sourceCount - entries.length);
+  const seenStableKeys = new Set<string>();
+  const duplicateStableKeys = new Set<string>();
+  const dedupeKeyCounts = {
+    publicUrl: 0,
+    filePath: 0,
+    fileNameAndFileSize: 0,
+  };
+  let mediaFilesCount = 0;
+  let missingPublicUrlCount = 0;
+  let missingFilePathCount = 0;
+  let missingStableKeyCount = 0;
+  let missingWritablePathCount = 0;
+  let duplicateCount = 0;
+
+  if (nonRecordSkippedCount > 0) {
+    counts.skippedCount += nonRecordSkippedCount;
+    addWrite(counts.actualWrites, 'media_files', 'skipped', nonRecordSkippedCount);
+  }
+
+  for (const entry of entries) {
+    const prepared = prepareMediaFile(entry);
+
+    if (!prepared.publicUrl) {
+      missingPublicUrlCount += 1;
+    }
+
+    if (!prepared.sourceFilePath) {
+      missingFilePathCount += 1;
+    }
+
+    if (!prepared.stableKey) {
+      missingStableKeyCount += 1;
+      counts.skippedCount += 1;
+      addWrite(counts.actualWrites, 'media_files', 'skipped');
+      continue;
+    }
+
+    if (prepared.stableKey.type === 'public_url') {
+      dedupeKeyCounts.publicUrl += 1;
+    } else if (prepared.stableKey.type === 'file_path') {
+      dedupeKeyCounts.filePath += 1;
+    } else {
+      dedupeKeyCounts.fileNameAndFileSize += 1;
+    }
+
+    const stableKeyLabel = `${prepared.stableKey.type}:${prepared.stableKey.value}`;
+
+    if (seenStableKeys.has(stableKeyLabel)) {
+      duplicateCount += 1;
+      duplicateStableKeys.add(stableKeyLabel);
+      counts.skippedCount += 1;
+      addWrite(counts.actualWrites, 'media_files', 'skipped');
+      continue;
+    }
+
+    seenStableKeys.add(stableKeyLabel);
+
+    const existingId = await findMediaFileByStableKey(context.pool, prepared.stableKey);
+    const writeKind = await writePreparedMediaFile(context, prepared, existingId);
+
+    if (writeKind === 'skipped') {
+      missingWritablePathCount += 1;
+      counts.skippedCount += 1;
+      addWrite(counts.actualWrites, 'media_files', 'skipped');
+      continue;
+    }
+
+    counts[writeKind === 'inserted' ? 'insertedCount' : 'updatedCount'] += 1;
+    addWrite(counts.actualWrites, 'media_files', writeKind);
+    mediaFilesCount += 1;
+  }
+
+  if (missingPublicUrlCount > 0) {
+    counts.warnings.push({
+      code: 'media_library_missing_public_url',
+      level: 'warning',
+      message: `${missingPublicUrlCount} media-library records have no public_url/url; file_path is used when available.`,
+    });
+  }
+
+  if (nonRecordSkippedCount > 0) {
+    counts.warnings.push({
+      code: 'media_library_non_record_source',
+      level: 'warning',
+      message: `${nonRecordSkippedCount} media-library source entries were skipped because they are not JSON objects.`,
+    });
+  }
+
+  if (missingFilePathCount > 0) {
+    counts.warnings.push({
+      code: 'media_library_missing_file_path',
+      level: 'warning',
+      message: `${missingFilePathCount} media-library records have no source file_path; public_url is used as the shadow file_path fallback.`,
+    });
+  }
+
+  if (missingStableKeyCount > 0) {
+    counts.warnings.push({
+      code: 'media_library_missing_stable_key',
+      level: 'warning',
+      message: `${missingStableKeyCount} media-library records were skipped because no stable dedupe key could be formed.`,
+    });
+  }
+
+  if (missingWritablePathCount > 0) {
+    counts.warnings.push({
+      code: 'media_library_missing_writable_path',
+      level: 'warning',
+      message: `${missingWritablePathCount} media-library records matched only file_name+file_size and could not be inserted without public_url or file_path.`,
+    });
+  }
+
+  if (duplicateCount > 0) {
+    counts.warnings.push({
+      code: 'media_library_duplicate_stable_key',
+      level: 'warning',
+      message: `${duplicateCount} media-library duplicate source records were skipped across ${duplicateStableKeys.size} duplicate stable keys.`,
+    });
+  }
+
+  counts.details = {
+    sourceCount: context.plan.sourceCount,
+    mediaFilesCount,
+    missingPublicUrlCount,
+    missingFilePathCount,
+    missingStableKeyCount,
+    missingWritablePathCount,
+    nonRecordSkippedCount,
+    duplicateCount,
+    duplicateKeyCount: duplicateStableKeys.size,
+    uniqueStableKeyCount: seenStableKeys.size,
+    dedupeStrategy: ['public_url', 'file_path', 'file_name+file_size'],
+    dedupeKeyCounts,
+    inserted: {
+      media_files: counts.actualWrites.find((write) => write.table === 'media_files')?.inserted ?? 0,
+    },
+    updated: {
+      media_files: counts.actualWrites.find((write) => write.table === 'media_files')?.updated ?? 0,
+    },
+    skipped: {
+      media_files: counts.actualWrites.find((write) => write.table === 'media_files')?.skipped ?? 0,
+    },
+    duplicate: {
+      media_files: duplicateCount,
+    },
+  };
+
+  return counts;
+}
+
 async function migratePages(context: MigrationContext): Promise<CountableWrite> {
   const source = await loadSource(context.definition);
   const pages = Array.isArray(source.data) ? source.data.filter(isRecord) : [];
@@ -1158,6 +1732,7 @@ const migrators: Record<WritableContentModuleName, (context: MigrationContext) =
   'company-assets': migrateCompanyAssets,
   'home-video': migrateHomeVideo,
   'home-interactive-images': migrateHomeInteractiveImages,
+  'media-library': migrateMediaLibrary,
 };
 
 export function isWritableContentModule(moduleName: MigrationModuleName): moduleName is WritableContentModuleName {
@@ -1179,7 +1754,7 @@ export async function migrateLowRiskModule(context: MigrationContext): Promise<M
         warnings: [],
       },
       startedAt,
-      skippedReason: context.plan.skippedReason ?? 'not_implemented_in_22_3B_5',
+      skippedReason: context.plan.skippedReason ?? 'not_implemented_in_22_3B_6',
     });
   }
 

@@ -16,6 +16,12 @@ const sharedMediaFields = [
   'metadata_json',
   'status',
 ];
+const mediaLibraryFields = [
+  ...sharedMediaFields,
+  'width',
+  'height',
+  'duration_seconds',
+];
 
 export const moduleDefinitions: ModuleDefinition[] = [
   {
@@ -309,11 +315,11 @@ export const moduleDefinitions: ModuleDefinition[] = [
     sourceFile: 'media-library.json',
     sourceRequired: false,
     countStrategy: 'array',
-    upsertKeys: ['media_files.public_url', 'media_files.file_path'],
+    upsertKeys: ['media_files.public_url', 'media_files.file_path', 'media_files.file_name+file_size'],
     plannedWrites: [
       {
         table: 'media_files',
-        fields: sharedMediaFields,
+        fields: mediaLibraryFields,
         purpose: 'Media library metadata shadow migration.',
       },
     ],
