@@ -11,6 +11,7 @@ import type {
 
 export const writableContentModules = [
   'articles',
+  'cases',
   'pages',
   'contact-info',
   'company-assets',
@@ -1097,7 +1098,7 @@ async function writePreparedMediaFile(
            width = :width,
            height = :height,
            duration_seconds = :durationSeconds,
-           category = :category,
+           category = CASE WHEN category = 'general' THEN :category ELSE category END,
            alt_text = :altText,
            description = :description,
            metadata_json = :metadataJson,
@@ -1175,7 +1176,7 @@ async function writePreparedMediaFile(
       width = VALUES(width),
       height = VALUES(height),
       duration_seconds = VALUES(duration_seconds),
-      category = VALUES(category),
+      category = CASE WHEN category = 'general' THEN VALUES(category) ELSE category END,
       alt_text = VALUES(alt_text),
       description = VALUES(description),
       metadata_json = VALUES(metadata_json),
@@ -1353,6 +1354,917 @@ async function migrateMediaLibrary(context: MigrationContext): Promise<Countable
     duplicate: {
       media_files: duplicateCount,
     },
+  };
+
+  return counts;
+}
+
+type ShadowMediaFileInput = {
+  moduleName: string;
+  sourceKey: string;
+  role: string;
+  publicUrl: string | null;
+  filePath?: string | null;
+  fileName?: string | null;
+  originalName?: string | null;
+  displayName?: string | null;
+  mimeType?: string | null;
+  fileExt?: string | null;
+  fileSize?: number | null;
+  width?: number | null;
+  height?: number | null;
+  durationSeconds?: number | null;
+  category: string;
+  altText?: string | null;
+  description?: string | null;
+  status?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+type ShadowMediaFileWrite = {
+  mediaId: number | null;
+  writeKind: 'inserted' | 'updated' | 'skipped';
+  stableKey: MediaStableKey | null;
+};
+
+function buildShadowMediaMetadata(input: ShadowMediaFileInput, stableKey: MediaStableKey | null): string {
+  return JSON.stringify({
+    moduleName: input.moduleName,
+    sourceKey: input.sourceKey,
+    role: input.role,
+    displayName: input.displayName,
+    dedupeKey: stableKey
+      ? {
+          type: stableKey.type,
+          value: stableKey.value,
+        }
+      : null,
+    ...(input.metadata ?? {}),
+  });
+}
+
+async function upsertShadowMediaFile(
+  context: MigrationContext,
+  counts: CountableWrite,
+  input: ShadowMediaFileInput,
+): Promise<ShadowMediaFileWrite> {
+  const publicUrl = normalizeMediaPath(input.publicUrl);
+  const sourceFilePath = normalizeMediaPath(input.filePath ?? null);
+  const publicUrlForWrite = publicUrl ?? sourceFilePath;
+  const filePathForWrite = sourceFilePath ?? publicUrl;
+  const fileName = input.fileName ?? normalizeFileName(publicUrlForWrite, null);
+  const fileSize = input.fileSize ?? 0;
+  const stableKey = buildMediaStableKey({
+    publicUrl,
+    filePath: sourceFilePath,
+    fileName,
+    fileSize,
+  });
+
+  if (!stableKey || !fileName) {
+    counts.skippedCount += 1;
+    addWrite(counts.actualWrites, 'media_files', 'skipped');
+    return {
+      mediaId: null,
+      writeKind: 'skipped',
+      stableKey,
+    };
+  }
+
+  const existingId = await findMediaFileByStableKey(context.pool, stableKey);
+
+  if (!existingId && !publicUrlForWrite) {
+    counts.skippedCount += 1;
+    addWrite(counts.actualWrites, 'media_files', 'skipped');
+    return {
+      mediaId: null,
+      writeKind: 'skipped',
+      stableKey,
+    };
+  }
+
+  const mimeType = input.mimeType ?? (fileName ? mimeFromFileName(fileName) : null);
+  const fileExt = input.fileExt ?? (fileName ? extFromFileName(fileName) : null);
+  const metadataJson = buildShadowMediaMetadata(input, stableKey);
+  const params = {
+    fileName,
+    originalName: input.originalName ?? fileName,
+    filePath: filePathForWrite,
+    publicUrl: publicUrlForWrite,
+    mimeType,
+    fileExt,
+    fileSize,
+    width: input.width ?? null,
+    height: input.height ?? null,
+    durationSeconds: input.durationSeconds ?? null,
+    category: normalizeMediaCategory(input.category),
+    altText: input.altText ?? null,
+    description: input.description ?? null,
+    metadataJson,
+    status: input.status ?? 'active',
+  };
+
+  if (existingId) {
+    await context.pool.execute(
+      `UPDATE media_files
+       SET file_name = :fileName,
+           original_name = COALESCE(:originalName, original_name, :fileName),
+           file_path = COALESCE(:filePath, file_path),
+           public_url = COALESCE(:publicUrl, public_url),
+           mime_type = COALESCE(:mimeType, mime_type),
+           file_ext = COALESCE(:fileExt, file_ext),
+           file_size = CASE WHEN :fileSize > 0 THEN :fileSize ELSE file_size END,
+           width = COALESCE(:width, width),
+           height = COALESCE(:height, height),
+           duration_seconds = COALESCE(:durationSeconds, duration_seconds),
+           category = :category,
+           alt_text = COALESCE(:altText, alt_text),
+           description = COALESCE(:description, description),
+           metadata_json = :metadataJson,
+           status = :status,
+           deleted_at = NULL
+       WHERE id = :id`,
+      {
+        id: existingId,
+        ...params,
+      },
+    );
+
+    counts.updatedCount += 1;
+    addWrite(counts.actualWrites, 'media_files', 'updated');
+    return {
+      mediaId: existingId,
+      writeKind: 'updated',
+      stableKey,
+    };
+  }
+
+  await context.pool.execute(
+    `INSERT INTO media_files (
+      file_name,
+      original_name,
+      file_path,
+      public_url,
+      mime_type,
+      file_ext,
+      file_size,
+      width,
+      height,
+      duration_seconds,
+      category,
+      alt_text,
+      description,
+      metadata_json,
+      status
+    ) VALUES (
+      :fileName,
+      :originalName,
+      :filePath,
+      :publicUrl,
+      :mimeType,
+      :fileExt,
+      :fileSize,
+      :width,
+      :height,
+      :durationSeconds,
+      :category,
+      :altText,
+      :description,
+      :metadataJson,
+      :status
+    )
+    ON DUPLICATE KEY UPDATE
+      file_name = VALUES(file_name),
+      original_name = VALUES(original_name),
+      file_path = VALUES(file_path),
+      mime_type = VALUES(mime_type),
+      file_ext = VALUES(file_ext),
+      file_size = CASE WHEN VALUES(file_size) > 0 THEN VALUES(file_size) ELSE file_size END,
+      width = COALESCE(VALUES(width), width),
+      height = COALESCE(VALUES(height), height),
+      duration_seconds = COALESCE(VALUES(duration_seconds), duration_seconds),
+      category = VALUES(category),
+      alt_text = COALESCE(VALUES(alt_text), alt_text),
+      description = COALESCE(VALUES(description), description),
+      metadata_json = VALUES(metadata_json),
+      status = VALUES(status),
+      deleted_at = NULL`,
+    params,
+  );
+
+  const mediaId = await findMediaFileByStableKey(context.pool, stableKey);
+
+  counts.insertedCount += 1;
+  addWrite(counts.actualWrites, 'media_files', 'inserted');
+  return {
+    mediaId,
+    writeKind: 'inserted',
+    stableKey,
+  };
+}
+
+function getCaseSourceId(caseRecord: Record<string, unknown>): string | null {
+  return asNullableString(caseRecord.sourceId ?? caseRecord.source_id ?? caseRecord.id);
+}
+
+function getCaseStatus(caseRecord: Record<string, unknown>): string {
+  const status = asNullableString(caseRecord.status);
+
+  if (status) {
+    return status;
+  }
+
+  return asBoolean(caseRecord.published ?? caseRecord.enabled ?? caseRecord.is_enabled, false) ? 'published' : 'draft';
+}
+
+async function findCaseId(pool: DbExecutor, sourceId: string | null, slug: string): Promise<number | null> {
+  if (sourceId) {
+    return findId(pool, 'SELECT id FROM cases WHERE source_id = :sourceId OR slug = :slug LIMIT 1', {
+      sourceId,
+      slug,
+    });
+  }
+
+  return findId(pool, 'SELECT id FROM cases WHERE slug = :slug LIMIT 1', { slug });
+}
+
+function buildCaseImageEntries(caseRecord: Record<string, unknown>): Record<string, unknown>[] {
+  const imageSources = [
+    caseRecord.extractedImages,
+    caseRecord.extracted_images,
+    caseRecord.caseImages,
+    caseRecord.case_images,
+    caseRecord.images,
+    caseRecord.galleryImages,
+    caseRecord.gallery_images,
+    caseRecord.gallery,
+    caseRecord.contentImages,
+    caseRecord.content_images,
+  ];
+
+  const images: Record<string, unknown>[] = [];
+
+  for (const source of imageSources) {
+    if (!Array.isArray(source)) {
+      continue;
+    }
+
+    for (const item of source) {
+      if (typeof item === 'string') {
+        images.push({ url: item });
+      } else if (isRecord(item)) {
+        images.push(item);
+      }
+    }
+  }
+
+  return images;
+}
+
+function getCaseImageUrl(image: Record<string, unknown>): string | null {
+  return normalizeMediaPath(firstString(image, 'url', 'imageUrl', 'image_url', 'publicUrl', 'public_url', 'src'));
+}
+
+async function upsertCaseSeo(input: {
+  context: MigrationContext;
+  counts: CountableWrite;
+  caseRecord: Record<string, unknown>;
+  caseId: number;
+  ownerSourceId: string;
+  publishedAt: Date | null;
+}): Promise<number> {
+  const seoTitle = asNullableString(input.caseRecord.seoTitle ?? input.caseRecord.seo_title);
+  const seoDescription = asNullableString(input.caseRecord.seoDescription ?? input.caseRecord.seo_description);
+  const keywords = asNullableString(input.caseRecord.keywords);
+
+  if (!seoTitle && !seoDescription && !keywords) {
+    return 0;
+  }
+
+  const existingId = await findId(
+    input.context.pool,
+    `SELECT id
+     FROM seo_settings
+     WHERE owner_type = 'case'
+       AND (owner_source_id = :ownerSourceId OR owner_id = :ownerId)
+     LIMIT 1`,
+    {
+      ownerSourceId: input.ownerSourceId,
+      ownerId: input.caseId,
+    },
+  );
+
+  if (existingId) {
+    await input.context.pool.execute(
+      `UPDATE seo_settings
+       SET owner_source_id = :ownerSourceId,
+           owner_id = :ownerId,
+           title = :title,
+           description = :description,
+           keywords = :keywords,
+           robots = 'index,follow',
+           published_at = :publishedAt,
+           deleted_at = NULL
+       WHERE id = :id`,
+      {
+        id: existingId,
+        ownerSourceId: input.ownerSourceId,
+        ownerId: input.caseId,
+        title: seoTitle,
+        description: seoDescription,
+        keywords,
+        publishedAt: input.publishedAt,
+      },
+    );
+
+    input.counts.updatedCount += 1;
+    addWrite(input.counts.actualWrites, 'seo_settings', 'updated');
+    return 1;
+  }
+
+  await input.context.pool.execute(
+    `INSERT INTO seo_settings (
+      owner_type,
+      owner_source_id,
+      owner_id,
+      title,
+      description,
+      keywords,
+      robots,
+      published_at
+    ) VALUES (
+      'case',
+      :ownerSourceId,
+      :ownerId,
+      :title,
+      :description,
+      :keywords,
+      'index,follow',
+      :publishedAt
+    )`,
+    {
+      ownerSourceId: input.ownerSourceId,
+      ownerId: input.caseId,
+      title: seoTitle,
+      description: seoDescription,
+      keywords,
+      publishedAt: input.publishedAt,
+    },
+  );
+
+  input.counts.insertedCount += 1;
+  addWrite(input.counts.actualWrites, 'seo_settings', 'inserted');
+  return 1;
+}
+
+async function upsertCaseFaqItems(input: {
+  context: MigrationContext;
+  counts: CountableWrite;
+  caseRecord: Record<string, unknown>;
+  caseId: number;
+  ownerSourceId: string;
+}): Promise<number> {
+  const rawFaqItems = input.caseRecord.faqItems ?? input.caseRecord.faq_items;
+  const faqItems = Array.isArray(rawFaqItems) ? rawFaqItems.filter(isRecord) : [];
+  let writtenCount = 0;
+
+  for (const [index, faqItem] of faqItems.entries()) {
+    const question = asNullableString(faqItem.question ?? faqItem.q);
+    const answer = asNullableString(faqItem.answer ?? faqItem.a);
+    const sortOrder = asNumber(faqItem.sortOrder ?? faqItem.sort_order, index + 1);
+
+    if (!question || !answer || question.length > 300) {
+      input.counts.skippedCount += 1;
+      addWrite(input.counts.actualWrites, 'faq_items', 'skipped');
+      input.counts.warnings.push({
+        code: 'case_faq_item_skipped',
+        level: 'warning',
+        message: `Skipped case FAQ item at sort_order ${sortOrder} for ${input.ownerSourceId}.`,
+      });
+      continue;
+    }
+
+    const existingId = await findId(
+      input.context.pool,
+      `SELECT id
+       FROM faq_items
+       WHERE owner_type = 'case'
+         AND owner_source_id = :ownerSourceId
+         AND sort_order = :sortOrder
+         AND question = :question
+       LIMIT 1`,
+      {
+        ownerSourceId: input.ownerSourceId,
+        sortOrder,
+        question,
+      },
+    );
+
+    if (existingId) {
+      await input.context.pool.execute(
+        `UPDATE faq_items
+         SET owner_id = :ownerId,
+             answer = :answer,
+             status = :status,
+             deleted_at = NULL
+         WHERE id = :id`,
+        {
+          id: existingId,
+          ownerId: input.caseId,
+          answer,
+          status: asString(faqItem.status, 'active'),
+        },
+      );
+
+      input.counts.updatedCount += 1;
+      addWrite(input.counts.actualWrites, 'faq_items', 'updated');
+      writtenCount += 1;
+      continue;
+    }
+
+    await input.context.pool.execute(
+      `INSERT INTO faq_items (
+        owner_type,
+        owner_source_id,
+        owner_id,
+        question,
+        answer,
+        sort_order,
+        status
+      ) VALUES (
+        'case',
+        :ownerSourceId,
+        :ownerId,
+        :question,
+        :answer,
+        :sortOrder,
+        :status
+      )`,
+      {
+        ownerSourceId: input.ownerSourceId,
+        ownerId: input.caseId,
+        question,
+        answer,
+        sortOrder,
+        status: asString(faqItem.status, 'active'),
+      },
+    );
+
+    input.counts.insertedCount += 1;
+    addWrite(input.counts.actualWrites, 'faq_items', 'inserted');
+    writtenCount += 1;
+  }
+
+  return writtenCount;
+}
+
+async function upsertCaseImages(input: {
+  context: MigrationContext;
+  counts: CountableWrite;
+  caseRecord: Record<string, unknown>;
+  caseId: number;
+  ownerSourceId: string;
+}): Promise<{
+  caseImagesCount: number;
+  mediaFilesCount: number;
+  missingImageUrlCount: number;
+  duplicateCount: number;
+}> {
+  const imageEntries = buildCaseImageEntries(input.caseRecord);
+  const seenImageKeys = new Set<string>();
+  let caseImagesCount = 0;
+  let mediaFilesCount = 0;
+  let missingImageUrlCount = 0;
+  let duplicateCount = 0;
+
+  for (const [index, image] of imageEntries.entries()) {
+    const imageUrl = getCaseImageUrl(image);
+    const sortOrder = asNumber(image.sortOrder ?? image.sort_order, index + 1);
+
+    if (!imageUrl) {
+      missingImageUrlCount += 1;
+      input.counts.skippedCount += 1;
+      addWrite(input.counts.actualWrites, 'case_images', 'skipped');
+      input.counts.warnings.push({
+        code: 'case_image_url_missing',
+        level: 'warning',
+        message: `Skipped case image at sort_order ${sortOrder} for ${input.ownerSourceId}; image URL is empty.`,
+      });
+      continue;
+    }
+
+    const imageKey = `${input.caseId}:${imageUrl}:${sortOrder}`;
+
+    if (seenImageKeys.has(imageKey)) {
+      duplicateCount += 1;
+      input.counts.skippedCount += 1;
+      addWrite(input.counts.actualWrites, 'case_images', 'skipped');
+      continue;
+    }
+
+    seenImageKeys.add(imageKey);
+
+    const fileName = firstString(image, 'fileName', 'file_name', 'storageFileName', 'storage_file_name')
+      ?? normalizeFileName(imageUrl, null);
+    const mediaWrite = await upsertShadowMediaFile(input.context, input.counts, {
+      moduleName: 'cases',
+      sourceKey: `${input.ownerSourceId}:image:${sortOrder}`,
+      role: 'case_image',
+      publicUrl: imageUrl,
+      filePath: firstString(image, 'filePath', 'file_path', 'path') ?? imageUrl,
+      fileName,
+      originalName: firstString(image, 'originalName', 'original_name') ?? fileName,
+      displayName: firstString(image, 'displayName', 'display_name', 'title'),
+      fileSize: asOptionalUnsignedInteger(image.fileSize ?? image.file_size ?? image.size),
+      width: asOptionalUnsignedInteger(image.width),
+      height: asOptionalUnsignedInteger(image.height),
+      category: 'case-image',
+      altText: firstString(image, 'altText', 'alt_text', 'alt', 'displayName', 'display_name', 'title'),
+      description: firstString(image, 'description', 'caption'),
+      status: asBoolean(image.enabled ?? image.is_enabled, true) ? 'active' : 'inactive',
+      metadata: {
+        ownerType: 'case',
+        ownerSourceId: input.ownerSourceId,
+        caseId: input.caseId,
+        sortOrder,
+        sourceRecord: image,
+      },
+    });
+
+    if (mediaWrite.writeKind !== 'skipped') {
+      mediaFilesCount += 1;
+    }
+
+    const existingId = await findId(
+      input.context.pool,
+      `SELECT id
+       FROM case_images
+       WHERE case_id = :caseId
+         AND image_url = :imageUrl
+         AND sort_order = :sortOrder
+       LIMIT 1`,
+      {
+        caseId: input.caseId,
+        imageUrl,
+        sortOrder,
+      },
+    );
+
+    if (existingId) {
+      await input.context.pool.execute(
+        `UPDATE case_images
+         SET media_id = :mediaId,
+             alt_text = :altText,
+             caption = :caption,
+             is_enabled = :isEnabled,
+             deleted_at = NULL
+         WHERE id = :id`,
+        {
+          id: existingId,
+          mediaId: mediaWrite.mediaId,
+          altText: firstString(image, 'altText', 'alt_text', 'alt'),
+          caption: firstString(image, 'caption'),
+          isEnabled: asBoolean(image.enabled ?? image.is_enabled, true) ? 1 : 0,
+        },
+      );
+
+      input.counts.updatedCount += 1;
+      addWrite(input.counts.actualWrites, 'case_images', 'updated');
+      caseImagesCount += 1;
+      continue;
+    }
+
+    await input.context.pool.execute(
+      `INSERT INTO case_images (
+        case_id,
+        media_id,
+        image_url,
+        alt_text,
+        caption,
+        sort_order,
+        is_enabled
+      ) VALUES (
+        :caseId,
+        :mediaId,
+        :imageUrl,
+        :altText,
+        :caption,
+        :sortOrder,
+        :isEnabled
+      )`,
+      {
+        caseId: input.caseId,
+        mediaId: mediaWrite.mediaId,
+        imageUrl,
+        altText: firstString(image, 'altText', 'alt_text', 'alt'),
+        caption: firstString(image, 'caption'),
+        sortOrder,
+        isEnabled: asBoolean(image.enabled ?? image.is_enabled, true) ? 1 : 0,
+      },
+    );
+
+    input.counts.insertedCount += 1;
+    addWrite(input.counts.actualWrites, 'case_images', 'inserted');
+    caseImagesCount += 1;
+  }
+
+  return {
+    caseImagesCount,
+    mediaFilesCount,
+    missingImageUrlCount,
+    duplicateCount,
+  };
+}
+
+async function migrateCases(context: MigrationContext): Promise<CountableWrite> {
+  const source = await loadSource(context.definition);
+  const cases = Array.isArray(source.data) ? source.data.filter(isRecord) : [];
+  const counts = emptyWrites();
+  let caseCount = 0;
+  let caseImagesCount = 0;
+  let mediaFilesCount = 0;
+  let seoCount = 0;
+  let faqCount = 0;
+  let skippedCaseCount = 0;
+  let missingImageUrlCount = 0;
+  let duplicateCount = 0;
+
+  for (const [index, caseRecord] of cases.entries()) {
+    const title = asString(caseRecord.title).trim();
+    const slug = asString(caseRecord.slug).trim();
+
+    if (!title || !slug) {
+      skippedCaseCount += 1;
+      counts.skippedCount += 1;
+      addWrite(counts.actualWrites, 'cases', 'skipped');
+      counts.warnings.push({
+        code: 'case_missing_required_field',
+        level: 'warning',
+        message: `Skipped case at index ${index}; title and slug are required.`,
+      });
+      continue;
+    }
+
+    const sourceId = getCaseSourceId(caseRecord);
+    const ownerSourceId = sourceId ?? slug;
+    const status = getCaseStatus(caseRecord);
+    const publishedAt = status === 'published'
+      ? asDate(caseRecord.publishedAt ?? caseRecord.published_at ?? caseRecord.updatedAt ?? caseRecord.createdAt)
+      : null;
+    const coverUrl = normalizeMediaPath(firstString(caseRecord, 'coverUrl', 'cover_url'));
+    const coverFileName = firstString(caseRecord, 'coverFileName', 'cover_file_name') ?? normalizeFileName(coverUrl, null);
+    const coverMedia = coverUrl
+      ? await upsertShadowMediaFile(context, counts, {
+          moduleName: 'cases',
+          sourceKey: `${ownerSourceId}:cover`,
+          role: 'case_cover',
+          publicUrl: coverUrl,
+          filePath: coverUrl,
+          fileName: coverFileName,
+          originalName: coverFileName,
+          displayName: firstString(caseRecord, 'coverDisplayName', 'cover_display_name'),
+          category: 'case-cover',
+          altText: title,
+          description: asNullableString(caseRecord.summary),
+          status: 'active',
+          metadata: {
+            ownerType: 'case',
+            ownerSourceId,
+            slug,
+            sourceRecord: {
+              coverUrl,
+              coverFileName,
+              coverDisplayName: firstString(caseRecord, 'coverDisplayName', 'cover_display_name'),
+            },
+          },
+        })
+      : {
+          mediaId: null,
+          writeKind: 'skipped' as const,
+          stableKey: null,
+        };
+
+    if (coverMedia.writeKind !== 'skipped') {
+      mediaFilesCount += 1;
+    } else if (!coverUrl) {
+      counts.warnings.push({
+        code: 'case_cover_url_missing',
+        level: 'info',
+        message: `Case "${slug}" has no cover URL; cover media_files write was skipped.`,
+      });
+    }
+
+    const exists = sourceId
+      ? await rowExists(
+          context.pool,
+          'SELECT COUNT(*) AS count FROM cases WHERE source_id = :sourceId OR slug = :slug',
+          { sourceId, slug },
+        )
+      : await rowExists(context.pool, 'SELECT COUNT(*) AS count FROM cases WHERE slug = :slug', { slug });
+
+    await context.pool.execute(
+      `INSERT INTO cases (
+        source_id,
+        title,
+        slug,
+        summary,
+        client_type,
+        event_type,
+        event_date,
+        location,
+        cover_media_id,
+        cover_url,
+        cover_file_name,
+        cover_display_name,
+        word_file_name,
+        word_original_name,
+        content_html,
+        content_text,
+        raw_json,
+        status,
+        sort_order,
+        is_home_featured,
+        published_at
+      ) VALUES (
+        :sourceId,
+        :title,
+        :slug,
+        :summary,
+        :clientType,
+        :eventType,
+        :eventDate,
+        :location,
+        :coverMediaId,
+        :coverUrl,
+        :coverFileName,
+        :coverDisplayName,
+        :wordFileName,
+        :wordOriginalName,
+        :contentHtml,
+        :contentText,
+        :rawJson,
+        :status,
+        :sortOrder,
+        :isHomeFeatured,
+        :publishedAt
+      )
+      ON DUPLICATE KEY UPDATE
+        source_id = VALUES(source_id),
+        title = VALUES(title),
+        summary = VALUES(summary),
+        client_type = VALUES(client_type),
+        event_type = VALUES(event_type),
+        event_date = VALUES(event_date),
+        location = VALUES(location),
+        cover_media_id = VALUES(cover_media_id),
+        cover_url = VALUES(cover_url),
+        cover_file_name = VALUES(cover_file_name),
+        cover_display_name = VALUES(cover_display_name),
+        word_file_name = VALUES(word_file_name),
+        word_original_name = VALUES(word_original_name),
+        content_html = VALUES(content_html),
+        content_text = VALUES(content_text),
+        raw_json = VALUES(raw_json),
+        status = VALUES(status),
+        sort_order = VALUES(sort_order),
+        is_home_featured = VALUES(is_home_featured),
+        published_at = VALUES(published_at),
+        deleted_at = NULL`,
+      {
+        sourceId,
+        title,
+        slug,
+        summary: asNullableString(caseRecord.summary),
+        clientType: asNullableString(caseRecord.clientType ?? caseRecord.client_type),
+        eventType: asNullableString(caseRecord.eventType ?? caseRecord.event_type),
+        eventDate: asNullableString(caseRecord.eventDate ?? caseRecord.event_date),
+        location: asNullableString(caseRecord.location),
+        coverMediaId: coverMedia.mediaId,
+        coverUrl,
+        coverFileName,
+        coverDisplayName: firstString(caseRecord, 'coverDisplayName', 'cover_display_name'),
+        wordFileName: firstString(caseRecord, 'wordFileName', 'word_file_name'),
+        wordOriginalName: firstString(caseRecord, 'wordOriginalName', 'word_original_name'),
+        contentHtml: asNullableString(caseRecord.contentHtml ?? caseRecord.content_html),
+        contentText: asNullableString(caseRecord.contentText ?? caseRecord.content_text),
+        rawJson: JSON.stringify(caseRecord),
+        status,
+        sortOrder: asNumber(caseRecord.sortOrder ?? caseRecord.sort_order, index + 1),
+        isHomeFeatured: asBoolean(caseRecord.isHomeFeatured ?? caseRecord.is_home_featured, false) ? 1 : 0,
+        publishedAt,
+      },
+    );
+
+    counts[exists ? 'updatedCount' : 'insertedCount'] += 1;
+    addWrite(counts.actualWrites, 'cases', exists ? 'updated' : 'inserted');
+    caseCount += 1;
+
+    const caseId = await findCaseId(context.pool, sourceId, slug);
+
+    if (!caseId) {
+      counts.warnings.push({
+        code: 'case_id_missing',
+        level: 'warning',
+        message: `Could not resolve case id for slug "${slug}"; case images, SEO, and FAQ rows were skipped.`,
+      });
+      continue;
+    }
+
+    const imageCounts = await upsertCaseImages({
+      context,
+      counts,
+      caseRecord,
+      caseId,
+      ownerSourceId,
+    });
+
+    caseImagesCount += imageCounts.caseImagesCount;
+    mediaFilesCount += imageCounts.mediaFilesCount;
+    missingImageUrlCount += imageCounts.missingImageUrlCount;
+    duplicateCount += imageCounts.duplicateCount;
+    seoCount += await upsertCaseSeo({
+      context,
+      counts,
+      caseRecord,
+      caseId,
+      ownerSourceId,
+      publishedAt,
+    });
+    faqCount += await upsertCaseFaqItems({
+      context,
+      counts,
+      caseRecord,
+      caseId,
+      ownerSourceId,
+    });
+  }
+
+  if (seoCount === 0) {
+    counts.warnings.push({
+      code: 'cases_seo_empty',
+      level: 'info',
+      message: 'No case SEO fields were found; seo_settings was skipped for cases.',
+    });
+  }
+
+  if (faqCount === 0) {
+    counts.warnings.push({
+      code: 'cases_faq_empty',
+      level: 'info',
+      message: 'No case FAQ items were found; faq_items was skipped for cases.',
+    });
+  }
+
+  if (caseImagesCount === 0) {
+    counts.warnings.push({
+      code: 'case_images_empty',
+      level: 'info',
+      message: 'No case images were written; source image lists were empty or skipped.',
+    });
+  }
+
+  counts.details = {
+    sourceCount: context.plan.sourceCount,
+    caseCount,
+    caseImagesCount,
+    mediaFilesCount,
+    seoCount,
+    faqCount,
+    skippedCaseCount,
+    missingImageUrlCount,
+    duplicateCount,
+    duplicate: {
+      case_images: duplicateCount,
+      media_files: 0,
+    },
+    dedupeStrategy: {
+      cases: ['source_id', 'slug'],
+      caseImages: ['case_id', 'image_url', 'sort_order'],
+      mediaFiles: ['public_url', 'file_path', 'file_name+file_size'],
+    },
+    inserted: {
+      cases: counts.actualWrites.find((write) => write.table === 'cases')?.inserted ?? 0,
+      case_images: counts.actualWrites.find((write) => write.table === 'case_images')?.inserted ?? 0,
+      media_files: counts.actualWrites.find((write) => write.table === 'media_files')?.inserted ?? 0,
+      seo_settings: counts.actualWrites.find((write) => write.table === 'seo_settings')?.inserted ?? 0,
+      faq_items: counts.actualWrites.find((write) => write.table === 'faq_items')?.inserted ?? 0,
+    },
+    updated: {
+      cases: counts.actualWrites.find((write) => write.table === 'cases')?.updated ?? 0,
+      case_images: counts.actualWrites.find((write) => write.table === 'case_images')?.updated ?? 0,
+      media_files: counts.actualWrites.find((write) => write.table === 'media_files')?.updated ?? 0,
+      seo_settings: counts.actualWrites.find((write) => write.table === 'seo_settings')?.updated ?? 0,
+      faq_items: counts.actualWrites.find((write) => write.table === 'faq_items')?.updated ?? 0,
+    },
+    skipped: {
+      cases: counts.actualWrites.find((write) => write.table === 'cases')?.skipped ?? 0,
+      case_images: counts.actualWrites.find((write) => write.table === 'case_images')?.skipped ?? 0,
+      media_files: counts.actualWrites.find((write) => write.table === 'media_files')?.skipped ?? 0,
+      seo_settings: counts.actualWrites.find((write) => write.table === 'seo_settings')?.skipped ?? 0,
+      faq_items: counts.actualWrites.find((write) => write.table === 'faq_items')?.skipped ?? 0,
+    },
+    faqSkippedReason: faqCount === 0 ? 'source_has_no_faq_items' : null,
+    seoSkippedReason: seoCount === 0 ? 'source_has_no_seo_fields' : null,
   };
 
   return counts;
@@ -1727,6 +2639,7 @@ async function migrateHomeInteractiveImages(context: MigrationContext): Promise<
 
 const migrators: Record<WritableContentModuleName, (context: MigrationContext) => Promise<CountableWrite>> = {
   articles: migrateArticles,
+  cases: migrateCases,
   pages: migratePages,
   'contact-info': migrateContactInfo,
   'company-assets': migrateCompanyAssets,
@@ -1754,7 +2667,7 @@ export async function migrateLowRiskModule(context: MigrationContext): Promise<M
         warnings: [],
       },
       startedAt,
-      skippedReason: context.plan.skippedReason ?? 'not_implemented_in_22_3B_6',
+      skippedReason: context.plan.skippedReason ?? 'not_implemented_in_22_3B_7',
     });
   }
 
