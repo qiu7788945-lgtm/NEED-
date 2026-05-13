@@ -108,3 +108,86 @@ Article writes still use the JSON maintenance path in 22-5B. This keeps the exis
 Route manifest, sitemap, and publish log behavior remains on the established chain. Unpublished articles must continue to be skipped by the existing route manifest / prerender logic, and published article route counts should remain consistent with the current JSON source. 22-5B is not a full-site MySQL primary-source closeout.
 
 The next step, 22-5C, may only consider media-library or another single module after 22-5B is validated with MySQL available and unavailable. It must have its own single-module acceptance pass and must not switch the whole site at once.
+
+## 22-5C Media-Library Boundary Confirmation
+
+22-5C is only a boundary confirmation step for media-library. It does not switch the media service to MySQL, does not change upload/list/archive/restore/delete/update behavior, and does not change frontend UI, admin UI, route manifest, sitemap, prerender, publish logs, JSON data, uploads, cases, solutions, scenario detail pages, or publish logs.
+
+### Current Media Read/Write Chain
+
+The current media-library runtime index is `server/data/media-library.json`. It is read by `readMediaIndex()` in `server/src/services/media/media.service.ts`, and written by `writeMediaIndex()` with a file lock queue and temporary-file rename. `listLocalImages()` does not simply return the JSON object; it combines:
+
+- files currently present under the image and video upload directories
+- metadata from `server/data/media-library.json`
+- derived file stats such as size and dimensions
+- home usage checks from `readHomeInteractiveImages()` and `readHomeVideoConfig()`
+- filters for category, owner, slot, enabled, status, file type, cleanup, and keyword
+
+The media API is mounted at `/api/media`. Current entry points are:
+
+- `POST /api/media/upload` -> `toUploadedImage()`
+- `GET /api/media/list` -> `listLocalImages()`
+- `PATCH /api/media/:fileName` -> `updateLocalImageMetadata()`
+- `PATCH /api/media/:fileName/archive` -> `archiveLocalImage()`
+- `PATCH /api/media/:fileName/restore` -> `restoreLocalImage()`
+- `DELETE /api/media/:fileName` -> `deleteLocalImage()`
+- batch archive/restore/delete endpoints -> batch service wrappers
+
+Admin callers include the media library page, `MediaPicker`, home management upload flows, case management upload flows, and solution management upload flows. This means the media service currently supports the admin media library, uploads, image/video selection, and module-specific material attachment through one shared endpoint family.
+
+The JSON index distinguishes storage and display metadata:
+
+- the JSON object key is the storage file name
+- `originalName` is the uploaded source name
+- `displayName` is the editable/admin display title
+- `url` is the public URL
+- storage path is derived from file type plus file name rather than stored as a first-class JSON field
+- `category`, `alt`, `description`, `ownerType`, `ownerId`, `ownerSlug`, `groupKey`, `slotNo`, `caption`, `enabled`, `sortOrder`, `status`, and `createdAt` are stored in the JSON entry
+
+### MySQL Shared Table Assessment
+
+`media_files` is a shared table, not a media-library-only table. It already contains records written or updated for media-library, company-assets, home-video, home-interactive-images, cases images, and solutions media items.
+
+The table has enough first-class fields for a read-only media row foundation: `file_name`, `original_name`, `file_path`, `public_url`, `mime_type`, `file_ext`, `file_size`, `width`, `height`, `duration_seconds`, `category`, `alt_text`, `description`, `storage_provider`, `usage_count`, `status`, timestamps, and `deleted_at`.
+
+However, the current admin media API shape also needs `displayName`, owner fields, group keys, slot numbers, captions, enabled state, sort order, and source-record context. For media-library migration rows, these are preserved in `metadata_json` with:
+
+- `moduleName: media-library`
+- `sourceKey`
+- `displayName` / `title`
+- `fileType`
+- `ownerType`, `ownerId`, `ownerSlug`, `groupKey`, `slotNo`
+- `caption`, `enabled`, `sortOrder`, `createdAt`
+- `dedupeKey`
+- `sourceRecord`
+
+The 22-4C compare checks are strong enough to support a future read-only adapter draft: they match media-library source records by `public_url/url`, then `file_path`, then `file_name + file_size`; they compare URL/path, file name, original/display metadata, MIME/ext/size, category, alt, description, status, and `metadata_json.sourceRecord`. They also explicitly treat extra MySQL media rows as warning/info because `media_files` is shared.
+
+### Risks Before Switching
+
+media-library should not directly read all `media_files` rows as the admin library list. Doing so may show cases, solutions, home, and company-assets assets that were only meant to be module-owned or derived records.
+
+Filtering only by `metadata_json.moduleName = media-library` is also risky. Shared dedupe/update behavior can leave a row owned by another module while still preserving media-library-compatible ownership metadata, or vice versa. The next step must define a precise ownership rule for which `media_files` rows belong in the media-library list.
+
+The largest runtime risk is read/write inconsistency. Today uploads, metadata edits, archive/restore, permanent delete, and batch operations all write `server/data/media-library.json` and/or the local upload files. If the admin list starts reading MySQL before writes are mirrored to the same source, users can upload or edit a media item and not see the expected list state.
+
+Deletion is especially sensitive. Current permanent delete removes the local file and JSON index entry after archive, and it only blocks known home usages from the media service usage map. A MySQL-backed list/delete design must not delete shared files that cases, solutions, home, company-assets, articles, or pages still reference.
+
+Switching media-library must not affect the already accepted `home-video`, `home-interactive-images`, `company-assets`, and `articles` read fallbacks, and it must not make `build:prerender` depend on MySQL media success. The uploads directory structure must remain unchanged.
+
+### Recommendation
+
+media-library is not suitable for an immediate direct service switch. The next safe move is a read-only adapter draft that is not connected to business endpoints, followed by a shadow comparison of adapter output versus the current `listLocalImages()` output.
+
+The future ownership rule should be defined before any endpoint switch. A candidate rule should include media-library source rows matched by stable key, plus rows whose metadata keeps enough media-library/sourceRecord context, while excluding module-only records from cases, solutions, home, and company-assets unless they are intentionally part of the admin media library.
+
+### Suggested Round 22-5 Sequence
+
+- 22-5C-1: media-library read-chain inventory and ownership rule confirmation.
+- 22-5C-2: media-library read-only adapter draft, not connected to business routes.
+- 22-5C-3: media-library admin list MySQL-first + JSON fallback small-scope switch after adapter compare passes.
+- 22-5C-4: media-library write consistency plan for upload, metadata update, archive/restore, delete, and batch operations.
+- 22-5D: cases service switch, separately validated.
+- 22-5E: solutions service switch, separately validated.
+- 22-5F: decide whether publish-logs should continue to keep JSON as the primary runtime chain.
+- 22-6: MySQL-to-JSON export and rollback rehearsal.
