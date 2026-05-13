@@ -1,10 +1,12 @@
 import { getSafeDatabaseConfig } from '../client.js';
 import { migrationModuleNames, type MigrationModuleName } from '../migration/types.js';
 import { moduleDefinitions } from '../migrators/registry.js';
+import { runDetailCompare } from './detail-checks.js';
 import { isCountEqualityInformational, readMysqlTarget } from './mysql-readers.js';
 import { readJsonSource } from './source-readers.js';
 import type {
   CompareCliOptions,
+  DetailCompareStatus,
   CompareReport,
   CompareStatus,
   ModuleCompareResult,
@@ -38,6 +40,7 @@ function getModuleStatus(input: {
   mysqlCount: number;
   keyCheck: StableKeyCheck;
   errorCount: number;
+  detailStatus?: DetailCompareStatus;
 }): CompareStatus {
   if (input.errorCount > 0) {
     return 'failed';
@@ -67,10 +70,22 @@ function getModuleStatus(input: {
     return 'count_mismatch';
   }
 
+  if (input.detailStatus === 'failed') {
+    return 'failed';
+  }
+
+  if (input.detailStatus === 'field_mismatch') {
+    return 'field_mismatch';
+  }
+
+  if (input.detailStatus === 'warning') {
+    return 'warning';
+  }
+
   return 'matched';
 }
 
-async function compareModule(moduleName: MigrationModuleName): Promise<ModuleCompareResult> {
+async function compareModule(moduleName: MigrationModuleName, options: CompareCliOptions): Promise<ModuleCompareResult> {
   const definition = moduleDefinitions.find((item) => item.moduleName === moduleName);
 
   if (!definition) {
@@ -88,7 +103,9 @@ async function compareModule(moduleName: MigrationModuleName): Promise<ModuleCom
       jsonCount: 0,
       mysqlCount: 0,
       status: 'compare_not_implemented',
+      detailStatus: 'failed',
       stableKeyChecks: [],
+      fieldChecks: [],
       warnings: [],
       errors: [
         {
@@ -106,8 +123,12 @@ async function compareModule(moduleName: MigrationModuleName): Promise<ModuleCom
       readMysqlTarget(moduleName),
     ]);
     const keyCheck = stableKeyCheck(jsonSource.stableKeys, mysqlTarget.stableKeys);
-    const warnings = [...jsonSource.warnings, ...mysqlTarget.warnings];
+    const detail = options.detail
+      ? await runDetailCompare({ moduleName, jsonSource, mysqlTarget })
+      : { fieldChecks: [], warnings: [], errors: [] };
+    const warnings = [...jsonSource.warnings, ...mysqlTarget.warnings, ...detail.warnings];
     const errors = warnings.filter((warning) => warning.level === 'error');
+    const allErrors = [...errors, ...detail.errors];
 
     return {
       moduleName,
@@ -127,11 +148,14 @@ async function compareModule(moduleName: MigrationModuleName): Promise<ModuleCom
         jsonCount: jsonSource.sourceCount,
         mysqlCount: mysqlTarget.rowCount,
         keyCheck,
-        errorCount: errors.length,
+        errorCount: allErrors.length,
+        detailStatus: detail.detailStatus,
       }),
+      detailStatus: detail.detailStatus,
       stableKeyChecks: [keyCheck],
+      fieldChecks: detail.fieldChecks,
       warnings,
-      errors,
+      errors: allErrors,
     };
   } catch (error) {
     return {
@@ -149,6 +173,7 @@ async function compareModule(moduleName: MigrationModuleName): Promise<ModuleCom
       mysqlCount: 0,
       status: 'failed',
       stableKeyChecks: [],
+      fieldChecks: [],
       warnings: [],
       errors: [
         {
@@ -192,7 +217,7 @@ export async function runContentCompare(options: CompareCliOptions): Promise<Com
   const modules = [];
 
   for (const moduleName of selectedModules) {
-    modules.push(await compareModule(moduleName));
+    modules.push(await compareModule(moduleName, options));
   }
 
   return {

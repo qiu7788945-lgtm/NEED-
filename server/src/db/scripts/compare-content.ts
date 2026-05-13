@@ -11,10 +11,12 @@ function printUsage(): void {
   npm.cmd run compare:content -- --module articles
   npm.cmd run compare:content -- --module all
   npm.cmd run compare:content -- --format json
+  npm.cmd run compare:content -- --module contact-info --detail
 
 Options:
   --module <name> Compare one module, or "all". Defaults to all.
-  --format json   Output JSON report. JSON is the only format in 22-4A.`);
+  --format json   Output JSON report. JSON is the only format in 22-4.
+  --detail        Include 22-4B low-risk field checks. Enabled by default.`);
 }
 
 function isMigrationModuleName(value: string): value is MigrationModuleName {
@@ -25,6 +27,7 @@ function parseCliOptions(args: string[]): CompareCliOptions {
   const options: CompareCliOptions = {
     moduleName: 'all',
     format: 'json',
+    detail: true,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -52,11 +55,16 @@ function parseCliOptions(args: string[]): CompareCliOptions {
       const format = args[index + 1];
 
       if (format !== 'json') {
-        throw new Error('Only --format json is supported in 22-4A.');
+        throw new Error('Only --format json is supported in 22-4.');
       }
 
       options.format = 'json';
       index += 1;
+      continue;
+    }
+
+    if (arg === '--detail') {
+      options.detail = true;
       continue;
     }
 

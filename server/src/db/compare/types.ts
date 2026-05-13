@@ -3,6 +3,8 @@ import type { MigrationModuleName, MigrationWarning } from '../migration/types.j
 export type CompareStatus =
   | 'matched'
   | 'count_mismatch'
+  | 'field_mismatch'
+  | 'warning'
   | 'missing_in_mysql'
   | 'missing_in_json'
   | 'skipped_empty_source'
@@ -12,6 +14,32 @@ export type CompareStatus =
 export type CompareCliOptions = {
   moduleName: MigrationModuleName | 'all';
   format: 'json';
+  detail: boolean;
+};
+
+export type DetailCompareStatus =
+  | 'matched'
+  | 'field_mismatch'
+  | 'warning'
+  | 'skipped_empty_source'
+  | 'failed';
+
+export type FieldCheckStatus =
+  | 'matched'
+  | 'mismatch'
+  | 'missing_in_mysql'
+  | 'missing_in_json'
+  | 'warning'
+  | 'skipped'
+  | 'failed';
+
+export type FieldCheck = {
+  fieldName: string;
+  stableKey?: string;
+  jsonValue?: unknown;
+  mysqlValue?: unknown;
+  status: FieldCheckStatus;
+  message: string;
 };
 
 export type StableKeyCheck = {
@@ -29,6 +57,7 @@ export type JsonSourceSnapshot = {
   absolutePath: string;
   sourceCount: number;
   sourceHash: string | null;
+  data: unknown;
   stableKeys: string[];
   warnings: MigrationWarning[];
 };
@@ -56,7 +85,9 @@ export type ModuleCompareResult = {
   jsonCount: number;
   mysqlCount: number;
   status: CompareStatus;
+  detailStatus?: DetailCompareStatus;
   stableKeyChecks: StableKeyCheck[];
+  fieldChecks: FieldCheck[];
   warnings: MigrationWarning[];
   errors: MigrationWarning[];
 };

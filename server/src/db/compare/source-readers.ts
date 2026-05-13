@@ -116,7 +116,7 @@ function stableKeysForModule(moduleName: MigrationModuleName, data: unknown): st
   }
 
   if (moduleName === 'home-interactive-images') {
-    return compactKeys(arrayRecords(data).map((record, index) => keyed('slot', stableValue(record.slotNumber ?? record.slot_number) ?? String(index + 1))));
+    return compactKeys(arrayRecords(data).map((record, index) => keyed('slot', stableValue(record.slotNo ?? record.slotNumber ?? record.slot_number) ?? String(index + 1))));
   }
 
   if (moduleName === 'company-assets') {
@@ -182,6 +182,7 @@ export async function readJsonSource(definition: ModuleDefinition): Promise<Json
     absolutePath: source.absolutePath,
     sourceCount: source.sourceCount,
     sourceHash: source.sourceHash,
+    data: source.data,
     stableKeys,
     warnings,
   };
