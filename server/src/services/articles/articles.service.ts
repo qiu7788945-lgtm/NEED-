@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Article, ArticleCategory, ArticleFaqItem, ArticleInput, ArticleStatus } from '../../../../shared/types/article.js';
+import { readArticlesWithMysqlFallback } from '../data-source/articles-content-source.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const dataDir = path.join(serverRoot, 'data');
@@ -28,13 +29,16 @@ function createArticleError(message: string, statusCode: number, code: string) {
   });
 }
 
-async function readArticles(): Promise<Article[]> {
+function normalizeArticles(value: unknown): Article[] {
+  return Array.isArray(value) ? value.map((article) => normalizeArticle(article as Partial<Article>)) : [];
+}
+
+async function readArticlesFromJson(): Promise<Article[]> {
   await fs.mkdir(dataDir, { recursive: true });
 
   try {
     const raw = await fs.readFile(articlesPath, 'utf8');
-    const parsed = JSON.parse(raw) as Article[];
-    return Array.isArray(parsed) ? parsed.map(normalizeArticle) : [];
+    return normalizeArticles(JSON.parse(raw));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       await writeArticles([]);
@@ -43,6 +47,10 @@ async function readArticles(): Promise<Article[]> {
 
     throw error;
   }
+}
+
+async function readArticles(): Promise<Article[]> {
+  return readArticlesWithMysqlFallback(readArticlesFromJson, normalizeArticles);
 }
 
 async function writeArticles(articles: Article[]) {
@@ -216,7 +224,7 @@ export async function listArticles(filters: ArticleListFilters = {}) {
 
 export async function getArticle(id: string) {
   const articles = await readArticles();
-  const article = articles.find((item) => item.id === id);
+  const article = articles.find((item) => item.id === id || item.slug === id);
 
   if (!article) {
     throw createArticleError('没有找到这篇文章。', 404, 'ARTICLE_NOT_FOUND');
@@ -226,7 +234,7 @@ export async function getArticle(id: string) {
 }
 
 export async function createArticle(input: ArticleInput) {
-  const articles = await readArticles();
+  const articles = await readArticlesFromJson();
   const article = createArticleFromInput(input, articles);
   const nextArticles = [...articles, article];
   await writeArticles(nextArticles);
@@ -234,7 +242,7 @@ export async function createArticle(input: ArticleInput) {
 }
 
 export async function updateArticle(id: string, input: ArticleInput) {
-  const articles = await readArticles();
+  const articles = await readArticlesFromJson();
   const article = articles.find((item) => item.id === id);
 
   if (!article) {
@@ -247,7 +255,7 @@ export async function updateArticle(id: string, input: ArticleInput) {
 }
 
 export async function deleteArticle(id: string) {
-  const articles = await readArticles();
+  const articles = await readArticlesFromJson();
   const exists = articles.some((article) => article.id === id);
 
   if (!exists) {
@@ -267,7 +275,7 @@ export async function reorderArticles(items: ArticleReorderItem[]) {
     throw createArticleError('排序数据格式不正确。', 400, 'INVALID_ARTICLE_REORDER');
   }
 
-  const articles = await readArticles();
+  const articles = await readArticlesFromJson();
   const sortOrderById = new Map(items.map((item) => [item.id, normalizeNumber(item.sortOrder, 0)]));
   const now = new Date().toISOString();
   const nextArticles = articles.map((article) => (
