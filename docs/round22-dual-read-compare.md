@@ -22,6 +22,7 @@ npm.cmd run compare:content -- --module articles
 npm.cmd run compare:content -- --module media-library
 npm.cmd run compare:content -- --module cases
 npm.cmd run compare:content -- --module solutions
+npm.cmd run compare:content -- --module scenario-detail-pages
 npm.cmd run compare:content -- --module publish-logs
 npm.cmd run compare:content -- --module all --detail
 npm.cmd run compare:content -- --module contact-info --detail
@@ -43,7 +44,21 @@ If MySQL is not configured, the tool exits with a clear JSON error that lists th
 
 ## 22-4A Baseline
 
-22-4A compares module-level source counts and stable keys:
+22-4A compares module-level source counts and stable keys for all compare modules:
+
+- `pages`
+- `contact-info`
+- `company-assets`
+- `home-video`
+- `home-interactive-images`
+- `articles`
+- `media-library`
+- `cases`
+- `solutions`
+- `scenario-detail-pages`
+- `publish-logs`
+
+Baseline checks include:
 
 - JSON source count versus MySQL target row count
 - JSON source hash from the migration source loader
@@ -132,8 +147,22 @@ The JSON report includes:
 - `skipped_empty_source`
 - `failed`
 
-## Deferred to 22-4D
+## 22-4D Total Acceptance
 
-22-4D remains a final compare-stage acceptance pass. It should focus on running the full command matrix against the current shadow database, reviewing report output, and confirming that no service switch, no MySQL runtime read path, no JSON mutation, no migration snapshot, no upload changes, and no prerender/sitemap/publish-log logic changes were introduced.
+22-4D is the final acceptance pass for the compare stage. It does not add a service switch, does not make MySQL authoritative, and does not move the website onto MySQL reads.
 
-Any decision to change read services, make MySQL authoritative, alter route manifests, or change prerender/sitemap behavior is outside 22-4 and must not be done here.
+22-4D is considered passed when:
+
+- lint, server typecheck, and prerender build pass
+- `compare:content` can connect to MySQL when configured and output a JSON report
+- every module listed in the 22-4A baseline can output a compare result
+- 22-4B low-risk modules still produce detail checks without regressions
+- 22-4C core modules still produce detail checks or explicit field-level differences
+- `pages` and `scenario-detail-pages` empty sources are handled safely
+- shared `media_files` extra MySQL rows are warning/info context, not direct failures
+- `publish-logs` reports concrete `publish_version` values when a JSON publish log is `missing_in_mysql`
+- no `server/data/*.json`, `server/data/publish-logs/*.json`, `server/uploads/**`, migration snapshot, route manifest, sitemap script, prerender script, publish-log generator, frontend UI, admin UI, API output, or business service is changed by the compare tool
+
+The compare tool remains manual-only and read-only. A compare failure is an acceptance finding for the shadow database; it must not affect the website, dev server, build, prerender, existing JSON adapters, JSON maintenance entry points, or the official JSON data chain.
+
+After 22-4D, the next phase may be 22-5, but only after the full compare report is reviewed and accepted. 22-5 must be a single-module service-switch phase with one module changed and verified at a time; it must not switch the whole site at once.

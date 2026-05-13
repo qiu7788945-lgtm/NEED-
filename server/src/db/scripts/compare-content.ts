@@ -8,12 +8,18 @@ import { migrationModuleNames, type MigrationModuleName } from '../migration/typ
 function printUsage(): void {
   console.log(`Usage:
   npm.cmd run compare:content
+  npm.cmd run compare:content -- --module all
+  npm.cmd run compare:content -- --module pages
+  npm.cmd run compare:content -- --module contact-info
+  npm.cmd run compare:content -- --module company-assets
+  npm.cmd run compare:content -- --module home-video
+  npm.cmd run compare:content -- --module home-interactive-images
   npm.cmd run compare:content -- --module articles
   npm.cmd run compare:content -- --module media-library
   npm.cmd run compare:content -- --module cases
   npm.cmd run compare:content -- --module solutions
+  npm.cmd run compare:content -- --module scenario-detail-pages
   npm.cmd run compare:content -- --module publish-logs
-  npm.cmd run compare:content -- --module all
   npm.cmd run compare:content -- --format json
   npm.cmd run compare:content -- --module articles --detail
 
