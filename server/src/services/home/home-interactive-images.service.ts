@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { HomeInteractiveImageSlot } from '../../../../shared/types/home.js';
+import { readHomeInteractiveImagesWithMysqlFallback } from '../data-source/low-risk-content-source.js';
 import { logger } from '../../utils/logger.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -87,7 +88,7 @@ export function validateHomeInteractiveSlots(slots: HomeInteractiveImageSlot[]) 
   }).sort((a, b) => a.slotNo - b.slotNo);
 }
 
-export async function readHomeInteractiveImages() {
+async function readHomeInteractiveImagesFromJson() {
   await fs.mkdir(dataDir, { recursive: true });
 
   try {
@@ -118,6 +119,13 @@ export async function readHomeInteractiveImages() {
 
     throw error;
   }
+}
+
+export async function readHomeInteractiveImages() {
+  return readHomeInteractiveImagesWithMysqlFallback(
+    readHomeInteractiveImagesFromJson,
+    (value) => validateHomeInteractiveSlots(value as HomeInteractiveImageSlot[]),
+  );
 }
 
 export async function writeHomeInteractiveImages(slots: HomeInteractiveImageSlot[]) {

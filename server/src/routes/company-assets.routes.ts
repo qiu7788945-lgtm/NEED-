@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
+import { readCompanyAssetsWithMysqlFallback } from '../services/data-source/low-risk-content-source.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { success } from '../utils/api-response.js';
 
@@ -90,10 +91,14 @@ function normalizeCompanyAssets(value: unknown): CompanyAsset[] {
   return value.map(normalizeCompanyAsset).sort((a, b) => a.sortOrder - b.sortOrder);
 }
 
-async function readCompanyAssets() {
+async function readCompanyAssetsFromJson() {
   const raw = await fs.readFile(companyAssetsPath, 'utf8');
 
   return normalizeCompanyAssets(JSON.parse(raw));
+}
+
+async function readCompanyAssets() {
+  return readCompanyAssetsWithMysqlFallback(readCompanyAssetsFromJson, normalizeCompanyAssets);
 }
 
 async function writeCompanyAssets(value: unknown) {

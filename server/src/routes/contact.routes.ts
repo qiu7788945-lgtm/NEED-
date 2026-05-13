@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
+import { readContactInfoWithMysqlFallback } from '../services/data-source/low-risk-content-source.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { success } from '../utils/api-response.js';
 
@@ -161,10 +162,14 @@ function normalizeContactInfo(value: unknown): ContactInfo {
   };
 }
 
-async function readContactInfo() {
+async function readContactInfoFromJson() {
   const raw = await fs.readFile(contactInfoPath, 'utf8');
 
   return normalizeContactInfo(JSON.parse(raw));
+}
+
+async function readContactInfo() {
+  return readContactInfoWithMysqlFallback(readContactInfoFromJson, normalizeContactInfo);
 }
 
 async function writeContactInfo(value: unknown) {

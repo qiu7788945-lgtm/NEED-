@@ -12,6 +12,7 @@ import type {
   PageType,
   PageValidationResult,
 } from '../../../../shared/types/pages.js';
+import { readPagesWithMysqlFallback } from '../data-source/low-risk-content-source.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const dataDir = path.join(serverRoot, 'data');
@@ -99,7 +100,7 @@ function createPageError(message: string, statusCode: number, code: string) {
   });
 }
 
-async function readPages(): Promise<Page[]> {
+async function readPagesFromJson(): Promise<Page[]> {
   await fs.mkdir(dataDir, { recursive: true });
 
   try {
@@ -114,6 +115,10 @@ async function readPages(): Promise<Page[]> {
 
     throw error;
   }
+}
+
+async function readPages(): Promise<Page[]> {
+  return readPagesWithMysqlFallback(readPagesFromJson);
 }
 
 async function writePages(pages: Page[]) {
@@ -473,7 +478,7 @@ export async function getPage(id: string) {
 }
 
 export async function createPage(input: PageInput) {
-  const pages = await readPages();
+  const pages = await readPagesFromJson();
   const page = createPageFromInput(input, pages);
   const nextPages = [...pages, page];
   await writePages(nextPages);
@@ -481,7 +486,7 @@ export async function createPage(input: PageInput) {
 }
 
 export async function updatePage(id: string, input: PageInput) {
-  const pages = await readPages();
+  const pages = await readPagesFromJson();
   const page = pages.find((item) => item.id === id);
 
   if (!page) {
@@ -494,7 +499,7 @@ export async function updatePage(id: string, input: PageInput) {
 }
 
 export async function deletePage(id: string) {
-  const pages = await readPages();
+  const pages = await readPagesFromJson();
   const exists = pages.some((page) => page.id === id);
 
   if (!exists) {
@@ -510,7 +515,7 @@ export async function updatePageStatus(id: string, status: unknown) {
 }
 
 export async function duplicatePage(id: string) {
-  const pages = await readPages();
+  const pages = await readPagesFromJson();
   const sourcePage = pages.find((page) => page.id === id);
 
   if (!sourcePage) {
@@ -540,7 +545,7 @@ export async function reorderPages(items: PageReorderItem[]) {
     throw createPageError('Invalid page reorder payload.', 400, 'INVALID_PAGE_REORDER');
   }
 
-  const pages = await readPages();
+  const pages = await readPagesFromJson();
   const sortOrderById = new Map(items.map((item) => [item.id, normalizeNumber(item.sortOrder, 0)]));
   const now = new Date().toISOString();
   const nextPages = pages.map((page) => (

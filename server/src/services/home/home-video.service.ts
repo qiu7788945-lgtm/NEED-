@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { HomeVideoConfig } from '../../../../shared/types/home.js';
+import { readHomeVideoWithMysqlFallback } from '../data-source/low-risk-content-source.js';
 import { logger } from '../../utils/logger.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -65,7 +66,7 @@ function normalizeHomeVideoConfig(config: Partial<HomeVideoConfig>): HomeVideoCo
   };
 }
 
-export async function readHomeVideoConfig() {
+async function readHomeVideoConfigFromJson() {
   await fs.mkdir(dataDir, { recursive: true });
 
   try {
@@ -98,6 +99,13 @@ export async function readHomeVideoConfig() {
 
     throw error;
   }
+}
+
+export async function readHomeVideoConfig() {
+  return readHomeVideoWithMysqlFallback(
+    readHomeVideoConfigFromJson,
+    (value) => normalizeHomeVideoConfig(value as Partial<HomeVideoConfig>),
+  );
 }
 
 export async function writeHomeVideoConfig(config: Partial<HomeVideoConfig>) {
