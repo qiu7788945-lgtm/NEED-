@@ -191,3 +191,41 @@ The future ownership rule should be defined before any endpoint switch. A candid
 - 22-5E: solutions service switch, separately validated.
 - 22-5F: decide whether publish-logs should continue to keep JSON as the primary runtime chain.
 - 22-6: MySQL-to-JSON export and rollback rehearsal.
+
+## 22-5C-2 Media-Library Read-Only Adapter Draft
+
+22-5C-2 adds a standalone, read-only media-library MySQL adapter and shadow compare command. It is not connected to `/api/media/list`, the admin media library, upload, update, archive, restore, delete, batch operations, prerender, sitemap, or publish logs.
+
+The official media-library runtime chain remains unchanged:
+
+- `/api/media/list` still uses `listLocalImages()`
+- `listLocalImages()` still combines `server/data/media-library.json`, local upload files, file stats, and usage checks
+- upload/update/archive/restore/delete still use the existing JSON/uploads path
+- no business route reads MySQL `media_files` through the new adapter
+
+The standalone adapter reads `media_files` and maps rows into a media-library-like shadow shape with `id`, `url`, `publicUrl`, `fileName`, `originalName`, `displayName`, `title`, `filePath`, `mimeType`, `fileExt`, `fileSize`, `category`, `altText`, `description`, `status`, timestamps, `source`, `ownershipReason`, and raw metadata.
+
+Ownership is intentionally conservative because `media_files` is shared:
+
+- `likelyMediaLibrary`: metadata explicitly says `moduleName: media-library`, source metadata says media-library, or `metadata_json.sourceRecord` keeps media-library-style stable and display fields.
+- `sharedButReferenced`: metadata points to shared business ownership such as home, cases, solutions, company-assets, or their media categories.
+- `unknown`: metadata is insufficient for a safe media-library list decision.
+
+The shadow compare command is:
+
+```powershell
+npm.cmd run compare:media-library-source
+```
+
+It is stdout-only and read-only. It compares current `listLocalImages({ status: 'all' })` output against the standalone MySQL adapter output and reports:
+
+- JSON/uploads list count
+- MySQL total, likely media-library, shared excluded, and unknown ownership counts
+- matched stable keys
+- JSON/uploads records missing from the MySQL likely media-library set
+- MySQL likely media-library records missing from JSON/uploads
+- displayName/title, originalName, fileSize, mimeType, category, and status mismatches
+- shared rows excluded from official media-library consideration
+- unknown ownership rows
+
+22-5C-3 should not start until this report is reviewed. The next gate is whether the likely-media-library ownership rule matches current admin expectations closely enough. Write consistency, delete protection, rename/displayName synchronization, and shared-reference safety remain out of scope for 22-5C-2.
