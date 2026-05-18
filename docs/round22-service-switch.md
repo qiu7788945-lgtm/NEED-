@@ -597,3 +597,57 @@ If MySQL is not configured, the matched row is missing, the matched row is `shar
 22-5C-4C upload shadow write remains in place. 22-5C-4D does not change upload's JSON/uploads primary behavior, delete, archive, restore, batch operations, `/api/media/list`, frontend UI, admin UI, route manifest, sitemap, prerender, publish logs, cases, solutions, articles, or scenario detail pages.
 
 22-5C-4E may consider archive/restore shadow write as a separate step. Delete protection and physical file deletion remain later work.
+
+## 22-5C-4E Archive / Restore Shadow Status Update
+
+22-5C-4E adds only the single-item archive/restore shadow status update after the existing JSON status update succeeds. The official archive/restore write path remains `server/data/media-library.json`; MySQL is still a non-blocking shadow target.
+
+The single-item archive order remains:
+
+- run the existing home usage protection
+- write `status: archived` to `server/data/media-library.json`
+- build the unchanged archive API response object
+- attempt a MySQL status-only shadow update to `status = archived`
+- return the existing API response shape
+
+The single-item restore order remains:
+
+- write `status: active` to `server/data/media-library.json`
+- build the unchanged restore API response object
+- attempt a MySQL status-only shadow update to `status = active`
+- return the existing API response shape
+
+The shadow status update uses the same stable-key priority as the upload and metadata shadow writers:
+
+- `public_url` / current media `url`
+- `file_path`
+- `file_name + file_size`
+
+The status shadow update only changes:
+
+- `status`
+- `metadata_json`
+
+`updated_at` is advanced by the table's normal update behavior. The shadow status update does not overwrite file identity or storage fields:
+
+- `public_url`
+- `file_path`
+- `file_name`
+- `file_size`
+- `mime_type`
+- `storage_provider`
+- `created_at`
+
+`metadata_json` is merged with the existing MySQL metadata where available and keeps:
+
+- `moduleName: media-library`
+- `sourceRecord.status`
+- `shadowWrite: true`
+- `shadowWriteStage: 22-5C-4E`
+- `lastShadowAction: archive` or `lastShadowAction: restore`
+
+If MySQL is not configured, the matched row is missing, the matched row is `sharedButReferenced`, ownership is unknown, ownership signals conflict, or the update fails, the shadow writer logs a throttled warning and the JSON archive/restore operation remains successful. MySQL shadow status is not exposed through the API response.
+
+22-5C-4E does not change upload's JSON/uploads primary behavior, metadata/displayName JSON primary behavior, delete, batch operation semantics, `/api/media/list`, frontend UI, admin UI, route manifest, sitemap, prerender, publish logs, cases, solutions, articles, or scenario detail pages. Batch archive/restore remain outside this step and are kept on the original JSON-only behavior.
+
+22-5C-4F may consider deletion protection design. Delete and physical file removal remain later work and are not touched by 22-5C-4E.

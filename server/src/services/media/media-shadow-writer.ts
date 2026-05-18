@@ -53,6 +53,7 @@ type MysqlMediaRow = RowDataPacket & {
 const uploadShadowWarningIntervalMs = 60 * 1000;
 let lastUploadShadowWarningAt = 0;
 let lastMetadataShadowWarningAt = 0;
+let lastStatusShadowWarningAt = 0;
 
 function asString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -89,6 +90,20 @@ function warnMetadataShadow(reason: string, error?: unknown, meta: UnknownRecord
 
   lastMetadataShadowWarningAt = now;
   logger.warn('media-library metadata MySQL shadow update skipped.', {
+    reason,
+    message: error instanceof Error ? error.message : error ? String(error) : undefined,
+    ...meta,
+  });
+}
+
+function warnStatusShadow(reason: string, error?: unknown, meta: UnknownRecord = {}) {
+  const now = Date.now();
+  if (now - lastStatusShadowWarningAt < uploadShadowWarningIntervalMs) {
+    return;
+  }
+
+  lastStatusShadowWarningAt = now;
+  logger.warn('media-library status MySQL shadow update skipped.', {
     reason,
     message: error instanceof Error ? error.message : error ? String(error) : undefined,
     ...meta,
@@ -210,8 +225,8 @@ function metadataJson(
   record: MediaUploadShadowRecord,
   stableKey: MediaStableKey,
   input: {
-    stage: '22-5C-4C' | '22-5C-4D';
-    lastShadowAction?: 'metadata';
+    stage: '22-5C-4C' | '22-5C-4D' | '22-5C-4E';
+    lastShadowAction?: 'metadata' | 'archive' | 'restore';
     existingMetadata?: unknown;
   },
 ): string {
@@ -449,6 +464,32 @@ async function updateMediaFileMetadata(row: MysqlMediaRow, record: MediaUploadSh
   );
 }
 
+async function updateMediaFileStatus(
+  row: MysqlMediaRow,
+  record: MediaUploadShadowRecord,
+  stableKey: MediaStableKey,
+  action: 'archive' | 'restore',
+) {
+  const pool = getDbPool();
+  const existingMetadata = parseJsonColumn(row.metadata_json);
+
+  await pool.execute<ResultSetHeader>(
+    `UPDATE media_files
+     SET status = :status,
+         metadata_json = :metadataJson
+     WHERE id = :id`,
+    {
+      id: asNumber(row.id),
+      status: normalizeStatus(record.status),
+      metadataJson: metadataJson(record, stableKey, {
+        stage: '22-5C-4E',
+        lastShadowAction: action,
+        existingMetadata,
+      }),
+    },
+  );
+}
+
 async function writeUploadShadow(record: MediaUploadShadowRecord) {
   const config = getSafeDatabaseConfig();
   if (!config.configured) {
@@ -558,6 +599,72 @@ async function updateMetadataShadow(record: MediaUploadShadowRecord) {
   await updateMediaFileMetadata(matches[0], record, stableKey);
 }
 
+async function updateStatusShadow(record: MediaUploadShadowRecord, action: 'archive' | 'restore') {
+  const config = getSafeDatabaseConfig();
+  if (!config.configured) {
+    warnStatusShadow('mysql-not-configured');
+    return;
+  }
+
+  const validationError = validateRecord(record);
+  if (validationError) {
+    warnStatusShadow('incomplete-status-record', undefined, { fileName: record.fileName, validationError });
+    return;
+  }
+
+  const expectedStatus = action === 'archive' ? 'archived' : 'active';
+  if (normalizeStatus(record.status) !== expectedStatus) {
+    warnStatusShadow('unexpected-status-for-action', undefined, {
+      fileName: record.fileName,
+      action,
+      status: record.status,
+    });
+    return;
+  }
+
+  const publicUrl = normalizeMediaPath(record.url);
+  const stableKey = buildStableKey({
+    publicUrl,
+    filePath: publicUrl,
+    fileName: record.fileName,
+    fileSize: record.size,
+  });
+
+  if (!stableKey) {
+    warnStatusShadow('missing-stable-key', undefined, { fileName: record.fileName });
+    return;
+  }
+
+  const matches = await findExistingMediaRows(stableKey);
+  if (matches.length === 0) {
+    warnStatusShadow('mysql-row-not-found', undefined, {
+      fileName: record.fileName,
+      stableKey: `${stableKey.type}:${stableKey.value}`,
+    });
+    return;
+  }
+
+  if (matches.length > 1) {
+    warnStatusShadow('duplicate-stable-key-match', undefined, {
+      fileName: record.fileName,
+      stableKey: `${stableKey.type}:${stableKey.value}`,
+      matchCount: matches.length,
+    });
+    return;
+  }
+
+  const safety = existingRowIsSafeToUpdate(matches[0]);
+  if (!safety.ok) {
+    warnStatusShadow('matched-row-not-safe-to-update', undefined, {
+      fileName: record.fileName,
+      reason: safety.reason,
+    });
+    return;
+  }
+
+  await updateMediaFileStatus(matches[0], record, stableKey, action);
+}
+
 export async function shadowWriteUploadedMedia(record: MediaUploadShadowRecord): Promise<void> {
   try {
     await writeUploadShadow(record);
@@ -571,5 +678,16 @@ export async function shadowUpdateMediaMetadata(record: MediaUploadShadowRecord)
     await updateMetadataShadow(record);
   } catch (error) {
     warnMetadataShadow('mysql-shadow-update-failed', error, { fileName: record.fileName });
+  }
+}
+
+export async function shadowUpdateMediaStatus(
+  record: MediaUploadShadowRecord,
+  action: 'archive' | 'restore',
+): Promise<void> {
+  try {
+    await updateStatusShadow(record, action);
+  } catch (error) {
+    warnStatusShadow('mysql-shadow-update-failed', error, { fileName: record.fileName, action });
   }
 }

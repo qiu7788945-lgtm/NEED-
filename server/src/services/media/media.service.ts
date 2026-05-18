@@ -13,7 +13,7 @@ import {
 } from '../data-source/media-library-content-source.js';
 import { readHomeInteractiveImages } from '../home/home-interactive-images.service.js';
 import { readHomeVideoConfig } from '../home/home-video.service.js';
-import { shadowUpdateMediaMetadata, shadowWriteUploadedMedia } from './media-shadow-writer.js';
+import { shadowUpdateMediaMetadata, shadowUpdateMediaStatus, shadowWriteUploadedMedia } from './media-shadow-writer.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const dataDir = path.join(serverRoot, 'data');
@@ -1352,13 +1352,23 @@ async function updateMediaStatus(fileName: string, status: MediaStatus) {
   });
 }
 
-export async function archiveLocalImage(fileName: string) {
+export async function archiveLocalImage(fileName: string, options: { shadowStatusUpdate?: boolean } = {}) {
   await assertNotUsedByHomeInteractive(fileName);
-  return updateMediaStatus(fileName, 'archived');
+  const archivedImage = await updateMediaStatus(fileName, 'archived');
+  if (options.shadowStatusUpdate !== false) {
+    await shadowUpdateMediaStatus(archivedImage, 'archive');
+  }
+
+  return archivedImage;
 }
 
-export async function restoreLocalImage(fileName: string) {
-  return updateMediaStatus(fileName, 'active');
+export async function restoreLocalImage(fileName: string, options: { shadowStatusUpdate?: boolean } = {}) {
+  const restoredImage = await updateMediaStatus(fileName, 'active');
+  if (options.shadowStatusUpdate !== false) {
+    await shadowUpdateMediaStatus(restoredImage, 'restore');
+  }
+
+  return restoredImage;
 }
 
 export async function updateLocalImageMetadata(fileName: string, metadata: MediaUpdateMetadata) {
@@ -1562,7 +1572,7 @@ export async function batchArchiveLocalImages(fileNames: string[]): Promise<Batc
         continue;
       }
 
-      await archiveLocalImage(fileName);
+      await archiveLocalImage(fileName, { shadowStatusUpdate: false });
       results.push({ fileName, status: 'success' });
     } catch (error) {
       const reason = getMediaErrorCode(error);
@@ -1589,7 +1599,7 @@ export async function batchRestoreLocalImages(fileNames: string[]): Promise<Batc
         continue;
       }
 
-      await restoreLocalImage(fileName);
+      await restoreLocalImage(fileName, { shadowStatusUpdate: false });
       results.push({ fileName, status: 'success' });
     } catch (error) {
       results.push({ fileName, status: 'failed', reason: getMediaErrorCode(error) });
