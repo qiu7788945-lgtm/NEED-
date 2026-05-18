@@ -651,3 +651,134 @@ If MySQL is not configured, the matched row is missing, the matched row is `shar
 22-5C-4E does not change upload's JSON/uploads primary behavior, metadata/displayName JSON primary behavior, delete, batch operation semantics, `/api/media/list`, frontend UI, admin UI, route manifest, sitemap, prerender, publish logs, cases, solutions, articles, or scenario detail pages. Batch archive/restore remain outside this step and are kept on the original JSON-only behavior.
 
 22-5C-4F may consider deletion protection design. Delete and physical file removal remain later work and are not touched by 22-5C-4E.
+
+## 22-5C-4F Media Delete Protection Design
+
+22-5C-4F is a design and risk-boundary step only. It does not change the formal delete execution path, does not delete upload files, does not remove JSON records, does not write MySQL, does not change upload, metadata/displayName, archive/restore, batch operations, `/api/media/list`, frontend UI, admin UI, route manifest, sitemap, prerender, publish logs, cases, solutions, articles, or scenario detail pages.
+
+### Current Delete Chain
+
+The current single delete entry point is `deleteLocalImage(fileName)` in `server/src/services/media/media.service.ts`, exposed by `DELETE /api/media/:fileName`.
+
+Current single delete behavior:
+
+- validates the requested file name
+- runs `assertNotUsedByHomeInteractive(fileName)`
+- reads `server/data/media-library.json`
+- requires the media JSON status to be `archived`
+- deletes the physical upload file from `server/uploads/images` or `server/uploads/videos` with `fs.unlink`
+- removes the entry from `server/data/media-library.json`
+- returns `{ fileName, deletedFile, removedFromIndex, fileMissing }`
+
+The current batch delete entry point is `batchDeleteLocalImages(fileNames)`. It loops over file names, checks each item is `archived`, then calls `deleteLocalImage(fileName)` for each item. Batch delete therefore inherits the same upload-file deletion, JSON removal, and limited usage protection as the single delete function.
+
+The admin UI also checks `image.usageCount > 0` before showing permanent delete, but that count comes from the same limited server usage map. The UI confirmation correctly warns that permanent delete removes the real server file, but it is not a full reference guard.
+
+### Current Usage Coverage
+
+The current usage map is built by `getMediaUsagesByFileName()` and only covers:
+
+- `home-interactive-images`: `slot.mediaFileName` and file name parsed from `slot.mediaUrl`
+- `home-video`: `videoFileName`
+- `home-video`: `posterFileName`
+
+The current usage map does not fully cover:
+
+- company-assets
+- cases cover images
+- case_images
+- images embedded in case `contentHtml`
+- solutions cover images
+- solution_groups-derived media ownership
+- solution_media_items
+- solution_pages / scenario detail pages
+- page editor blocks and page content
+- articles cover images
+- article content and article blocks
+- SEO / Open Graph images
+- contact-info QR codes, social QR codes, and public company assets
+- MySQL `media_files` rows classified as `sharedButReferenced`, `unknown`, or ownership-conflicted
+
+Because these sources are not covered by the current delete guard, `usageCount = 0` and `usages = []` are not enough to prove that a file is safe to delete.
+
+### Required Reference Scan
+
+A future delete guard must be read-only and must scan both JSON and MySQL reference surfaces before any physical delete is attempted.
+
+At minimum, the guard must check:
+
+- `home-video`: JSON config and MySQL `home_video.video_media_id`, `poster_media_id`, `video_url`, and `poster_url`
+- `home-interactive-images`: JSON config and MySQL `home_interactive_images.media_id` / `image_url`
+- `company-assets`: `company-assets.json`, MySQL `company_assets.media_id` / `media_url`, and public asset URLs
+- `cases`: `cases.json` cover fields, `contentHtml` embedded upload URLs, MySQL `cases.cover_media_id` / `cover_url`, and case raw JSON
+- `case_images`: MySQL `case_images.media_id` / `image_url`
+- `solutions`: `solutions.json` cover and media fields, MySQL `solutions.cover_media_id` / `cover_url`, and raw JSON
+- `solution_groups`: group ownership context so grouped media cannot be deleted only because the file appears media-library-like
+- `solution_media_items`: MySQL `solution_media_items.media_id`, `media_url`, and `media_file_name`
+- `scenario-detail-pages`: JSON scenario detail media fields such as `posterUrl` and embedded block/media URLs
+- `pages`: page editor block JSON and any rich-text or media URL fields
+- `articles`: article cover fields, content, article blocks, and MySQL `articles.cover_media_id` / `cover_url`
+- `seo_settings`: MySQL `og_image_media_id` / `og_image_url`
+- `contact-info` / social QR / assets: public QR image URLs and related media-library rows, including seeded QR assets
+
+The scan should match by stable media identity, not by only one string:
+
+- `public_url` / JSON `url`
+- `file_path`
+- file name parsed from URLs
+- `file_name + file_size`
+- MySQL `media_files.id` when a module has a media foreign key
+
+### Delete Protection Decisions
+
+Delete should be blocked when:
+
+- media status is not `archived`
+- `usageCount > 0` or `usages` is not empty
+- any read-only global reference scan finds a JSON or MySQL reference
+- MySQL identifies the row as `sharedButReferenced`
+- MySQL ownership is `unknown`
+- MySQL ownership signals conflict
+- stable keys do not match between JSON, upload file, and MySQL
+- the upload file does not exist, is outside the expected upload directory, or does not match JSON metadata
+- the media belongs to home, company assets, cases, solutions, articles, pages, scenario detail pages, SEO, contact QR, or another module-owned context
+
+Delete should be `needs_review` when:
+
+- MySQL is unavailable and the guard cannot complete the cross-store reference scan
+- MySQL has no matching row but JSON/upload metadata indicates module ownership
+- JSON has no record but the upload file exists
+- JSON points to a missing file
+- multiple MySQL rows match the same stable key
+- a file is a public/static asset rather than a managed upload
+- a module reference is found only through rich-text or raw JSON where ownership cannot be resolved automatically
+
+Delete can be considered `allowed` only when all of these are true:
+
+- JSON status is `archived`
+- current `usageCount` is `0`
+- current `usages` is empty
+- read-only global reference scan finds no references
+- MySQL has no `sharedButReferenced`, `unknown`, or ownership-conflict signal for the stable media identity
+- JSON record, upload file, and MySQL record have consistent stable keys
+- upload file exists under the expected upload directory
+- the row is not home, company, case, solution, article, page, scenario, SEO, QR, or other shared/module-owned media
+
+Until that full guard exists, deletion should prefer archive over permanent delete. Any incomplete reference coverage should become `blocked` or `needs_review`, not `allowed`.
+
+### Future 22-5C-4G Design
+
+22-5C-4G may introduce a read-only delete guard and delete-protection report before connecting any new delete behavior. A future report can include `blocked`, `needs_review`, and `allowed` counts, reference reasons, coverage by module, and stable-key diagnostics.
+
+Only after the guard is accepted should a later delete implementation consider:
+
+- keeping JSON/uploads as the primary delete path while the transition is still in progress
+- marking MySQL rows as deleted or tombstoned by shadow write rather than hard-deleting rows
+- deciding whether MySQL failure blocks delete for shared or uncertain ownership cases
+- refusing to delete the physical upload file until reference protection passes
+- handling partial failures such as JSON success but file delete failure, file delete success but JSON failure, or JSON/uploads success but MySQL tombstone failure
+- providing repair reports for JSON-only, file-only, and MySQL-only drift
+
+This step does not implement those behaviors because current delete is destructive. Adding execution before full reference coverage would risk removing files still used by cases, solutions, pages, articles, home, company assets, SEO, or QR/contact surfaces.
+
+22-5C-4F therefore changes no data and no execution path. It only documents the required protection boundary for a later 22-5C-4G delete guard / shadow delete step.
