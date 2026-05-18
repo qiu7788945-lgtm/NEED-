@@ -19,6 +19,7 @@
     "db:migrate": "tsx server/src/db/migrate.ts",
     "compare:content": "tsx server/src/db/scripts/compare-content.ts",
     "compare:media-library-source": "tsx server/src/scripts/compare-media-library-source.ts",
+    "shadow:media-write": "tsx server/src/scripts/shadow-media-write.ts",
     "migrate:content": "tsx server/src/db/scripts/migrate-content.ts",
     "migrate:content:dry-run": "tsx server/src/db/scripts/migrate-content.ts --dry-run"
   },

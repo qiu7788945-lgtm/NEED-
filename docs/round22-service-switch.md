@@ -452,3 +452,46 @@ The write work should be split into small gates:
 - 22-6: MySQL-to-JSON export and rollback rehearsal.
 
 This order keeps destructive operations last, keeps shared-table ownership explicit, and avoids turning media-library into MySQL-only before the write path and rollback path are proven.
+
+## 22-5C-4B Media Write Shadow Tool
+
+22-5C-4B adds a standalone dry-run shadow tool for planning future media-library writes into MySQL `media_files`. It is not connected to `/api/media/list`, upload, delete, displayName/metadata update, archive, restore, batch operations, controllers, routes, frontend UI, or admin UI.
+
+The command is:
+
+```powershell
+npm.cmd run shadow:media-write
+npm.cmd run shadow:media-write -- --module media-library
+npm.cmd run shadow:media-write -- --action upload
+npm.cmd run shadow:media-write -- --action metadata
+npm.cmd run shadow:media-write -- --action archive
+npm.cmd run shadow:media-write -- --action restore
+npm.cmd run shadow:media-write -- --action delete
+```
+
+The tool is dry-run only:
+
+- reads `server/data/media-library.json` directly without using the official media write service
+- reads upload file stats from `server/uploads/images` and `server/uploads/videos` when a safe local path can be derived
+- reads MySQL `media_files` with `SELECT`
+- generates a future `media_files` upsert/tombstone plan for each JSON media-library record
+- reports `insert`, `update`, `skip`, `conflict`, and `warning` decisions
+- reports stable-key matching by `public_url`, then `file_path`, then `file_name + file_size`
+- keeps raw category and normalized category in the plan
+- blocks normal media-library write plans from mutating `sharedButReferenced` or `unknown` MySQL rows
+- treats duplicate MySQL matches for one stable key as conflicts
+- never writes JSON
+- never changes uploads
+- never writes MySQL
+- recognizes `--write` only to reject it safely
+
+Action semantics are intentionally planning-only:
+
+- default / `all`: plan current-state upserts for every JSON media-library record
+- `upload`: model the future JSON-primary upload shadow upsert
+- `metadata`: model the future JSON-primary displayName/metadata shadow upsert
+- `archive`: model a future archive shadow write with status forced to `archived`
+- `restore`: model a future restore shadow write with status forced to `active`
+- `delete`: only considers archived JSON records and plans a MySQL soft-delete/tombstone; active records are skipped
+
+The tool does not make any official business endpoint write MySQL. It is an inspection and planning step before 22-5C-4C. The next write implementation step must still keep JSON/uploads as the official write path and should start with upload shadow writes only after this report is reviewed.
