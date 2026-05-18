@@ -16,6 +16,7 @@ type UnknownRecord = Record<string, unknown>;
 type ShadowAction = 'all' | 'upload' | 'metadata' | 'archive' | 'restore' | 'delete';
 type PlanDecision = 'insert' | 'update' | 'skip' | 'conflict' | 'warning';
 type DiffSeverity = 'update' | 'normalized_match' | 'warning';
+type DeleteRiskDecision = 'blocked' | 'needs_review' | 'safe_candidate';
 
 type MediaStableKey =
   | {
@@ -141,9 +142,55 @@ interface CliOptions {
   moduleName: string;
   action: ShadowAction;
   writeRequested: boolean;
+  target: string | null;
+}
+
+interface DeleteReference {
+  source: string;
+  sourceFile: string;
+  jsonPath: string;
+  matchedBy: string;
+  value: string;
+}
+
+interface CoverageDetail {
+  covered: boolean;
+  reason: string;
+  sourceFile?: string;
+}
+
+interface DeleteRiskItem {
+  url: string | null;
+  fileName: string | null;
+  status: string;
+  decision: DeleteRiskDecision;
+  reasons: string[];
+  references: DeleteReference[];
+  mysql: {
+    matched: boolean;
+    matchCount: number;
+    status: string | null;
+    ownershipKind: MediaLibraryOwnershipKind | null;
+    hasConflict: boolean;
+    stableKeyConsistent: boolean;
+    ids: number[];
+  };
+  uploadFile: {
+    exists: boolean;
+    path: string | null;
+    size: number | null;
+  };
+}
+
+interface SourceStringValue {
+  source: string;
+  sourceFile: string;
+  jsonPath: string;
+  value: string;
 }
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const dataDir = path.join(serverRoot, 'data');
 const mediaIndexPath = path.join(serverRoot, 'data', 'media-library.json');
 const uploadsRoot = path.join(serverRoot, 'uploads');
 const imageUploadDir = path.join(uploadsRoot, 'images');
@@ -443,6 +490,308 @@ async function readMediaLibraryJson(): Promise<{ sourceCount: number; entries: M
     sourceCount: isRecord(data) ? Object.keys(data).length : Array.isArray(data) ? data.length : 0,
     entries,
   };
+}
+
+function fileNameFromUrl(value: string | null): string {
+  if (!value) {
+    return '';
+  }
+
+  const normalized = normalizeMediaPath(value) ?? value;
+  const withoutQuery = normalized.split('?')[0] ?? normalized;
+  const fileName = withoutQuery.split(/[\\/]/).filter(Boolean).pop() ?? '';
+
+  try {
+    return decodeURIComponent(fileName);
+  } catch {
+    return fileName;
+  }
+}
+
+function truncateValue(value: string, maxLength = 220): string {
+  return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+
+function normalizeTarget(value: string | null): { raw: string; normalizedPath: string; fileName: string } | null {
+  const raw = value?.trim() ?? '';
+  if (!raw) {
+    return null;
+  }
+
+  const normalizedPath = normalizeMediaPath(raw) ?? raw.replace(/\\/g, '/');
+  return {
+    raw,
+    normalizedPath,
+    fileName: fileNameFromUrl(normalizedPath) || raw,
+  };
+}
+
+function targetMatchesPrepared(prepared: PlannedMediaFile, target: ReturnType<typeof normalizeTarget>) {
+  if (!target) {
+    return true;
+  }
+
+  const values = [
+    prepared.fileName,
+    prepared.publicUrlForWrite,
+    prepared.filePathForWrite,
+    prepared.uploadFile.expectedPath ? path.basename(prepared.uploadFile.expectedPath) : null,
+  ]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+  const normalizedValues = new Set<string>();
+
+  for (const value of values) {
+    const normalizedPath = normalizeMediaPath(value) ?? value.replace(/\\/g, '/');
+    normalizedValues.add(value);
+    normalizedValues.add(normalizedPath);
+    normalizedValues.add(fileNameFromUrl(normalizedPath));
+  }
+
+  return normalizedValues.has(target.raw)
+    || normalizedValues.has(target.normalizedPath)
+    || normalizedValues.has(target.fileName);
+}
+
+const deleteReferenceSources = [
+  {
+    source: 'homeVideo',
+    filePath: path.join(dataDir, 'home-video.json'),
+    coverageKeys: ['homeVideo'],
+  },
+  {
+    source: 'homeInteractiveImages',
+    filePath: path.join(dataDir, 'home-interactive-images.json'),
+    coverageKeys: ['homeInteractiveImages'],
+  },
+  {
+    source: 'companyAssets',
+    filePath: path.join(dataDir, 'company-assets.json'),
+    coverageKeys: ['companyAssets'],
+  },
+  {
+    source: 'cases',
+    filePath: path.join(dataDir, 'cases.json'),
+    coverageKeys: ['cases', 'caseImages'],
+  },
+  {
+    source: 'solutions',
+    filePath: path.join(dataDir, 'solutions.json'),
+    coverageKeys: ['solutions', 'solutionGroups', 'solutionMediaItems'],
+  },
+  {
+    source: 'scenarioDetailPages',
+    filePath: path.join(dataDir, 'scenario-detail-pages.json'),
+    coverageKeys: ['scenarioDetailPages'],
+  },
+  {
+    source: 'pages',
+    filePath: path.join(dataDir, 'pages.json'),
+    coverageKeys: ['pages'],
+  },
+  {
+    source: 'articles',
+    filePath: path.join(dataDir, 'articles.json'),
+    coverageKeys: ['articles', 'seoOg'],
+  },
+  {
+    source: 'contactInfo',
+    filePath: path.join(dataDir, 'contact-info.json'),
+    coverageKeys: ['contactInfo', 'socialQr'],
+  },
+  {
+    source: 'publicHomeMediaSeed',
+    filePath: path.join(dataDir, 'seeds', 'public-home-media.seed.json'),
+    coverageKeys: ['contactInfo', 'socialQr'],
+  },
+] as const;
+
+function collectJsonStrings(
+  value: unknown,
+  input: {
+    source: string;
+    sourceFile: string;
+    jsonPath: string;
+    output: SourceStringValue[];
+  },
+) {
+  if (typeof value === 'string') {
+    input.output.push({
+      source: input.source,
+      sourceFile: input.sourceFile,
+      jsonPath: input.jsonPath,
+      value,
+    });
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      collectJsonStrings(item, {
+        ...input,
+        jsonPath: `${input.jsonPath}[${index}]`,
+      });
+    });
+    return;
+  }
+
+  if (isRecord(value)) {
+    for (const [key, nextValue] of Object.entries(value)) {
+      collectJsonStrings(nextValue, {
+        ...input,
+        jsonPath: input.jsonPath ? `${input.jsonPath}.${key}` : key,
+      });
+    }
+  }
+}
+
+async function readDeleteReferenceStrings(): Promise<{
+  coverage: Record<string, boolean>;
+  coverageDetails: Record<string, CoverageDetail>;
+  sourceStrings: SourceStringValue[];
+}> {
+  const coverage: Record<string, boolean> = {
+    mediaLibraryJson: true,
+    uploads: true,
+    mysqlMediaFiles: true,
+    homeVideo: false,
+    homeInteractiveImages: false,
+    companyAssets: false,
+    cases: false,
+    caseImages: false,
+    solutions: false,
+    solutionGroups: false,
+    solutionMediaItems: false,
+    scenarioDetailPages: false,
+    pages: false,
+    articles: false,
+    contactInfo: false,
+    socialQr: false,
+    seoOg: false,
+  };
+  const coverageDetails: Record<string, CoverageDetail> = {
+    mediaLibraryJson: { covered: true, reason: 'media-library source JSON was read as the checked item list.', sourceFile: mediaIndexPath },
+    uploads: { covered: true, reason: 'upload file existence and stat are checked per item.', sourceFile: uploadsRoot },
+    mysqlMediaFiles: { covered: true, reason: 'media_files rows are read for stable-key, status, and ownership checks.' },
+  };
+  const sourceStrings: SourceStringValue[] = [];
+
+  for (const source of deleteReferenceSources) {
+    const relativePath = path.relative(serverRoot, source.filePath).replace(/\\/g, '/');
+    try {
+      const raw = await fs.readFile(source.filePath, 'utf8');
+      const data = raw.trim() ? JSON.parse(raw) as unknown : null;
+      collectJsonStrings(data, {
+        source: source.source,
+        sourceFile: relativePath,
+        jsonPath: '',
+        output: sourceStrings,
+      });
+
+      for (const key of source.coverageKeys) {
+        coverage[key] = true;
+        coverageDetails[key] = {
+          covered: true,
+          reason: 'source_scanned',
+          sourceFile: relativePath,
+        };
+      }
+    } catch (error) {
+      const code = isRecord(error) ? error.code : undefined;
+      const sourceMissing = code === 'ENOENT';
+
+      for (const key of source.coverageKeys) {
+        const existing = coverageDetails[key];
+        if (existing?.covered) {
+          continue;
+        }
+
+        coverage[key] = sourceMissing;
+        coverageDetails[key] = {
+          covered: sourceMissing,
+          reason: sourceMissing ? 'source_missing_empty' : `source_read_failed: ${error instanceof Error ? error.message : String(error)}`,
+          sourceFile: relativePath,
+        };
+      }
+    }
+  }
+
+  return {
+    coverage,
+    coverageDetails,
+    sourceStrings,
+  };
+}
+
+function mediaNeedles(prepared: PlannedMediaFile, matches: MysqlMediaRow[]) {
+  const needles = new Map<string, string>();
+
+  function add(label: string, value: unknown) {
+    const text = asString(value);
+    if (!text) {
+      return;
+    }
+
+    needles.set(text, label);
+    const normalizedPath = normalizeMediaPath(text);
+    if (normalizedPath) {
+      needles.set(normalizedPath, label);
+      const withoutLeadingSlash = normalizedPath.replace(/^\//, '');
+      if (withoutLeadingSlash) {
+        needles.set(withoutLeadingSlash, label);
+      }
+      const fileName = fileNameFromUrl(normalizedPath);
+      if (fileName) {
+        needles.set(fileName, 'fileName');
+      }
+    }
+  }
+
+  add('publicUrl', prepared.publicUrlForWrite);
+  add('filePath', prepared.filePathForWrite);
+  add('fileName', prepared.fileName);
+
+  for (const row of matches) {
+    add('mysql.public_url', row.public_url);
+    add('mysql.file_path', row.file_path);
+    add('mysql.file_name', row.file_name);
+  }
+
+  return needles;
+}
+
+function findReferencesForPrepared(
+  prepared: PlannedMediaFile,
+  matches: MysqlMediaRow[],
+  sourceStrings: SourceStringValue[],
+): DeleteReference[] {
+  const needles = mediaNeedles(prepared, matches);
+  const references: DeleteReference[] = [];
+  const seen = new Set<string>();
+
+  for (const sourceString of sourceStrings) {
+    for (const [needle, label] of needles.entries()) {
+      if (!needle || !sourceString.value.includes(needle)) {
+        continue;
+      }
+
+      const key = `${sourceString.source}:${sourceString.jsonPath}:${needle}`;
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      references.push({
+        source: sourceString.source,
+        sourceFile: sourceString.sourceFile,
+        jsonPath: sourceString.jsonPath || '$',
+        matchedBy: label,
+        value: truncateValue(sourceString.value),
+      });
+    }
+  }
+
+  return references;
 }
 
 function plannedStatusForAction(action: ShadowAction, record: UnknownRecord): string {
@@ -1013,10 +1362,199 @@ function summarizeExpected(prepared: PlannedMediaFile) {
   };
 }
 
+function mysqlStableKeyConsistent(prepared: PlannedMediaFile, row: MysqlMediaRow | undefined): boolean {
+  if (!row) {
+    return false;
+  }
+
+  const expectedUrl = prepared.publicUrlForWrite ?? '';
+  const expectedFilePath = prepared.filePathForWrite ?? expectedUrl;
+  const mysqlPublicUrl = asString(row.public_url);
+  const mysqlFilePath = asString(row.file_path);
+  const mysqlFileName = asString(row.file_name);
+  const mysqlFileSize = asNumber(row.file_size);
+  const urlMatches = Boolean(expectedUrl && (mysqlPublicUrl === expectedUrl || mysqlFilePath === expectedUrl));
+  const filePathMatches = Boolean(expectedFilePath && (mysqlFilePath === expectedFilePath || mysqlPublicUrl === expectedFilePath));
+  const fileNameSizeMatches = Boolean(
+    prepared.fileName
+    && mysqlFileName === prepared.fileName
+    && mysqlFileSize === prepared.fileSize,
+  );
+
+  return (urlMatches || filePathMatches) && fileNameSizeMatches;
+}
+
+function addReason(reasons: string[], reason: string) {
+  if (!reasons.includes(reason)) {
+    reasons.push(reason);
+  }
+}
+
+function decideDeleteRiskItem(input: {
+  prepared: PlannedMediaFile;
+  matches: MysqlMediaRow[];
+  references: DeleteReference[];
+  coverageComplete: boolean;
+}): DeleteRiskItem {
+  const { prepared, matches, references, coverageComplete } = input;
+  const reasons: string[] = [];
+  let decision: DeleteRiskDecision = 'safe_candidate';
+  const profile = matches.length === 1 ? buildRowProfile(matches[0]) : null;
+  const mysqlStatus = profile ? normalizeStatus(profile.row.status) : null;
+  const mysqlOwnershipKind = profile?.ownershipKind ?? null;
+  const hasMysqlConflict = Boolean(profile && profile.ownershipConflicts.length > 0);
+  const stableKeyConsistent = mysqlStableKeyConsistent(prepared, matches[0]);
+
+  function block(reason: string) {
+    decision = 'blocked';
+    addReason(reasons, reason);
+  }
+
+  function review(reason: string) {
+    if (decision !== 'blocked') {
+      decision = 'needs_review';
+    }
+    addReason(reasons, reason);
+  }
+
+  if (normalizeStatus(prepared.status) !== 'archived') {
+    block('not_archived');
+  }
+
+  if (references.length > 0) {
+    block('referenced');
+  }
+
+  if (!coverageComplete) {
+    review('incomplete_reference_coverage');
+  }
+
+  if (!prepared.uploadFile.exists) {
+    review('missing_upload_file');
+  }
+
+  if (prepared.sourceWarnings.length > 0) {
+    review('json_upload_metadata_warning');
+  }
+
+  if (matches.length === 0) {
+    review('mysql_row_missing');
+  } else if (matches.length > 1) {
+    review('mysql_duplicate_stable_key_match');
+  } else {
+    if (mysqlOwnershipKind === 'sharedButReferenced') {
+      block('mysql_shared_but_referenced');
+    }
+
+    if (mysqlOwnershipKind === 'unknown') {
+      review('mysql_unknown_ownership');
+    }
+
+    if (hasMysqlConflict) {
+      review('mysql_ownership_conflict');
+    }
+
+    if (!stableKeyConsistent) {
+      review('json_upload_mysql_stable_key_mismatch');
+    }
+  }
+
+  return {
+    url: prepared.publicUrlForWrite,
+    fileName: prepared.fileName,
+    status: normalizeStatus(prepared.status),
+    decision,
+    reasons,
+    references,
+    mysql: {
+      matched: matches.length > 0,
+      matchCount: matches.length,
+      status: mysqlStatus,
+      ownershipKind: mysqlOwnershipKind,
+      hasConflict: hasMysqlConflict || matches.length > 1,
+      stableKeyConsistent,
+      ids: matches.map((row) => mysqlRowId(row)),
+    },
+    uploadFile: {
+      exists: prepared.uploadFile.exists,
+      path: prepared.uploadFile.expectedPath
+        ? path.relative(serverRoot, prepared.uploadFile.expectedPath).replace(/\\/g, '/')
+        : null,
+      size: prepared.uploadFile.size,
+    },
+  };
+}
+
+async function buildDeleteProtectionReport(
+  preparedItems: PlannedMediaFile[],
+  lookup: ReturnType<typeof buildMysqlLookup>,
+) {
+  const { coverage, coverageDetails, sourceStrings } = await readDeleteReferenceStrings();
+  const coverageComplete = Object.values(coverage).every(Boolean);
+  const items = preparedItems.map((prepared) => {
+    const matches = findMysqlMatches(lookup, prepared.stableKey);
+    const references = findReferencesForPrepared(prepared, matches, sourceStrings);
+    return decideDeleteRiskItem({
+      prepared,
+      matches,
+      references,
+      coverageComplete,
+    });
+  });
+
+  const summary = items.reduce(
+    (nextSummary, item) => {
+      nextSummary.checkedCount += 1;
+      nextSummary.blockedCount += item.decision === 'blocked' ? 1 : 0;
+      nextSummary.needsReviewCount += item.decision === 'needs_review' ? 1 : 0;
+      nextSummary.safeCandidateCount += item.decision === 'safe_candidate' ? 1 : 0;
+      nextSummary.archivedCount += item.status === 'archived' ? 1 : 0;
+      nextSummary.activeCount += item.status !== 'archived' ? 1 : 0;
+      nextSummary.missingUploadFileCount += item.uploadFile.exists ? 0 : 1;
+      nextSummary.referencedCount += item.references.length > 0 ? 1 : 0;
+      nextSummary.unknownCoverageCount += coverageComplete ? 0 : 1;
+      return nextSummary;
+    },
+    {
+      checkedCount: 0,
+      blockedCount: 0,
+      needsReviewCount: 0,
+      safeCandidateCount: 0,
+      archivedCount: 0,
+      activeCount: 0,
+      missingUploadFileCount: 0,
+      referencedCount: 0,
+      unknownCoverageCount: 0,
+    },
+  );
+
+  return {
+    mode: 'dry-run',
+    action: 'delete',
+    summary,
+    coverage,
+    coverageDetails,
+    decisionPolicy: {
+      blocked: ['not_archived', 'referenced', 'mysql_shared_but_referenced'],
+      needsReview: [
+        'incomplete_reference_coverage',
+        'missing_upload_file',
+        'mysql_row_missing',
+        'mysql_unknown_ownership',
+        'mysql_ownership_conflict',
+        'json_upload_mysql_stable_key_mismatch',
+      ],
+      safeCandidate: 'Only a risk-report candidate. This is not permission to delete.',
+    },
+    items,
+  };
+}
+
 function parseArgs(argv: string[]): CliOptions {
   let moduleName = 'media-library';
   let action: ShadowAction = 'all';
   let writeRequested = false;
+  let target: string | null = null;
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
@@ -1047,6 +1585,17 @@ function parseArgs(argv: string[]): CliOptions {
     if (arg.startsWith('--action=')) {
       const nextAction = arg.slice('--action='.length);
       action = allowedActions.has(nextAction as ShadowAction) ? (nextAction as ShadowAction) : action;
+      continue;
+    }
+
+    if (arg === '--target') {
+      target = argv[index + 1] ?? '';
+      index += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--target=')) {
+      target = arg.slice('--target='.length);
     }
   }
 
@@ -1054,6 +1603,7 @@ function parseArgs(argv: string[]): CliOptions {
     moduleName,
     action,
     writeRequested,
+    target,
   };
 }
 
@@ -1129,10 +1679,17 @@ async function main() {
     readMysqlRows(),
   ]);
   const lookup = buildMysqlLookup(mysqlRows);
+  const target = normalizeTarget(options.target);
+  const preparedItems: PlannedMediaFile[] = [];
   const plans: ShadowPlan[] = [];
 
   for (const entry of jsonSource.entries) {
     const prepared = await prepareMediaFile(entry, options.action);
+    if (!targetMatchesPrepared(prepared, target)) {
+      continue;
+    }
+
+    preparedItems.push(prepared);
     plans.push(buildPlan(prepared, findMysqlMatches(lookup, prepared.stableKey)));
   }
 
@@ -1165,13 +1722,21 @@ async function main() {
     : counts.warning > 0 || counts.warningItems > 0
       ? 'warning'
       : 'ok';
+  const deleteProtection = options.action === 'delete'
+    ? await buildDeleteProtectionReport(preparedItems, lookup)
+    : undefined;
 
   printJson({
     generatedAt,
-    status,
-    mode: 'dry-run-only',
+    status: deleteProtection?.summary.blockedCount
+      ? 'blocked'
+      : deleteProtection?.summary.needsReviewCount
+        ? 'needs_review'
+        : status,
+    mode: options.action === 'delete' ? 'dry-run' : 'dry-run-only',
     module: options.moduleName,
     action: options.action,
+    target: options.target,
     note: 'Standalone 22-5C-4B shadow plan only. No official media route/controller/service writes are changed or invoked.',
     writeSafety: {
       mysqlWrites: false,
@@ -1191,6 +1756,7 @@ async function main() {
     counts: {
       jsonSourceCount: jsonSource.sourceCount,
       jsonRecordCount: jsonSource.entries.length,
+      checkedRecordCount: preparedItems.length,
       mysqlRows: mysqlCounts(mysqlRows),
       plans: counts,
     },
@@ -1201,6 +1767,7 @@ async function main() {
       updatePolicy: 'update only likely media-library rows; sharedButReferenced and unknown rows are conflicts',
       deletePolicy: 'future delete should use soft-delete/tombstone before physical upload removal',
     },
+    deleteProtection,
     plans,
   });
 }

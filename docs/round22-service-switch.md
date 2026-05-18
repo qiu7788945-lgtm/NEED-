@@ -782,3 +782,67 @@ Only after the guard is accepted should a later delete implementation consider:
 This step does not implement those behaviors because current delete is destructive. Adding execution before full reference coverage would risk removing files still used by cases, solutions, pages, articles, home, company assets, SEO, or QR/contact surfaces.
 
 22-5C-4F therefore changes no data and no execution path. It only documents the required protection boundary for a later 22-5C-4G delete guard / shadow delete step.
+
+## 22-5C-4G Delete Guard / Risk Report
+
+22-5C-4G adds a read-only delete guard report to the existing shadow media write tool. It does not change the formal delete execution path, does not delete upload files, does not remove or rewrite `server/data/media-library.json`, does not write MySQL, does not change upload, metadata/displayName, archive/restore, batch operations, `/api/media/list`, frontend UI, admin UI, route manifest, sitemap, prerender, publish logs, cases, solutions, articles, or scenario detail pages.
+
+The command is:
+
+```powershell
+npm.cmd run shadow:media-write -- --action delete
+npm.cmd run shadow:media-write -- --action delete --target /uploads/images/example.jpg
+npm.cmd run shadow:media-write -- --action delete --target example.jpg
+```
+
+`--write` remains disabled and is still rejected safely:
+
+```powershell
+npm.cmd run shadow:media-write -- --write
+```
+
+The delete risk report reads only:
+
+- `server/data/media-library.json`
+- upload file existence and stat information
+- business JSON sources under `server/data`
+- MySQL `media_files`
+
+The report adds `deleteProtection` with:
+
+- `summary.checkedCount`
+- `summary.blockedCount`
+- `summary.needsReviewCount`
+- `summary.safeCandidateCount`
+- `summary.archivedCount`
+- `summary.activeCount`
+- `summary.missingUploadFileCount`
+- `summary.referencedCount`
+- `summary.unknownCoverageCount`
+- per-source coverage flags and coverage details
+- per-item decision, reasons, references, MySQL status/ownership, and upload-file status
+
+Reference scanning covers the current JSON surfaces for:
+
+- home-video
+- home-interactive-images
+- company-assets
+- cases and case image URLs embedded in case content
+- solutions, solution groups, and solution media items
+- scenario-detail-pages
+- pages
+- articles and SEO / Open Graph-like URL fields present in article JSON
+- contact-info
+- social QR and public seeded media assets when the seed JSON is present
+
+The MySQL side is limited to `media_files` for this step. It checks stable-key matching, current MySQL status, `sharedButReferenced`, `unknown`, and ownership-conflict signals. It does not query module foreign-key tables such as `case_images`, `solution_media_items`, or `seo_settings`; those remain part of the future formal delete guard design if 22-5C-4H connects the guard to the delete path.
+
+Decision rules are conservative:
+
+- `blocked`: status is not `archived`, any reference is found, or the matched MySQL row is `sharedButReferenced`.
+- `needs_review`: reference coverage is incomplete, upload file is missing, MySQL row is missing, multiple MySQL rows match, MySQL ownership is unknown, ownership conflicts, JSON/uploads/MySQL stable keys do not align, or source metadata has warnings.
+- `safe_candidate`: the item is archived, no references are found, coverage is complete, the upload file exists, MySQL ownership is not shared/unknown/conflicted, and JSON/uploads/MySQL stable keys align.
+
+`safe_candidate` is not permission to delete. It is only a dry-run candidate status for later human review and for a future formal guard acceptance step. The report intentionally avoids terms such as `allowed_delete`, `can_delete`, or `ready_to_delete`.
+
+If 22-5C-4H proceeds, it may consider connecting a read-only guard to the formal delete path before any destructive operation. True delete shadow write, MySQL tombstone behavior, and any JSON/uploads delete sequencing remain later work and are not implemented in 22-5C-4G.
