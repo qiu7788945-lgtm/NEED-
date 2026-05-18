@@ -13,7 +13,7 @@ import {
 } from '../data-source/media-library-content-source.js';
 import { readHomeInteractiveImages } from '../home/home-interactive-images.service.js';
 import { readHomeVideoConfig } from '../home/home-video.service.js';
-import { shadowWriteUploadedMedia } from './media-shadow-writer.js';
+import { shadowUpdateMediaMetadata, shadowWriteUploadedMedia } from './media-shadow-writer.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const dataDir = path.join(serverRoot, 'data');
@@ -1364,7 +1364,7 @@ export async function restoreLocalImage(fileName: string) {
 export async function updateLocalImageMetadata(fileName: string, metadata: MediaUpdateMetadata) {
   const file = await getExistingImage(fileName);
 
-  return withMediaIndexLock(async () => {
+  const updatedImage = await withMediaIndexLock(async () => {
     const index = await readMediaIndex();
     const entry = index[fileName] ?? {};
     const nextEntry: MediaIndexEntry = {
@@ -1426,6 +1426,10 @@ export async function updateLocalImageMetadata(fileName: string, metadata: Media
     const usagesByFileName = await getMediaUsagesByFileName();
     return withUsages(normalizeEntry(fileName, nextEntry, file), usagesByFileName[fileName]);
   });
+
+  await shadowUpdateMediaMetadata(updatedImage);
+
+  return updatedImage;
 }
 
 export async function registerLocalImageFile(fileName: string, metadata: RegisterLocalMediaMetadata) {

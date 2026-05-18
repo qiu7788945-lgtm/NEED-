@@ -542,3 +542,58 @@ The following operations remain on the original JSON/uploads path and are not sw
 - batch archive/restore/delete
 
 22-5C-4D may consider displayName/metadata shadow write as a separate step. Delete protection, reference checks, tombstone behavior, and physical file deletion remain later work and must not be folded into the upload shadow-write step.
+
+## 22-5C-4D Metadata Shadow Update
+
+22-5C-4D adds only the metadata/displayName shadow update after the existing JSON metadata update succeeds. The official metadata write path remains `server/data/media-library.json`; MySQL is still a non-blocking shadow target.
+
+The metadata update order remains:
+
+- validate the existing upload file
+- apply the existing metadata/displayName/category/owner fields supported by `PATCH /api/media/:fileName`
+- write `server/data/media-library.json`
+- build the unchanged metadata update API response object
+- attempt a MySQL metadata-only shadow update
+- return the existing API response shape
+
+The MySQL shadow update uses the same stable-key priority as the upload shadow writer:
+
+- `public_url` / current media `url`
+- `file_path`
+- `file_name + file_size`
+
+The metadata shadow update is intentionally narrower than the upload shadow write. It may update metadata-oriented fields such as:
+
+- `original_name`
+- `category`
+- `alt_text`
+- `description`
+- `status`
+- `metadata_json`
+
+It must not overwrite file identity or storage fields:
+
+- `public_url`
+- `file_path`
+- `file_name`
+- `file_size`
+- `mime_type`
+- `storage_provider`
+- `created_at`
+
+`metadata_json` is merged with the existing MySQL metadata where available and keeps:
+
+- `moduleName: media-library`
+- `sourceRecord`
+- `ownerType`, `ownerId`, `ownerSlug`, `groupKey`, `slotNo`
+- `caption`, `enabled`, `sortOrder`
+- `normalizedCategory`
+- `shadowWrite: true`
+- `shadowWriteStage: 22-5C-4D`
+- `lastShadowAction: metadata`
+
+If MySQL is not configured, the matched row is missing, the matched row is `sharedButReferenced`, the ownership is unknown, ownership signals conflict, or the update fails, the shadow writer logs a throttled warning and the JSON metadata update remains successful. MySQL shadow status is not exposed through the API response.
+
+22-5C-4C upload shadow write remains in place. 22-5C-4D does not change upload's JSON/uploads primary behavior, delete, archive, restore, batch operations, `/api/media/list`, frontend UI, admin UI, route manifest, sitemap, prerender, publish logs, cases, solutions, articles, or scenario detail pages.
+
+22-5C-4E may consider archive/restore shadow write as a separate step. Delete protection and physical file deletion remain later work.

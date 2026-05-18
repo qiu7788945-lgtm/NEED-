@@ -52,6 +52,7 @@ type MysqlMediaRow = RowDataPacket & {
 
 const uploadShadowWarningIntervalMs = 60 * 1000;
 let lastUploadShadowWarningAt = 0;
+let lastMetadataShadowWarningAt = 0;
 
 function asString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
@@ -74,6 +75,20 @@ function warnUploadShadow(reason: string, error?: unknown, meta: UnknownRecord =
 
   lastUploadShadowWarningAt = now;
   logger.warn('media-library upload MySQL shadow write skipped.', {
+    reason,
+    message: error instanceof Error ? error.message : error ? String(error) : undefined,
+    ...meta,
+  });
+}
+
+function warnMetadataShadow(reason: string, error?: unknown, meta: UnknownRecord = {}) {
+  const now = Date.now();
+  if (now - lastMetadataShadowWarningAt < uploadShadowWarningIntervalMs) {
+    return;
+  }
+
+  lastMetadataShadowWarningAt = now;
+  logger.warn('media-library metadata MySQL shadow update skipped.', {
     reason,
     message: error instanceof Error ? error.message : error ? String(error) : undefined,
     ...meta,
@@ -191,8 +206,19 @@ function sourceRecordFromUpload(record: MediaUploadShadowRecord): UnknownRecord 
   };
 }
 
-function metadataJson(record: MediaUploadShadowRecord, stableKey: MediaStableKey): string {
+function metadataJson(
+  record: MediaUploadShadowRecord,
+  stableKey: MediaStableKey,
+  input: {
+    stage: '22-5C-4C' | '22-5C-4D';
+    lastShadowAction?: 'metadata';
+    existingMetadata?: unknown;
+  },
+): string {
+  const existingMetadata = isRecord(input.existingMetadata) ? input.existingMetadata : {};
+
   return JSON.stringify({
+    ...existingMetadata,
     moduleName: 'media-library',
     sourceKey: record.fileName,
     displayName: record.displayName,
@@ -209,7 +235,8 @@ function metadataJson(record: MediaUploadShadowRecord, stableKey: MediaStableKey
     createdAt: record.createdAt,
     normalizedCategory: normalizeMediaLibraryCategory(record.category),
     shadowWrite: true,
-    shadowWriteStage: '22-5C-4C',
+    shadowWriteStage: input.stage,
+    lastShadowAction: input.lastShadowAction ?? existingMetadata.lastShadowAction,
     dedupeKey: {
       type: stableKey.type,
       value: stableKey.value,
@@ -340,7 +367,7 @@ async function insertMediaFile(record: MediaUploadShadowRecord, stableKey: Media
       category: normalizeCategoryForWrite(record.category),
       altText: record.alt,
       description: record.description,
-      metadataJson: metadataJson(record, stableKey),
+      metadataJson: metadataJson(record, stableKey, { stage: '22-5C-4C' }),
       status: normalizeStatus(record.status),
       createdAt,
     },
@@ -387,7 +414,36 @@ async function updateMediaFile(row: MysqlMediaRow, record: MediaUploadShadowReco
       category: normalizeCategoryForWrite(record.category),
       altText: record.alt,
       description: record.description,
-      metadataJson: metadataJson(record, stableKey),
+      metadataJson: metadataJson(record, stableKey, { stage: '22-5C-4C' }),
+      status: normalizeStatus(record.status),
+    },
+  );
+}
+
+async function updateMediaFileMetadata(row: MysqlMediaRow, record: MediaUploadShadowRecord, stableKey: MediaStableKey) {
+  const pool = getDbPool();
+  const existingMetadata = parseJsonColumn(row.metadata_json);
+
+  await pool.execute<ResultSetHeader>(
+    `UPDATE media_files
+     SET original_name = :originalName,
+         category = :category,
+         alt_text = :altText,
+         description = :description,
+         metadata_json = :metadataJson,
+         status = :status
+     WHERE id = :id`,
+    {
+      id: asNumber(row.id),
+      originalName: record.originalName || record.fileName,
+      category: normalizeCategoryForWrite(record.category),
+      altText: record.alt,
+      description: record.description,
+      metadataJson: metadataJson(record, stableKey, {
+        stage: '22-5C-4D',
+        lastShadowAction: 'metadata',
+        existingMetadata,
+      }),
       status: normalizeStatus(record.status),
     },
   );
@@ -446,10 +502,74 @@ async function writeUploadShadow(record: MediaUploadShadowRecord) {
   await updateMediaFile(matches[0], record, stableKey);
 }
 
+async function updateMetadataShadow(record: MediaUploadShadowRecord) {
+  const config = getSafeDatabaseConfig();
+  if (!config.configured) {
+    warnMetadataShadow('mysql-not-configured');
+    return;
+  }
+
+  const validationError = validateRecord(record);
+  if (validationError) {
+    warnMetadataShadow('incomplete-metadata-record', undefined, { fileName: record.fileName, validationError });
+    return;
+  }
+
+  const publicUrl = normalizeMediaPath(record.url);
+  const stableKey = buildStableKey({
+    publicUrl,
+    filePath: publicUrl,
+    fileName: record.fileName,
+    fileSize: record.size,
+  });
+
+  if (!stableKey) {
+    warnMetadataShadow('missing-stable-key', undefined, { fileName: record.fileName });
+    return;
+  }
+
+  const matches = await findExistingMediaRows(stableKey);
+  if (matches.length === 0) {
+    warnMetadataShadow('mysql-row-not-found', undefined, {
+      fileName: record.fileName,
+      stableKey: `${stableKey.type}:${stableKey.value}`,
+    });
+    return;
+  }
+
+  if (matches.length > 1) {
+    warnMetadataShadow('duplicate-stable-key-match', undefined, {
+      fileName: record.fileName,
+      stableKey: `${stableKey.type}:${stableKey.value}`,
+      matchCount: matches.length,
+    });
+    return;
+  }
+
+  const safety = existingRowIsSafeToUpdate(matches[0]);
+  if (!safety.ok) {
+    warnMetadataShadow('matched-row-not-safe-to-update', undefined, {
+      fileName: record.fileName,
+      reason: safety.reason,
+    });
+    return;
+  }
+
+  await updateMediaFileMetadata(matches[0], record, stableKey);
+}
+
 export async function shadowWriteUploadedMedia(record: MediaUploadShadowRecord): Promise<void> {
   try {
     await writeUploadShadow(record);
   } catch (error) {
     warnUploadShadow('mysql-shadow-write-failed', error, { fileName: record.fileName });
+  }
+}
+
+export async function shadowUpdateMediaMetadata(record: MediaUploadShadowRecord): Promise<void> {
+  try {
+    await updateMetadataShadow(record);
+  } catch (error) {
+    warnMetadataShadow('mysql-shadow-update-failed', error, { fileName: record.fileName });
   }
 }
