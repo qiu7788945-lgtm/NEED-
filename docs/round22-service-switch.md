@@ -321,3 +321,134 @@ The following operations still use the original JSON/uploads chain and are not s
 22-5C-3 does not change frontend UI, admin UI, cases, solutions, articles, scenario detail pages, route manifest generation, sitemap generation, prerender scripts, publish logs, JSON data, upload directories, or MySQL write behavior. MySQL failure must not block the admin media-library page from opening, and it must not affect `build:prerender`.
 
 The next step, 22-5C-4, should remain separate and should focus on write consistency, delete protection, rename/displayName synchronization, and shared-reference safety before any broader media-library source-of-truth decision.
+
+## 22-5C-4 Media-Library Write Consistency Plan
+
+22-5C-4 is documentation and planning only. It does not change upload, delete, displayName/metadata update, archive, restore, batch operations, `/api/media/list`, frontend UI, admin UI, JSON data, uploads, MySQL data, route manifest generation, sitemap generation, prerender, publish logs, cases, solutions, articles, or scenario detail pages.
+
+The current state after 22-5C-3 is deliberately mixed:
+
+- `GET /api/media/list` is MySQL-first with JSON/uploads fallback.
+- media-library writes still use the original JSON/uploads chain.
+- `media_files` remains a shared table and must not be treated as media-library-only.
+- JSON fallback and future MySQL-to-JSON export remain required until the source-of-truth transition is complete.
+
+### Current Write Chain Inventory
+
+The current media write implementation is centered in `server/src/services/media/media.service.ts`, with route/controller entry points in `server/src/controllers/media.controller.ts` and existing admin callers in `admin/src/api/media.ts`, `admin/src/pages/MediaLibraryPage.tsx`, and `admin/src/components/MediaPicker.tsx`.
+
+Current operation behavior:
+
+- Upload: `POST /api/media/upload` uses the upload middleware to write the physical file under `server/uploads/images` or `server/uploads/videos`, then `toUploadedImage()` writes metadata into `server/data/media-library.json`. If image validation fails after upload, the newly uploaded file is unlinked. No MySQL write happens.
+- List: `GET /api/media/list` now attempts MySQL-first read, then falls back to `listLocalImages()`. This is the only 22-5C-3 runtime switch.
+- Display name / metadata update: `PATCH /api/media/:fileName` calls `updateLocalImageMetadata()` and writes only `server/data/media-library.json`. It does not rename the physical upload file.
+- Archive: `PATCH /api/media/:fileName/archive` calls `archiveLocalImage()`, checks the current home usage map, and writes `status: archived` into `server/data/media-library.json`.
+- Restore: `PATCH /api/media/:fileName/restore` calls `restoreLocalImage()` and writes `status: active` into `server/data/media-library.json`.
+- Delete: `DELETE /api/media/:fileName` calls `deleteLocalImage()`. The item must already be archived, the current home usage map is checked, the physical upload file is deleted with `fs.unlink()`, and the JSON index entry is removed from `server/data/media-library.json`. No MySQL write happens.
+- Batch archive/restore/delete: batch handlers call the single-item operations sequentially, so they inherit the same JSON/uploads writes and the same protection limits.
+- Register existing local media: `registerLocalImageFile()` can add metadata for an already existing upload file, currently used by module flows such as case Word-image registration. It writes `server/data/media-library.json`.
+- Cleanup, duplicate warnings, usage counts, and usages: cleanup filters, duplicate warnings, usage counts, and usage arrays are derived while listing. Duplicate warnings are computed from the JSON index and file stats, not persisted as a separate JSON field. `usageCount` and `usages` are computed from the current home interactive images and home video config; they are not stored in `media-library.json`.
+
+Current write targets:
+
+- `server/data/media-library.json`: upload metadata, displayName/metadata edits, archive/restore status, delete index removal, register-local-file metadata.
+- `server/uploads/images`: uploaded image files and deleted image files.
+- `server/uploads/videos`: uploaded video files and deleted video files.
+- other JSON indexes: current media-library write functions only read home interactive/video configs for usage checks; they do not update cases, solutions, articles, publish logs, route manifests, or sitemap files.
+- MySQL `media_files`: not written by the current media-library write path.
+
+### Required Answers Before Write Switching
+
+Current answers from the 22-5C-4 inventory:
+
+- Current upload writes the physical file first, then writes `server/data/media-library.json`.
+- Current delete can delete the real upload file from `server/uploads/images` or `server/uploads/videos`.
+- Current delete checks only the media service usage map for home interactive images and home video/poster references. It does not fully check cases, solutions, company-assets, articles, scenario detail pages, or shared MySQL ownership.
+- Current displayName and metadata edits write `server/data/media-library.json`.
+- Current rename is display metadata only; storage file names are not renamed by `updateLocalImageMetadata()`.
+- Current archive and restore write status into `server/data/media-library.json`.
+- Current batch operations write through the same single-item JSON/uploads operations.
+- Current duplicate warnings are computed at read/upload time from the JSON index and file stats; they are not stored as durable JSON state.
+- Current usage counts and usage details are computed at read time from home interactive images and home video config; they are not stored as durable JSON state.
+- `media-library.json` and uploads can be inconsistent if an upload is interrupted between file write and JSON write, a file is manually removed, a JSON entry points at a missing file, or a local file exists without indexed metadata.
+- MySQL `media_files` and `media-library.json` can be inconsistent because the list can read MySQL-first while writes still update only JSON/uploads.
+- If the list reads MySQL while writes still write JSON only, uploads and metadata edits may not appear in the MySQL-first list, archive/restore may look stale, and deletes may leave rows that still appear until fallback or repair.
+- During a future upload shadow-write phase, MySQL failure should not fail the existing JSON-primary upload. It should be logged, measured, and retried by a repair/shadow tool.
+- During a future true dual-write delete, partial failure can create orphaned files, orphaned rows, or missing files with live rows. Delete must be handled last with strict reference protection, idempotent steps, and recoverable tombstone/repair behavior.
+- If a media file is referenced by cases, solutions, home, company assets, articles, or scenario pages, deletion should be blocked until references are removed or an explicit migration-safe policy handles the reference.
+- If MySQL contains `sharedButReferenced` rows, the backend media-library write path must not update or delete them as normal media-library-owned rows.
+- The final target should be a single primary data source, likely MySQL after validation, with JSON export and rollback available during transition. Long-term JSON/MySQL dual-primary should be avoided.
+
+### Write Consistency Risks
+
+The main risks are:
+
+- Split-brain list/write behavior: users can write JSON/uploads while the list shows MySQL rows.
+- Stale MySQL rows: displayName, category, archive status, or delete state may differ from JSON.
+- Upload visibility gaps: a new upload can be valid in JSON/uploads but absent from the MySQL-first list.
+- Shared-row mutation: module-owned rows from cases, solutions, home, or company-assets could be accidentally modified by media-library writes.
+- Incomplete reference protection: current media delete protection does not cover all business modules.
+- Hard-delete ordering: deleting uploads, JSON, and MySQL in the wrong order can permanently remove files while references or rows remain.
+- Fallback ambiguity: if MySQL is partially stale but not failing, fallback may not trigger automatically unless explicit health and freshness checks exist.
+- Recovery gaps: without JSON export and MySQL repair tools, failed dual writes can require manual repair.
+
+### Future Write Strategy
+
+The first safe write strategy is JSON primary plus MySQL shadow write:
+
+- Existing JSON/uploads write behavior remains authoritative.
+- A thin shadow writer attempts a MySQL upsert after the current JSON write succeeds.
+- Shadow failure is non-fatal to the current operation.
+- Shadow failures are logged without secrets and should be visible through compare/repair tooling.
+- The compare command remains the acceptance gate before any stronger write switch.
+
+True dual write should only come after shadow write has proven stable:
+
+- Operations need idempotent upserts keyed by stable media identity.
+- Each operation needs a predictable recovery path.
+- Archive/restore and metadata edits are safer than delete because they can be replayed.
+- Delete needs tombstones, reference checks, delayed file removal or repair, and strict ownership checks.
+
+MySQL primary plus JSON export is the final convergence model:
+
+- MySQL becomes the single runtime/write source after compare and shadow/dual-write validation pass.
+- JSON is generated from MySQL for rollback, export, and emergency recovery.
+- JSON is not maintained as a long-term independent primary source.
+- Before final cutover, no module should depend on data that cannot be exported back to the existing JSON shape.
+
+### Recommended Operation Order
+
+Recommended order for future implementation:
+
+- Upload can be shadow-written first because JSON/uploads can remain primary and MySQL failure can be non-fatal.
+- DisplayName and metadata updates can follow because they are mostly row metadata upserts and can be replayed.
+- Archive and restore can follow after status mapping is verified and compare can detect stale status.
+- Batch operations should wait until the single-item operation they wrap has a proven shadow path.
+- Delete must be last because it can remove physical files and because current reference protection is incomplete.
+
+Deletion prerequisites:
+
+- Expand reference discovery beyond home interactive images and home video.
+- Include cases, solutions, company-assets, articles, scenario detail pages, and known shared MySQL ownership signals.
+- Treat `sharedButReferenced` rows as protected from normal media-library writes.
+- Prefer soft delete / archived / tombstone state before any physical file deletion.
+- Provide repair tooling for row-only, JSON-only, and file-only drift.
+
+### Follow-Up Execution Path
+
+The write work should be split into small gates:
+
+- 22-5C-4A: current read-only inventory and write consistency plan.
+- 22-5C-4B: add media write shadow/repair tooling that is not connected to official business writes.
+- 22-5C-4C: upload remains JSON primary, with MySQL shadow write and compare validation.
+- 22-5C-4D: displayName and metadata updates remain JSON primary, with MySQL shadow write.
+- 22-5C-4E: archive and restore remain JSON primary, with MySQL shadow write.
+- 22-5C-4F: deletion protection and reference-check design, including cases, solutions, home, company-assets, articles, scenario detail pages, and shared MySQL rows.
+- 22-5C-4G: small-scope delete dual/shadow write with strict protection, soft-delete/tombstone behavior, and recovery checks.
+- 22-5C-4H: media-library write consistency acceptance across upload, metadata, archive/restore, delete, fallback, compare, and rollback.
+- 22-5D: cases service switch, separately validated.
+- 22-5E: solutions service switch, separately validated.
+- 22-5F: decide whether publish logs continue to keep JSON as the primary runtime chain.
+- 22-6: MySQL-to-JSON export and rollback rehearsal.
+
+This order keeps destructive operations last, keeps shared-table ownership explicit, and avoids turning media-library into MySQL-only before the write path and rollback path are proven.
