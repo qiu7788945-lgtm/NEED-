@@ -41,11 +41,15 @@ export interface MediaLibraryMysqlCandidate {
   mimeType: string;
   fileExt: string;
   fileSize: number;
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
   category: string;
   rawCategory: string;
   normalizedCategory: string;
   altText: string;
   description: string;
+  usageCount: number;
   status: string;
   createdAt: string;
   updatedAt: string;
@@ -71,9 +75,13 @@ type MediaFileRow = RowDataPacket & {
   mime_type: unknown;
   file_ext: unknown;
   file_size: unknown;
+  width: unknown;
+  height: unknown;
+  duration_seconds: unknown;
   category: unknown;
   alt_text: unknown;
   description: unknown;
+  usage_count: unknown;
   metadata_json: unknown;
   status: unknown;
   created_at: unknown;
@@ -343,6 +351,15 @@ function asNumber(value: unknown, fallback = 0) {
   return Number.isFinite(nextValue) ? nextValue : fallback;
 }
 
+function asNullableNumber(value: unknown) {
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
+  const nextValue = Number(value);
+  return Number.isFinite(nextValue) ? nextValue : null;
+}
+
 function asDateString(value: unknown) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return value.toISOString();
@@ -468,7 +485,8 @@ export async function readMediaLibraryMysqlCandidates(): Promise<MediaLibraryMys
   const pool = getDbPool();
   const [rows] = await pool.query<MediaFileRow[]>(
     `SELECT id, file_name, original_name, file_path, public_url, mime_type, file_ext,
-            file_size, category, alt_text, description, metadata_json, status, created_at, updated_at
+            file_size, width, height, duration_seconds, category, alt_text, description,
+            usage_count, metadata_json, status, created_at, updated_at
      FROM media_files
      WHERE deleted_at IS NULL
      ORDER BY id ASC`,
@@ -496,11 +514,15 @@ export async function readMediaLibraryMysqlCandidates(): Promise<MediaLibraryMys
       mimeType: asString(row.mime_type),
       fileExt: asString(row.file_ext),
       fileSize: asNumber(row.file_size),
+      width: asNullableNumber(row.width),
+      height: asNullableNumber(row.height),
+      durationSeconds: asNullableNumber(row.duration_seconds),
       category,
       rawCategory: category,
       normalizedCategory: ownershipProfile.normalizedCategory,
       altText: asString(row.alt_text),
       description: asString(row.description),
+      usageCount: asNumber(row.usage_count),
       status: asString(row.status),
       createdAt: asDateString(row.created_at),
       updatedAt: asDateString(row.updated_at),

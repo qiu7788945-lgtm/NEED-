@@ -6,6 +6,11 @@ import type { MediaCategory, MediaFileType, MediaOwnerType, MediaStatus } from '
 import { env } from '../../config/env.js';
 import { imageUploadDir, normalizeOriginalFileName, videoUploadDir } from '../../middlewares/upload.middleware.js';
 import { logger } from '../../utils/logger.js';
+import {
+  normalizeMediaLibraryCategory,
+  readMediaLibraryMysqlCandidates,
+  type MediaLibraryMysqlCandidate,
+} from '../data-source/media-library-content-source.js';
 import { readHomeInteractiveImages } from '../home/home-interactive-images.service.js';
 import { readHomeVideoConfig } from '../home/home-video.service.js';
 
@@ -31,6 +36,8 @@ const maxImageSize = env.media.maxImageSizeMb * 1024 * 1024;
 const largeFileThreshold = 2 * 1024 * 1024;
 const largeDimensionThreshold = 2500;
 const cleanupAgeMs = 30 * 24 * 60 * 60 * 1000;
+const mediaListFallbackWarningIntervalMs = 60 * 1000;
+let lastMediaListFallbackWarningAt = 0;
 
 const allowedCategories = new Set<MediaCategory>([
   'home_interactive',
@@ -798,6 +805,352 @@ function isOlderThanThirtyDays(createdAt?: string) {
   return Number.isFinite(time) && Date.now() - time > cleanupAgeMs;
 }
 
+function applyMediaListFilters(images: LocalImageFile[], filters: MediaListFilters = {}) {
+  const keyword = filters.keyword?.trim().toLowerCase();
+  const status = normalizeStatusFilter(filters.status);
+
+  return images
+    .filter((image) => !filters.category || image.category === filters.category)
+    .filter((image) => !filters.ownerType || image.ownerType === filters.ownerType)
+    .filter((image) => !filters.ownerId || String(image.ownerId ?? '') === filters.ownerId)
+    .filter((image) => !filters.ownerSlug || image.ownerSlug === filters.ownerSlug)
+    .filter((image) => !filters.groupKey || image.groupKey === filters.groupKey)
+    .filter((image) => !filters.slotNo || String(image.slotNo ?? '') === filters.slotNo)
+    .filter((image) => filters.enabled === undefined || String(image.enabled) === filters.enabled)
+    .filter((image) => status === 'all' || image.status === status)
+    .filter((image) => !filters.fileType || image.fileType === filters.fileType)
+    .filter((image) => {
+      if (!filters.cleanup) {
+        return true;
+      }
+      if (filters.cleanup === 'temporary') {
+        return image.category === 'temporary';
+      }
+      if (filters.cleanup === 'old_temporary') {
+        return image.category === 'temporary' && isOlderThanThirtyDays(image.createdAt);
+      }
+      if (filters.cleanup === 'old_archived') {
+        return image.status === 'archived' && isOlderThanThirtyDays(image.createdAt);
+      }
+      return true;
+    })
+    .filter((image) => {
+      if (!keyword) {
+        return true;
+      }
+
+      return [
+        image.fileName,
+        image.originalName,
+        image.displayName,
+        image.alt,
+        image.description,
+        image.caption,
+      ].some((value) => value.toLowerCase().includes(keyword));
+    })
+    .sort((a, b) => (a.sortOrder - b.sortOrder) || String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+function warnMediaListFallback(reason: string, error?: unknown) {
+  const now = Date.now();
+  if (now - lastMediaListFallbackWarningAt < mediaListFallbackWarningIntervalMs) {
+    return;
+  }
+
+  lastMediaListFallbackWarningAt = now;
+  logger.warn('media-library MySQL list fallback to JSON/uploads.', {
+    reason,
+    message: error instanceof Error ? error.message : error ? String(error) : undefined,
+  });
+}
+
+function textValue(value: unknown) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function firstMetadataValue(
+  metadata: Record<string, unknown>,
+  sourceRecord: Record<string, unknown>,
+  ...keys: string[]
+) {
+  for (const key of keys) {
+    if (metadata[key] !== undefined && metadata[key] !== null && metadata[key] !== '') {
+      return metadata[key];
+    }
+
+    if (sourceRecord[key] !== undefined && sourceRecord[key] !== null && sourceRecord[key] !== '') {
+      return sourceRecord[key];
+    }
+  }
+
+  return undefined;
+}
+
+function firstMetadataString(
+  metadata: Record<string, unknown>,
+  sourceRecord: Record<string, unknown>,
+  ...keys: string[]
+) {
+  const value = firstMetadataValue(metadata, sourceRecord, ...keys);
+  return textValue(value);
+}
+
+function normalizeMysqlNumber(value: unknown) {
+  if (typeof value === 'number' || typeof value === 'string' || value === null || value === undefined) {
+    return normalizeOptionalNumber(value as string | number | null | undefined);
+  }
+
+  return null;
+}
+
+function normalizeMysqlBoolean(value: unknown) {
+  if (typeof value === 'boolean' || typeof value === 'string' || value === undefined) {
+    return normalizeBoolean(value as string | boolean | undefined);
+  }
+
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+
+  return true;
+}
+
+function compactMediaCategory(value: string) {
+  return value.toLowerCase().replace(/[\s_-]+/g, '');
+}
+
+function mysqlCategoryToMediaCategory(rawCategory: string, fileType: MediaFileType): MediaCategory | null {
+  if (allowedCategories.has(rawCategory as MediaCategory)) {
+    return rawCategory as MediaCategory;
+  }
+
+  switch (compactMediaCategory(rawCategory)) {
+    case 'homeinteractive':
+    case 'homeinteractiveimage':
+    case 'homeinteractiveimages':
+      return 'home_interactive';
+    case 'homevideo':
+    case 'homevideos':
+      return 'home_video';
+    case 'caseimage':
+    case 'caseimages':
+    case 'casemedia':
+    case 'casemedias':
+    case 'casecover':
+      return 'case_image';
+    case 'solutionimage':
+    case 'solutionimages':
+    case 'solutionmedia':
+    case 'solutionmedias':
+    case 'solutioncover':
+    case 'solutionpagecover':
+      return fileType === 'video' ? 'solution_video' : 'solution_image';
+    case 'solutionvideo':
+    case 'solutionvideos':
+      return 'solution_video';
+    case 'articlecover':
+    case 'articlecovers':
+      return 'article_cover';
+    case 'pageeditor':
+      return 'page_editor';
+    case 'wordimport':
+      return 'word_import';
+    case 'qrcode':
+      return 'qrcode';
+    case 'temporary':
+      return 'temporary';
+    default:
+      break;
+  }
+
+  const normalizedCategory = normalizeMediaLibraryCategory(rawCategory);
+  if (normalizedCategory === 'solution-media') {
+    return fileType === 'video' ? 'solution_video' : 'solution_image';
+  }
+  if (normalizedCategory === 'case-media') {
+    return 'case_image';
+  }
+  if (normalizedCategory === 'home-interactive-images') {
+    return 'home_interactive';
+  }
+  if (normalizedCategory === 'home-video') {
+    return 'home_video';
+  }
+
+  return null;
+}
+
+function mysqlStatusToMediaStatus(value: string): MediaStatus | null {
+  const status = value.trim().toLowerCase();
+  if (!status) {
+    return 'active';
+  }
+  if (status === 'inactive') {
+    return 'archived';
+  }
+  if (allowedStatuses.has(status as MediaStatus)) {
+    return status as MediaStatus;
+  }
+
+  return null;
+}
+
+function mysqlPathToPublicUrl(value: string) {
+  const normalized = value.trim().replace(/\\/g, '/');
+  if (!normalized) {
+    return '';
+  }
+  if (/^https?:\/\//i.test(normalized) || normalized.startsWith('/')) {
+    return normalized;
+  }
+
+  const uploadsIndex = normalized.indexOf('/uploads/');
+  if (uploadsIndex >= 0) {
+    return normalized.slice(uploadsIndex);
+  }
+  if (normalized.startsWith('uploads/')) {
+    return `/${normalized}`;
+  }
+
+  return normalized;
+}
+
+function getMysqlMetadata(candidate: MediaLibraryMysqlCandidate) {
+  const metadata = isRecord(candidate.rawMetadata) ? candidate.rawMetadata : {};
+  const sourceRecord = isRecord(metadata.sourceRecord) ? metadata.sourceRecord : {};
+
+  return { metadata, sourceRecord };
+}
+
+type MysqlMediaMapResult =
+  | { ok: true; image: LocalImageFile }
+  | { ok: false; reason: string };
+
+function mapMysqlCandidateToLocalImage(
+  candidate: MediaLibraryMysqlCandidate,
+  usagesByFileName: Record<string, MediaUsage[]>,
+): MysqlMediaMapResult {
+  const { metadata, sourceRecord } = getMysqlMetadata(candidate);
+  const rawUrl = textValue(candidate.publicUrl) || textValue(candidate.url) || textValue(candidate.filePath);
+  const url = mysqlPathToPublicUrl(rawUrl);
+  const fileName = textValue(candidate.fileName) || getFileNameFromMediaUrl(url);
+
+  if (!fileName || !url) {
+    return { ok: false, reason: `media_files#${candidate.id} is missing fileName or public url.` };
+  }
+
+  const metadataFileType = firstMetadataString(metadata, sourceRecord, 'fileType', 'file_type');
+  const fileType: MediaFileType = metadataFileType === 'video' || metadataFileType === 'image'
+    ? metadataFileType
+    : candidate.mimeType
+      ? getFileTypeFromMimeType(candidate.mimeType)
+      : getFileTypeFromFileName(fileName);
+  const rawCategory = firstMetadataString(metadata, sourceRecord, 'category') || candidate.category;
+  const category = mysqlCategoryToMediaCategory(rawCategory, fileType);
+  const status = mysqlStatusToMediaStatus(candidate.status);
+
+  if (!category) {
+    return { ok: false, reason: `media_files#${candidate.id} category cannot be mapped to the existing media API category set.` };
+  }
+
+  if (!status) {
+    return { ok: false, reason: `media_files#${candidate.id} status cannot be mapped to the existing media API status set.` };
+  }
+
+  if (!candidate.mimeType || !Number.isFinite(candidate.fileSize) || candidate.fileSize <= 0) {
+    return { ok: false, reason: `media_files#${candidate.id} is missing mimeType or fileSize.` };
+  }
+
+  const originalName = candidate.originalName || fileName;
+  const displayName = firstMetadataString(metadata, sourceRecord, 'displayName', 'display_name', 'title')
+    || candidate.displayName
+    || candidate.title
+    || originalName;
+  const slotNo = normalizeMysqlNumber(firstMetadataValue(metadata, sourceRecord, 'slotNo', 'slot_no', 'slotNumber', 'slot_number'));
+  const sortOrder = normalizeMysqlNumber(firstMetadataValue(metadata, sourceRecord, 'sortOrder', 'sort_order')) ?? slotNo ?? 0;
+  const width = fileType === 'image' ? candidate.width : null;
+  const height = fileType === 'image' ? candidate.height : null;
+  const image: LocalImageFile = {
+    fileName,
+    originalName,
+    displayName,
+    fileType,
+    url,
+    size: candidate.fileSize,
+    mimeType: candidate.mimeType,
+    width,
+    height,
+    duration: candidate.durationSeconds,
+    category,
+    alt: candidate.altText,
+    description: candidate.description,
+    ownerType: normalizeOwnerType(firstMetadataString(metadata, sourceRecord, 'ownerType', 'owner_type')),
+    ownerId: normalizeMysqlNumber(firstMetadataValue(metadata, sourceRecord, 'ownerId', 'owner_id')),
+    ownerSlug: firstMetadataString(metadata, sourceRecord, 'ownerSlug', 'owner_slug'),
+    groupKey: firstMetadataString(metadata, sourceRecord, 'groupKey', 'group_key'),
+    slotNo,
+    caption: firstMetadataString(metadata, sourceRecord, 'caption'),
+    enabled: normalizeMysqlBoolean(firstMetadataValue(metadata, sourceRecord, 'enabled', 'is_enabled')),
+    sortOrder,
+    status,
+    createdAt: firstMetadataString(metadata, sourceRecord, 'createdAt', 'created_at') || candidate.createdAt,
+    usageCount: 0,
+    usages: [],
+    suggestedCategory: undefined,
+    categoryWarning: undefined,
+    duplicateWarnings: [],
+    isLargeFile: fileType === 'image' && candidate.fileSize > largeFileThreshold,
+    isLargeDimension: fileType === 'image' && Boolean((width && width > largeDimensionThreshold) || (height && height > largeDimensionThreshold)),
+  };
+
+  return {
+    ok: true,
+    image: withUsages(image, usagesByFileName[fileName]),
+  };
+}
+
+async function readMysqlMediaLibraryImages(): Promise<LocalImageFile[]> {
+  const mysqlResult = await readMediaLibraryMysqlCandidates();
+  const ownershipConflict = mysqlResult.candidates.find((item) => item.ownershipProfile.conflicts.length > 0);
+  if (ownershipConflict) {
+    throw new Error(`media_files#${ownershipConflict.id} has conflicting ownership metadata.`);
+  }
+
+  if (mysqlResult.counts.unknown > 0) {
+    throw new Error(`${mysqlResult.counts.unknown} media_files rows have unknown ownership.`);
+  }
+
+  const likelyMediaLibrary = mysqlResult.candidates.filter((item) => item.ownershipKind === 'likelyMediaLibrary');
+  if (!likelyMediaLibrary.length) {
+    throw new Error('MySQL media-library adapter returned no likelyMediaLibrary rows.');
+  }
+
+  const usagesByFileName = await getMediaUsagesByFileName();
+  const images: LocalImageFile[] = [];
+
+  for (const candidate of likelyMediaLibrary) {
+    const mapped = mapMysqlCandidateToLocalImage(candidate, usagesByFileName);
+    if (mapped.ok === false) {
+      throw new Error(mapped.reason);
+    }
+
+    images.push(mapped.image);
+  }
+
+  return images;
+}
+
+export async function listMediaLibraryImages(filters: MediaListFilters = {}): Promise<LocalImageFile[]> {
+  normalizeStatusFilter(filters.status);
+
+  try {
+    return applyMediaListFilters(await readMysqlMediaLibraryImages(), filters);
+  } catch (error) {
+    warnMediaListFallback('mysql-media-library-list-unavailable', error);
+    return listLocalImages(filters);
+  }
+}
+
 export async function toUploadedImage(file: Express.Multer.File, metadata: MediaUploadMetadata): Promise<LocalImageFile> {
   const storedFile = await applyCustomStorageName(file, metadata.storageName);
   const fileType = getFileTypeFromMimeType(storedFile.mimetype);
@@ -878,8 +1231,6 @@ export async function listLocalImages(filters: MediaListFilters = {}): Promise<L
 
   const index = await readMediaIndex();
   const usagesByFileName = await getMediaUsagesByFileName();
-  const keyword = filters.keyword?.trim().toLowerCase();
-  const status = normalizeStatusFilter(filters.status);
   const mediaDirs = [
     { dir: imageUploadDir, fileType: 'image' as MediaFileType },
     { dir: videoUploadDir, fileType: 'video' as MediaFileType },
@@ -929,46 +1280,7 @@ export async function listLocalImages(filters: MediaListFilters = {}): Promise<L
       }),
   );
 
-  return images
-    .filter((image) => !filters.category || image.category === filters.category)
-    .filter((image) => !filters.ownerType || image.ownerType === filters.ownerType)
-    .filter((image) => !filters.ownerId || String(image.ownerId ?? '') === filters.ownerId)
-    .filter((image) => !filters.ownerSlug || image.ownerSlug === filters.ownerSlug)
-    .filter((image) => !filters.groupKey || image.groupKey === filters.groupKey)
-    .filter((image) => !filters.slotNo || String(image.slotNo ?? '') === filters.slotNo)
-    .filter((image) => filters.enabled === undefined || String(image.enabled) === filters.enabled)
-    .filter((image) => status === 'all' || image.status === status)
-    .filter((image) => !filters.fileType || image.fileType === filters.fileType)
-    .filter((image) => {
-      if (!filters.cleanup) {
-        return true;
-      }
-      if (filters.cleanup === 'temporary') {
-        return image.category === 'temporary';
-      }
-      if (filters.cleanup === 'old_temporary') {
-        return image.category === 'temporary' && isOlderThanThirtyDays(image.createdAt);
-      }
-      if (filters.cleanup === 'old_archived') {
-        return image.status === 'archived' && isOlderThanThirtyDays(image.createdAt);
-      }
-      return true;
-    })
-    .filter((image) => {
-      if (!keyword) {
-        return true;
-      }
-
-      return [
-        image.fileName,
-        image.originalName,
-        image.displayName,
-        image.alt,
-        image.description,
-        image.caption,
-      ].some((value) => value.toLowerCase().includes(keyword));
-    })
-    .sort((a, b) => (a.sortOrder - b.sortOrder) || String(b.createdAt).localeCompare(String(a.createdAt)));
+  return applyMediaListFilters(images, filters);
 }
 
 async function getExistingImage(fileName: string) {

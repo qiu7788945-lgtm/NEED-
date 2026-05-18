@@ -5,7 +5,7 @@ import {
   batchDeleteLocalImages,
   batchRestoreLocalImages,
   deleteLocalImage,
-  listLocalImages,
+  listMediaLibraryImages,
   restoreLocalImage,
   toUploadedImage,
   updateLocalImageMetadata,
@@ -37,7 +37,7 @@ export const uploadMedia: RequestHandler = async (req, res) => {
 };
 
 export const listMedia: RequestHandler = async (_req, res) => {
-  const images = await listLocalImages({
+  const images = await listMediaLibraryImages({
     category: typeof _req.query.category === 'string' ? _req.query.category : undefined,
     keyword: typeof _req.query.keyword === 'string' ? _req.query.keyword : undefined,
     ownerType: typeof _req.query.ownerType === 'string' ? _req.query.ownerType : undefined,

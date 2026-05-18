@@ -282,3 +282,42 @@ The compare report now separates:
 If a row has conflicting business signals, such as a MySQL category normalized to `solution-media` while metadata points to `case-media`, the shadow compare keeps it as a hard mismatch. `sharedButReferenced` rows remain excluded from the official media-library candidate set and are shown only as shadow compare context.
 
 After 22-5C-2B, the project still cannot directly enter the admin media-library list switch. Whether 22-5C-3 is safe depends on the normalized report: missing rows, true mismatches, ownership conflicts, shared exclusions, and unknown ownership must be reviewed first.
+
+## 22-5C-3 Media-Library Admin List Read Switch
+
+22-5C-3 switches only the read path behind `GET /api/media/list`. It is a small-scope MySQL-first list read with JSON/uploads fallback, not a full media-library MySQL primary-source closeout.
+
+The route response shape stays the existing media API shape:
+
+- the controller still returns `success(images)`
+- `images` remains an array of media items
+- existing fields such as `fileName`, `originalName`, `displayName`, `fileType`, `url`, `size`, `mimeType`, `width`, `height`, `duration`, `category`, `alt`, `description`, owner fields, `slotNo`, `caption`, `enabled`, `sortOrder`, `status`, `createdAt`, `usageCount`, `usages`, `duplicateWarnings`, `isLargeFile`, and `isLargeDimension` remain compatible with the current admin UI
+- MySQL category forms are mapped back to the existing media API category values such as `solution_image`, `case_image`, `home_interactive`, and `home_video`
+- no frontend or admin UI code is changed for MySQL column names
+
+The MySQL-first path is used only when the read-only adapter can safely return `likelyMediaLibrary` rows from `media_files`. `sharedButReferenced` rows do not enter the official media-library list. `unknown` ownership rows also do not enter the official list.
+
+The route falls back to the existing `listLocalImages()` / JSON/uploads chain when:
+
+- MySQL is not configured
+- MySQL connection or query fails
+- the adapter returns no `likelyMediaLibrary` rows
+- any row has `unknownOwnership`
+- ownership signals conflict
+- a likely media-library row cannot be mapped back to the existing media API fields
+- a likely media-library row is missing key fields such as file name, public URL, MIME type, file size, category, or status
+
+The fallback is read-only and preserves the current behavior that scans local uploads, reads `server/data/media-library.json`, computes usage markers, applies the existing filters, and returns the same API structure. A throttled warning is logged when fallback happens; it does not print database credentials or full connection configuration.
+
+The following operations still use the original JSON/uploads chain and are not switched in 22-5C-3:
+
+- upload
+- metadata/displayName/category edits
+- archive
+- restore
+- delete
+- batch archive/restore/delete
+
+22-5C-3 does not change frontend UI, admin UI, cases, solutions, articles, scenario detail pages, route manifest generation, sitemap generation, prerender scripts, publish logs, JSON data, upload directories, or MySQL write behavior. MySQL failure must not block the admin media-library page from opening, and it must not affect `build:prerender`.
+
+The next step, 22-5C-4, should remain separate and should focus on write consistency, delete protection, rename/displayName synchronization, and shared-reference safety before any broader media-library source-of-truth decision.
