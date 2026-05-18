@@ -495,3 +495,50 @@ Action semantics are intentionally planning-only:
 - `delete`: only considers archived JSON records and plans a MySQL soft-delete/tombstone; active records are skipped
 
 The tool does not make any official business endpoint write MySQL. It is an inspection and planning step before 22-5C-4C. The next write implementation step must still keep JSON/uploads as the official write path and should start with upload shadow writes only after this report is reviewed.
+
+## 22-5C-4C Upload Shadow Write
+
+22-5C-4C adds only one official write-side change: after an upload has already succeeded through the existing uploads and `server/data/media-library.json` path, the media service attempts a MySQL shadow upsert into `media_files`.
+
+The upload order remains:
+
+- write the uploaded file under the existing uploads directory
+- validate and build the existing media-library JSON record
+- write `server/data/media-library.json`
+- build the unchanged upload API response object
+- attempt MySQL shadow write using that uploaded media record
+- return the existing upload API response shape
+
+JSON/uploads remain the upload source of truth in this step. MySQL is not the upload primary source, and upload does not become a JSON/MySQL transaction. If MySQL is not configured, if the connection fails, if the upsert fails, if the uploaded record is missing required fields, or if a matched MySQL row is shared/unknown and unsafe to mutate, the shadow writer logs a throttled warning and the upload response still succeeds.
+
+The shadow writer writes only `media_files` and only from the upload-success path. It uses stable-key matching in this order:
+
+- `public_url` / uploaded `url`
+- `file_path`
+- `file_name + file_size`
+
+Inserted or updated shadow rows keep media-library ownership metadata in `metadata_json`, including:
+
+- `moduleName: media-library`
+- `sourceKey`
+- `displayName` / `title`
+- `fileType`
+- `ownerType`, `ownerId`, `ownerSlug`, `groupKey`, `slotNo`
+- `caption`, `enabled`, `sortOrder`, `createdAt`
+- `normalizedCategory`
+- `shadowWrite: true`
+- `shadowWriteStage: 22-5C-4C`
+- `sourceRecord`
+
+The upload response structure is unchanged. No frontend or admin UI field is added, and MySQL shadow status is not exposed as an upload success condition.
+
+The following operations remain on the original JSON/uploads path and are not switched in 22-5C-4C:
+
+- delete
+- rename / displayName update
+- metadata update
+- archive
+- restore
+- batch archive/restore/delete
+
+22-5C-4D may consider displayName/metadata shadow write as a separate step. Delete protection, reference checks, tombstone behavior, and physical file deletion remain later work and must not be folded into the upload shadow-write step.

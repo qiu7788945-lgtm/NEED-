@@ -13,6 +13,7 @@ import {
 } from '../data-source/media-library-content-source.js';
 import { readHomeInteractiveImages } from '../home/home-interactive-images.service.js';
 import { readHomeVideoConfig } from '../home/home-video.service.js';
+import { shadowWriteUploadedMedia } from './media-shadow-writer.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const dataDir = path.join(serverRoot, 'data');
@@ -1193,7 +1194,7 @@ export async function toUploadedImage(file: Express.Multer.File, metadata: Media
     createdAt,
   };
 
-  return withMediaIndexLock(async () => {
+  const uploadedImage = await withMediaIndexLock(async () => {
     const index = await readMediaIndex();
     const duplicateWarnings = getDuplicateWarnings(index, storedFile.filename, entry, storedFile.size);
     if (wasStorageNameRenamed(metadata.storageName, storedFile.filename)) {
@@ -1223,6 +1224,10 @@ export async function toUploadedImage(file: Express.Multer.File, metadata: Media
       duplicateWarnings,
     };
   });
+
+  await shadowWriteUploadedMedia(uploadedImage);
+
+  return uploadedImage;
 }
 
 export async function listLocalImages(filters: MediaListFilters = {}): Promise<LocalImageFile[]> {
