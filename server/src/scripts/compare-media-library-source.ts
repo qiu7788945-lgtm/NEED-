@@ -1,8 +1,12 @@
 import 'dotenv/config';
 import { closeDbPool } from '../db/client.js';
 import {
+  buildMediaLibraryOwnershipProfile,
+  normalizeMediaLibraryCategory,
   readMediaLibraryMysqlCandidates,
   type MediaLibraryMysqlCandidate,
+  type MediaLibraryOwnershipProfile,
+  type NormalizedMediaLibraryOwnership,
 } from '../services/data-source/media-library-content-source.js';
 import { listLocalImages, type LocalImageFile } from '../services/media/media.service.js';
 
@@ -20,7 +24,28 @@ interface FieldMismatch {
   fieldName: string;
   jsonValue: unknown;
   mysqlValue: unknown;
+  normalizedJsonValue?: unknown;
+  normalizedMysqlValue?: unknown;
   message: string;
+}
+
+interface NormalizedCategoryMatch {
+  stableKey: StableKey;
+  fileName: string;
+  jsonValue: string;
+  mysqlValue: string;
+  normalizedJsonValue: string;
+  normalizedMysqlValue: string;
+  message: string;
+}
+
+interface FieldComparisonReport {
+  fieldMismatches: FieldMismatch[];
+  normalizedCategoryMatches: NormalizedCategoryMatch[];
+  normalizedMatchedCount: number;
+  trueCategoryMismatchCount: number;
+  rawCategoryDifferenceCount: number;
+  ownershipMismatchCount: number;
 }
 
 function normalizeUrl(value: string | undefined) {
@@ -51,6 +76,30 @@ function normalizeStatus(value: unknown) {
     return 'archived';
   }
   return text;
+}
+
+function buildLocalOwnershipProfile(item: LocalImageFile): MediaLibraryOwnershipProfile {
+  return buildMediaLibraryOwnershipProfile(
+    {
+      ownerType: item.ownerType,
+      ownerSlug: item.ownerSlug,
+      groupKey: item.groupKey,
+      sourceRecord: {
+        category: item.category,
+        ownerType: item.ownerType,
+        ownerSlug: item.ownerSlug,
+        groupKey: item.groupKey,
+      },
+    },
+    item.category,
+  );
+}
+
+function isKnownSameOwnership(
+  left: NormalizedMediaLibraryOwnership,
+  right: NormalizedMediaLibraryOwnership,
+) {
+  return left !== 'unknown' && right !== 'unknown' && left === right;
 }
 
 function fileNameFromPath(value: string | undefined) {
@@ -119,16 +168,137 @@ function addMismatch(
     fieldName: string;
     jsonValue: unknown;
     mysqlValue: unknown;
+    normalizedJsonValue?: unknown;
+    normalizedMysqlValue?: unknown;
+    message?: string;
   },
 ) {
   mismatches.push({
-    ...input,
-    message: `${input.fieldName} differs between listLocalImages() and MySQL media_files adapter output.`,
+    stableKey: input.stableKey,
+    fileName: input.fileName,
+    fieldName: input.fieldName,
+    jsonValue: input.jsonValue,
+    mysqlValue: input.mysqlValue,
+    normalizedJsonValue: input.normalizedJsonValue,
+    normalizedMysqlValue: input.normalizedMysqlValue,
+    message: input.message ?? `${input.fieldName} differs between listLocalImages() and MySQL media_files adapter output.`,
   });
 }
 
-function collectFieldMismatches(matches: MatchedPair[]) {
-  const mismatches: FieldMismatch[] = [];
+function addNormalizedCategoryMatch(
+  matches: NormalizedCategoryMatch[],
+  input: Omit<NormalizedCategoryMatch, 'message'> & { message?: string },
+) {
+  matches.push({
+    ...input,
+    message: input.message
+      ?? 'Raw category differs, but both values normalize to the same media ownership category.',
+  });
+}
+
+function collectCategoryComparison(
+  match: MatchedPair,
+  report: FieldComparisonReport,
+) {
+  const jsonValue = normalizeText(match.local.category);
+  const mysqlValue = normalizeText(match.mysql.category);
+  const normalizedJsonValue = normalizeMediaLibraryCategory(jsonValue);
+  const normalizedMysqlValue = normalizeMediaLibraryCategory(mysqlValue);
+  const localOwnership = buildLocalOwnershipProfile(match.local);
+  const mysqlOwnership = match.mysql.ownershipProfile;
+  const ownershipConflicts = [
+    ...localOwnership.conflicts.map((message) => `listLocalImages(): ${message}`),
+    ...mysqlOwnership.conflicts.map((message) => `MySQL media_files: ${message}`),
+  ];
+  const rawCategoryDiffers = jsonValue !== mysqlValue;
+
+  if (rawCategoryDiffers) {
+    report.rawCategoryDifferenceCount += 1;
+  }
+
+  if (ownershipConflicts.length) {
+    report.ownershipMismatchCount += 1;
+    addMismatch(report.fieldMismatches, {
+      stableKey: match.stableKey,
+      fileName: match.local.fileName,
+      fieldName: 'categoryOwnership',
+      jsonValue,
+      mysqlValue,
+      normalizedJsonValue,
+      normalizedMysqlValue,
+      message: `Category and ownership signals conflict. ${ownershipConflicts.join(' ')}`,
+    });
+    return;
+  }
+
+  if (!rawCategoryDiffers) {
+    return;
+  }
+
+  if (normalizedJsonValue === normalizedMysqlValue) {
+    report.normalizedMatchedCount += 1;
+    addNormalizedCategoryMatch(report.normalizedCategoryMatches, {
+      stableKey: match.stableKey,
+      fileName: match.local.fileName,
+      jsonValue,
+      mysqlValue,
+      normalizedJsonValue,
+      normalizedMysqlValue,
+    });
+    return;
+  }
+
+  const categoryOwnershipMatches = isKnownSameOwnership(
+    localOwnership.normalizedCategoryOwnership,
+    mysqlOwnership.normalizedCategoryOwnership,
+  );
+  const businessOwnershipMatches = isKnownSameOwnership(
+    localOwnership.normalizedOwnership,
+    mysqlOwnership.normalizedOwnership,
+  ) || isKnownSameOwnership(
+    localOwnership.normalizedCategoryOwnership,
+    mysqlOwnership.normalizedOwnership,
+  ) || isKnownSameOwnership(
+    localOwnership.normalizedOwnership,
+    mysqlOwnership.normalizedCategoryOwnership,
+  );
+
+  if (categoryOwnershipMatches || businessOwnershipMatches) {
+    report.normalizedMatchedCount += 1;
+    addNormalizedCategoryMatch(report.normalizedCategoryMatches, {
+      stableKey: match.stableKey,
+      fileName: match.local.fileName,
+      jsonValue,
+      mysqlValue,
+      normalizedJsonValue,
+      normalizedMysqlValue,
+      message: `Raw category differs, but ownership signals point to the same business source (${localOwnership.normalizedOwnership}/${mysqlOwnership.normalizedOwnership}).`,
+    });
+    return;
+  }
+
+  report.trueCategoryMismatchCount += 1;
+  addMismatch(report.fieldMismatches, {
+    stableKey: match.stableKey,
+    fileName: match.local.fileName,
+    fieldName: 'category',
+    jsonValue,
+    mysqlValue,
+    normalizedJsonValue,
+    normalizedMysqlValue,
+    message: 'Category differs after normalization and ownership signals do not point to the same business source.',
+  });
+}
+
+function collectFieldMismatches(matches: MatchedPair[]): FieldComparisonReport {
+  const report: FieldComparisonReport = {
+    fieldMismatches: [],
+    normalizedCategoryMatches: [],
+    normalizedMatchedCount: 0,
+    trueCategoryMismatchCount: 0,
+    rawCategoryDifferenceCount: 0,
+    ownershipMismatchCount: 0,
+  };
 
   for (const match of matches) {
     const checks = [
@@ -153,11 +323,6 @@ function collectFieldMismatches(matches: MatchedPair[]) {
         mysqlValue: normalizeText(match.mysql.mimeType),
       },
       {
-        fieldName: 'category',
-        jsonValue: normalizeText(match.local.category),
-        mysqlValue: normalizeText(match.mysql.category),
-      },
-      {
         fieldName: 'status',
         jsonValue: normalizeStatus(match.local.status),
         mysqlValue: normalizeStatus(match.mysql.status),
@@ -166,7 +331,7 @@ function collectFieldMismatches(matches: MatchedPair[]) {
 
     for (const check of checks) {
       if (check.jsonValue !== check.mysqlValue) {
-        addMismatch(mismatches, {
+        addMismatch(report.fieldMismatches, {
           stableKey: match.stableKey,
           fileName: match.local.fileName,
           fieldName: check.fieldName,
@@ -175,9 +340,11 @@ function collectFieldMismatches(matches: MatchedPair[]) {
         });
       }
     }
+
+    collectCategoryComparison(match, report);
   }
 
-  return mismatches;
+  return report;
 }
 
 function summarizeLocal(item: LocalImageFile) {
@@ -189,6 +356,7 @@ function summarizeLocal(item: LocalImageFile) {
     fileSize: item.size,
     mimeType: item.mimeType,
     category: item.category,
+    normalizedCategory: normalizeMediaLibraryCategory(item.category),
     status: item.status,
   };
 }
@@ -205,9 +373,13 @@ function summarizeMysql(item: MediaLibraryMysqlCandidate) {
     fileSize: item.fileSize,
     mimeType: item.mimeType,
     category: item.category,
+    rawCategory: item.rawCategory,
+    normalizedCategory: item.normalizedCategory,
     status: item.status,
     ownershipKind: item.ownershipKind,
     ownershipReason: item.ownershipReason,
+    normalizedOwnership: item.ownershipProfile.normalizedOwnership,
+    ownershipConflicts: item.ownershipProfile.conflicts,
   };
 }
 
@@ -240,7 +412,8 @@ async function main() {
   }
 
   const missingInJson = likelyMysql.filter((item) => !matchedMysqlIds.has(item.id));
-  const fieldMismatches = collectFieldMismatches(matched);
+  const fieldComparison = collectFieldMismatches(matched);
+  const { fieldMismatches, normalizedCategoryMatches } = fieldComparison;
   const status = missingInMysql.length || missingInJson.length || fieldMismatches.length
     ? 'warning'
     : 'matched';
@@ -260,10 +433,17 @@ async function main() {
       missingInMysql: missingInMysql.length,
       missingInJson: missingInJson.length,
       fieldMismatches: fieldMismatches.length,
+      normalizedMatchedCount: fieldComparison.normalizedMatchedCount,
+      trueCategoryMismatchCount: fieldComparison.trueCategoryMismatchCount,
+      rawCategoryDifferenceCount: fieldComparison.rawCategoryDifferenceCount,
+      ownershipMismatchCount: fieldComparison.ownershipMismatchCount,
+      sharedExcludedCount: sharedExcluded.length,
+      unknownOwnershipCount: unknownOwnership.length,
     },
     summary: {
       stableKeyPriority: ['url/publicUrl', 'filePath', 'fileName', 'fileName+fileSize'],
       sharedTablePolicy: 'sharedButReferenced and unknown rows are reported but not treated as official media-library list rows.',
+      categoryNormalization: 'Raw category values are kept in the report. Category comparison uses normalized values plus ownership metadata before producing a hard mismatch.',
       nextGate: 'Review this report before deciding whether 22-5C-3 can switch the admin list.',
     },
     matched: matched.slice(0, 100).map((match) => ({
@@ -273,6 +453,7 @@ async function main() {
     })),
     missingInMysql: missingInMysql.slice(0, 100).map(summarizeLocal),
     missingInJson: missingInJson.slice(0, 100).map(summarizeMysql),
+    normalizedCategoryMatches: normalizedCategoryMatches.slice(0, 200),
     fieldMismatches: fieldMismatches.slice(0, 200),
     sharedExcluded: sharedExcluded.slice(0, 100).map(summarizeMysql),
     unknownOwnership: unknownOwnership.slice(0, 100).map(summarizeMysql),

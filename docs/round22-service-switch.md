@@ -229,3 +229,56 @@ It is stdout-only and read-only. It compares current `listLocalImages({ status: 
 - unknown ownership rows
 
 22-5C-3 should not start until this report is reviewed. The next gate is whether the likely-media-library ownership rule matches current admin expectations closely enough. Write consistency, delete protection, rename/displayName synchronization, and shared-reference safety remain out of scope for 22-5C-2.
+
+## 22-5C-2B Media-Library Compare Normalization
+
+22-5C-2B only corrects the read-only adapter and shadow compare report for category and ownership normalization. It does not switch the admin media-library list, does not change `/api/media/list`, and does not connect any official media service read path to MySQL `media_files`.
+
+The normalization is compare-only:
+
+- JSON source values are not rewritten.
+- MySQL `media_files` values are not rewritten.
+- raw category values remain visible in the report.
+- normalized category values are added for comparison and diagnostics.
+- equivalent raw category formats are no longer hard `fieldMismatches`.
+- true category or ownership conflicts remain hard mismatches.
+
+The category canonicalization used by the shadow compare is:
+
+- `solution_image`, `solution-image`, `solution_media`, `solution-media`, plus actual solution video/cover forms such as `solution_video`, `solution-video`, `solution-cover`, and `solution-page-cover` -> `solution-media`
+- `case_image`, `case-image`, `case_media`, `case-media`, and actual cover form `case-cover` -> `case-media`
+- `home_interactive`, `home-interactive`, `home_interactive_images`, `home-interactive-images` -> `home-interactive-images`
+- `home_video`, `home-video` -> `home-video`
+- `company_assets`, `company-assets`, `company_asset`, `company-asset` -> `company-assets`
+- `media_library`, `media-library` -> `media-library`
+
+The normalizer lowercases values and treats underscores, spaces, short hyphens, and simple singular/plural variants as equivalent where the business meaning is the same.
+
+Ownership normalization reads these metadata fields without writing them back:
+
+- `metadata_json.moduleName`
+- `metadata_json.ownerType`
+- `metadata_json.ownerSlug`
+- `metadata_json.groupKey`
+- `metadata_json.sourceRecord.moduleName`
+- `metadata_json.sourceRecord.category`
+- `metadata_json.sourceRecord.ownerType`
+- `metadata_json.sourceRecord.ownerSlug`
+- `metadata_json.sourceRecord.groupKey`
+
+`ownerSlug` is normalized and preserved in the signal list, but it is not treated as authoritative by itself because slugs can be arbitrary business identifiers. Category, module name, owner type, and group key are used to infer the normalized ownership bucket: `media-library`, `home-video`, `home-interactive-images`, `company-assets`, `case-media`, `solution-media`, or `unknown`. A bare `ownerType: home` is still treated as shared ownership for exclusion, but it does not become a hard conflict unless category/module/group signals identify a contradictory home subtype.
+
+The compare report now separates:
+
+- raw category differences
+- normalized category matches
+- true category mismatches
+- ownership conflicts
+- shared rows excluded from official media-library consideration
+- rows with unknown ownership
+
+`normalizedCategoryMatches[]` records the raw JSON value, raw MySQL value, normalized JSON value, normalized MySQL value, stable key, file name, and a message explaining why the raw difference was downgraded. `fieldMismatches[]` is reserved for non-equivalent category differences, ownership conflicts, and the existing non-category field mismatches.
+
+If a row has conflicting business signals, such as a MySQL category normalized to `solution-media` while metadata points to `case-media`, the shadow compare keeps it as a hard mismatch. `sharedButReferenced` rows remain excluded from the official media-library candidate set and are shown only as shadow compare context.
+
+After 22-5C-2B, the project still cannot directly enter the admin media-library list switch. Whether 22-5C-3 is safe depends on the normalized report: missing rows, true mismatches, ownership conflicts, shared exclusions, and unknown ownership must be reviewed first.

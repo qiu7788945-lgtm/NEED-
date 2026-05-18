@@ -4,6 +4,30 @@ import { getDbPool, getSafeDatabaseConfig } from '../../db/client.js';
 type UnknownRecord = Record<string, unknown>;
 
 export type MediaLibraryOwnershipKind = 'likelyMediaLibrary' | 'sharedButReferenced' | 'unknown';
+export type NormalizedMediaLibraryOwnership =
+  | 'media-library'
+  | 'home-video'
+  | 'home-interactive-images'
+  | 'company-assets'
+  | 'case-media'
+  | 'solution-media'
+  | 'unknown';
+
+export interface MediaLibraryOwnershipSignal {
+  fieldName: string;
+  rawValue: string;
+  normalizedValue: string;
+  ownership: NormalizedMediaLibraryOwnership;
+}
+
+export interface MediaLibraryOwnershipProfile {
+  rawCategory: string;
+  normalizedCategory: string;
+  normalizedCategoryOwnership: NormalizedMediaLibraryOwnership;
+  normalizedOwnership: NormalizedMediaLibraryOwnership;
+  signals: MediaLibraryOwnershipSignal[];
+  conflicts: string[];
+}
 
 export interface MediaLibraryMysqlCandidate {
   id: number;
@@ -18,6 +42,8 @@ export interface MediaLibraryMysqlCandidate {
   fileExt: string;
   fileSize: number;
   category: string;
+  rawCategory: string;
+  normalizedCategory: string;
   altText: string;
   description: string;
   status: string;
@@ -26,6 +52,7 @@ export interface MediaLibraryMysqlCandidate {
   source: 'mysql-media_files';
   ownershipKind: MediaLibraryOwnershipKind;
   ownershipReason: string;
+  ownershipProfile: MediaLibraryOwnershipProfile;
   rawMetadata: unknown;
 }
 
@@ -53,23 +80,12 @@ type MediaFileRow = RowDataPacket & {
   updated_at: unknown;
 };
 
-const sharedModuleNames = new Set([
-  'cases',
-  'solutions',
+const sharedBusinessOwnerships = new Set<NormalizedMediaLibraryOwnership>([
   'home-video',
   'home-interactive-images',
   'company-assets',
-  'scenario-detail-pages',
-]);
-
-const sharedOwnerTypes = new Set(['home', 'case', 'solution', 'company-assets']);
-const sharedCategories = new Set([
-  'home_interactive',
-  'home_video',
-  'case_image',
-  'solution_image',
-  'solution_video',
-  'company-assets',
+  'case-media',
+  'solution-media',
 ]);
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -91,6 +107,235 @@ function parseJsonColumn(value: unknown): unknown {
 
 function asString(value: unknown) {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function normalizeToken(value: unknown) {
+  const text = asString(value).toLowerCase();
+  if (!text) {
+    return '';
+  }
+
+  return text
+    .replace(/[\s_]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function compactToken(value: unknown) {
+  return normalizeToken(value).replace(/-/g, '');
+}
+
+export function normalizeMediaLibraryCategory(value: unknown) {
+  const normalized = normalizeToken(value);
+  const compact = normalized.replace(/-/g, '');
+
+  switch (compact) {
+    case 'solutionimage':
+    case 'solutionimages':
+    case 'solutionmedia':
+    case 'solutionmedias':
+    case 'solutionvideo':
+    case 'solutionvideos':
+    case 'solutioncover':
+    case 'solutionpagecover':
+      return 'solution-media';
+    case 'caseimage':
+    case 'caseimages':
+    case 'casemedia':
+    case 'casemedias':
+    case 'casecover':
+      return 'case-media';
+    case 'homeinteractive':
+    case 'homeinteractiveimage':
+    case 'homeinteractiveimages':
+      return 'home-interactive-images';
+    case 'homevideo':
+    case 'homevideos':
+      return 'home-video';
+    case 'companyasset':
+    case 'companyassets':
+      return 'company-assets';
+    case 'medialibrary':
+    case 'medialibraries':
+      return 'media-library';
+    default:
+      return normalized;
+  }
+}
+
+function ownershipFromCategory(value: unknown): NormalizedMediaLibraryOwnership {
+  const normalized = normalizeMediaLibraryCategory(value);
+
+  switch (normalized) {
+    case 'media-library':
+    case 'home-video':
+    case 'home-interactive-images':
+    case 'company-assets':
+    case 'case-media':
+    case 'solution-media':
+      return normalized;
+    default:
+      return 'unknown';
+  }
+}
+
+function ownershipFromModuleName(value: unknown): NormalizedMediaLibraryOwnership {
+  const categoryOwnership = ownershipFromCategory(value);
+  if (categoryOwnership !== 'unknown') {
+    return categoryOwnership;
+  }
+
+  switch (compactToken(value)) {
+    case 'cases':
+    case 'case':
+      return 'case-media';
+    case 'solutions':
+    case 'solution':
+    case 'scenariodetailpages':
+    case 'solutionpages':
+      return 'solution-media';
+    default:
+      return 'unknown';
+  }
+}
+
+function ownershipFromOwnerType(value: unknown): NormalizedMediaLibraryOwnership {
+  switch (compactToken(value)) {
+    case 'case':
+    case 'cases':
+      return 'case-media';
+    case 'solution':
+    case 'solutions':
+    case 'solutionpage':
+    case 'solutionpages':
+      return 'solution-media';
+    case 'company':
+    case 'companyasset':
+    case 'companyassets':
+      return 'company-assets';
+    case 'medialibrary':
+      return 'media-library';
+    default:
+      return 'unknown';
+  }
+}
+
+function ownershipFromGroupKey(value: unknown): NormalizedMediaLibraryOwnership {
+  const compact = compactToken(value);
+
+  if (compact === 'homeinteractive' || compact === 'homeinteractiveimages') {
+    return 'home-interactive-images';
+  }
+
+  if (compact === 'homevideo') {
+    return 'home-video';
+  }
+
+  return 'unknown';
+}
+
+function addOwnershipSignal(
+  signals: MediaLibraryOwnershipSignal[],
+  fieldName: string,
+  rawValue: unknown,
+  normalizeValue: (value: unknown) => string,
+  getOwnership: (value: unknown) => NormalizedMediaLibraryOwnership,
+) {
+  const rawText = asString(rawValue);
+  if (!rawText) {
+    return;
+  }
+
+  signals.push({
+    fieldName,
+    rawValue: rawText,
+    normalizedValue: normalizeValue(rawText),
+    ownership: getOwnership(rawText),
+  });
+}
+
+function summarizeOwnershipSignals(signals: MediaLibraryOwnershipSignal[]) {
+  return signals
+    .map((signal) => `${signal.fieldName}=${signal.rawValue} -> ${signal.ownership}`)
+    .join('; ');
+}
+
+export function buildMediaLibraryOwnershipProfile(
+  metadataJson: unknown,
+  rowCategory: string,
+): MediaLibraryOwnershipProfile {
+  const metadata = isRecord(metadataJson) ? metadataJson : {};
+  const sourceRecord = isRecord(metadata.sourceRecord) ? metadata.sourceRecord : undefined;
+  const signals: MediaLibraryOwnershipSignal[] = [];
+  const rawCategory = asString(rowCategory);
+  const normalizedCategory = normalizeMediaLibraryCategory(rawCategory);
+
+  addOwnershipSignal(signals, 'media_files.category', rawCategory, normalizeMediaLibraryCategory, ownershipFromCategory);
+  addOwnershipSignal(signals, 'metadata_json.moduleName', metadata.moduleName, normalizeToken, ownershipFromModuleName);
+  addOwnershipSignal(signals, 'metadata_json.ownerType', metadata.ownerType ?? metadata.owner_type, normalizeToken, ownershipFromOwnerType);
+  addOwnershipSignal(signals, 'metadata_json.ownerSlug', metadata.ownerSlug ?? metadata.owner_slug, normalizeToken, () => 'unknown');
+  addOwnershipSignal(signals, 'metadata_json.groupKey', metadata.groupKey ?? metadata.group_key, normalizeToken, ownershipFromGroupKey);
+
+  if (sourceRecord) {
+    addOwnershipSignal(
+      signals,
+      'metadata_json.sourceRecord.moduleName',
+      sourceRecord.moduleName,
+      normalizeToken,
+      ownershipFromModuleName,
+    );
+    addOwnershipSignal(
+      signals,
+      'metadata_json.sourceRecord.category',
+      sourceRecord.category,
+      normalizeMediaLibraryCategory,
+      ownershipFromCategory,
+    );
+    addOwnershipSignal(
+      signals,
+      'metadata_json.sourceRecord.ownerType',
+      sourceRecord.ownerType ?? sourceRecord.owner_type,
+      normalizeToken,
+      ownershipFromOwnerType,
+    );
+    addOwnershipSignal(
+      signals,
+      'metadata_json.sourceRecord.ownerSlug',
+      sourceRecord.ownerSlug ?? sourceRecord.owner_slug,
+      normalizeToken,
+      () => 'unknown',
+    );
+    addOwnershipSignal(
+      signals,
+      'metadata_json.sourceRecord.groupKey',
+      sourceRecord.groupKey ?? sourceRecord.group_key,
+      normalizeToken,
+      ownershipFromGroupKey,
+    );
+  }
+
+  const businessSignals = signals.filter((signal) => sharedBusinessOwnerships.has(signal.ownership));
+  const businessOwnerships = Array.from(new Set(businessSignals.map((signal) => signal.ownership)));
+  const hasMediaLibraryOwnership = signals.some((signal) => signal.ownership === 'media-library');
+  let normalizedOwnership: NormalizedMediaLibraryOwnership = 'unknown';
+
+  if (businessOwnerships.length === 1) {
+    normalizedOwnership = businessOwnerships[0] ?? 'unknown';
+  } else if (hasMediaLibraryOwnership) {
+    normalizedOwnership = 'media-library';
+  }
+  const conflicts = businessOwnerships.length > 1
+    ? [`category / ownership signals disagree: ${summarizeOwnershipSignals(businessSignals)}`]
+    : [];
+
+  return {
+    rawCategory,
+    normalizedCategory,
+    normalizedCategoryOwnership: ownershipFromCategory(rawCategory),
+    normalizedOwnership,
+    signals,
+    conflicts,
+  };
 }
 
 function asNumber(value: unknown, fallback = 0) {
@@ -147,31 +392,17 @@ function sourceRecordHasMediaLibraryShape(sourceRecord: UnknownRecord | undefine
   return hasStableMediaField && hasLibraryDisplayField;
 }
 
-function getSharedReason(input: {
-  moduleName: string;
-  sourceModuleName: string;
-  ownerType: string;
-  sourceOwnerType: string;
-  category: string;
-  sourceCategory: string;
-}) {
-  if (sharedModuleNames.has(input.moduleName)) {
-    return `metadata_json.moduleName is ${input.moduleName}`;
+function getSharedReason(profile: MediaLibraryOwnershipProfile) {
+  const signal = profile.signals.find((item) => sharedBusinessOwnerships.has(item.ownership));
+  if (signal) {
+    return `${signal.fieldName} is ${signal.rawValue}; normalized ownership is ${signal.ownership}.`;
   }
-  if (sharedModuleNames.has(input.sourceModuleName)) {
-    return `metadata_json.sourceRecord.moduleName is ${input.sourceModuleName}`;
-  }
-  if (sharedOwnerTypes.has(input.ownerType)) {
-    return `metadata_json.ownerType is ${input.ownerType}`;
-  }
-  if (sharedOwnerTypes.has(input.sourceOwnerType)) {
-    return `metadata_json.sourceRecord.ownerType is ${input.sourceOwnerType}`;
-  }
-  if (sharedCategories.has(input.category)) {
-    return `media_files.category is ${input.category}`;
-  }
-  if (sharedCategories.has(input.sourceCategory)) {
-    return `metadata_json.sourceRecord.category is ${input.sourceCategory}`;
+
+  const ambiguousHomeSignal = profile.signals.find(
+    (item) => item.fieldName.endsWith('ownerType') && item.normalizedValue === 'home',
+  );
+  if (ambiguousHomeSignal) {
+    return `${ambiguousHomeSignal.fieldName} is ${ambiguousHomeSignal.rawValue}; home ownership is shared but needs category/module/groupKey to distinguish home-video from home-interactive-images.`;
   }
 
   return '';
@@ -183,29 +414,23 @@ export function classifyMediaLibraryOwnership(
 ): { kind: MediaLibraryOwnershipKind; reason: string } {
   const metadata = isRecord(metadataJson) ? metadataJson : {};
   const sourceRecord = isRecord(metadata.sourceRecord) ? metadata.sourceRecord : undefined;
-  const moduleName = asString(metadata.moduleName);
-  const sourceModuleName = sourceRecord ? asString(sourceRecord.moduleName) : '';
-  const ownerType = metadataString(metadata, sourceRecord, 'ownerType', 'owner_type');
-  const sourceOwnerType = sourceRecord ? asString(sourceRecord.ownerType ?? sourceRecord.owner_type) : '';
-  const category = rowCategory || metadataString(metadata, sourceRecord, 'category');
-  const sourceCategory = sourceRecord ? asString(sourceRecord.category) : '';
+  const profile = buildMediaLibraryOwnershipProfile(metadataJson, rowCategory);
+  const moduleNameSignal = profile.signals.find(
+    (signal) => signal.fieldName === 'metadata_json.moduleName' && signal.ownership === 'media-library',
+  );
+  const sourceModuleNameSignal = profile.signals.find(
+    (signal) => signal.fieldName === 'metadata_json.sourceRecord.moduleName' && signal.ownership === 'media-library',
+  );
 
-  if (moduleName === 'media-library') {
-    return { kind: 'likelyMediaLibrary', reason: 'metadata_json.moduleName is media-library.' };
+  if (moduleNameSignal) {
+    return { kind: 'likelyMediaLibrary', reason: `${moduleNameSignal.fieldName} is ${moduleNameSignal.rawValue}.` };
   }
 
-  if (sourceModuleName === 'media-library') {
-    return { kind: 'likelyMediaLibrary', reason: 'metadata_json.sourceRecord.moduleName is media-library.' };
+  if (sourceModuleNameSignal) {
+    return { kind: 'likelyMediaLibrary', reason: `${sourceModuleNameSignal.fieldName} is ${sourceModuleNameSignal.rawValue}.` };
   }
 
-  const sharedReason = getSharedReason({
-    moduleName,
-    sourceModuleName,
-    ownerType,
-    sourceOwnerType,
-    category,
-    sourceCategory,
-  });
+  const sharedReason = getSharedReason(profile);
   if (sharedReason) {
     return { kind: 'sharedButReferenced', reason: sharedReason };
   }
@@ -254,6 +479,7 @@ export async function readMediaLibraryMysqlCandidates(): Promise<MediaLibraryMys
     const metadata = isRecord(rawMetadata) ? rawMetadata : {};
     const sourceRecord = isRecord(metadata.sourceRecord) ? metadata.sourceRecord : undefined;
     const category = asString(row.category);
+    const ownershipProfile = buildMediaLibraryOwnershipProfile(rawMetadata, category);
     const ownership = classifyMediaLibraryOwnership(rawMetadata, category);
     const displayName = metadataString(metadata, sourceRecord, 'displayName', 'display_name', 'title');
     const publicUrl = asString(row.public_url);
@@ -271,6 +497,8 @@ export async function readMediaLibraryMysqlCandidates(): Promise<MediaLibraryMys
       fileExt: asString(row.file_ext),
       fileSize: asNumber(row.file_size),
       category,
+      rawCategory: category,
+      normalizedCategory: ownershipProfile.normalizedCategory,
       altText: asString(row.alt_text),
       description: asString(row.description),
       status: asString(row.status),
@@ -279,6 +507,7 @@ export async function readMediaLibraryMysqlCandidates(): Promise<MediaLibraryMys
       source: 'mysql-media_files' as const,
       ownershipKind: ownership.kind,
       ownershipReason: ownership.reason,
+      ownershipProfile,
       rawMetadata,
     };
   });
