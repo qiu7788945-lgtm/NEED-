@@ -9,6 +9,10 @@ type CaseIdentityRow = RowDataPacket & {
   id: unknown;
 };
 
+type CaseImageIdentityRow = RowDataPacket & {
+  id: unknown;
+};
+
 function warnShadowSkipped(reason: string, error?: unknown, meta: WarningMeta = {}) {
   console.warn('cases MySQL shadow update skipped.', {
     reason,
@@ -50,6 +54,115 @@ function stableKeys(caseItem: CaseStudy) {
     sourceId: asString(caseItem.id),
     slug: asString(caseItem.slug),
   };
+}
+
+function asNumber(value: unknown, fallback: number) {
+  const nextValue = Number(value);
+  return Number.isFinite(nextValue) ? nextValue : fallback;
+}
+
+async function shadowReplaceCaseImages(mysqlCaseId: number, caseItem: CaseStudy) {
+  if (!isMysqlConfigured()) {
+    return;
+  }
+
+  const { sourceId, slug } = stableKeys(caseItem);
+
+  try {
+    const pool = getDbPool();
+    const images = Array.isArray(caseItem.extractedImages) ? caseItem.extractedImages : [];
+
+    await pool.execute<ResultSetHeader>(
+      `UPDATE case_images
+       SET deleted_at = NOW(),
+           updated_at = NOW()
+       WHERE case_id = :mysqlCaseId`,
+      { mysqlCaseId },
+    );
+
+    for (const [index, image] of images.entries()) {
+      const imageUrl = asString(image.url);
+      if (!imageUrl) {
+        continue;
+      }
+
+      const sortOrder = asNumber(image.sortOrder, index + 1);
+      const fileName = asString(image.fileName);
+      const displayName = asString(image.displayName);
+      const altText = asString(image.alt) || displayName || fileName;
+      const caption = displayName || fileName;
+      const [rows] = await pool.execute<CaseImageIdentityRow[]>(
+        `SELECT id
+         FROM case_images
+         WHERE case_id = :mysqlCaseId
+           AND image_url = :imageUrl
+         ORDER BY deleted_at ASC, id ASC
+         LIMIT 1`,
+        {
+          mysqlCaseId,
+          imageUrl,
+        },
+      );
+      const existingId = Number(rows[0]?.id);
+
+      if (Number.isInteger(existingId) && existingId > 0) {
+        await pool.execute<ResultSetHeader>(
+          `UPDATE case_images
+           SET media_id = NULL,
+               image_url = :imageUrl,
+               alt_text = :altText,
+               caption = :caption,
+               sort_order = :sortOrder,
+               is_enabled = 1,
+               deleted_at = NULL,
+               updated_at = NOW()
+           WHERE id = :id`,
+          {
+            id: existingId,
+            imageUrl,
+            altText,
+            caption,
+            sortOrder,
+          },
+        );
+        continue;
+      }
+
+      await pool.execute<ResultSetHeader>(
+        `INSERT INTO case_images (
+          case_id,
+          media_id,
+          image_url,
+          alt_text,
+          caption,
+          sort_order,
+          is_enabled
+        ) VALUES (
+          :mysqlCaseId,
+          NULL,
+          :imageUrl,
+          :altText,
+          :caption,
+          :sortOrder,
+          1
+        )`,
+        {
+          mysqlCaseId,
+          imageUrl,
+          altText,
+          caption,
+          sortOrder,
+        },
+      );
+    }
+  } catch (error) {
+    warnShadowSkipped('case-images-shadow-replace-failed', error, {
+      operation: 'case-images',
+      mysqlCaseId,
+      sourceId,
+      slug,
+    });
+  }
 }
 
 async function findExistingCaseId(caseItem: CaseStudy): Promise<number | null> {
@@ -181,6 +294,7 @@ export async function shadowCreateCase(caseItem: CaseStudy) {
           rawJson: JSON.stringify(caseItem),
         },
       );
+      await shadowReplaceCaseImages(mysqlId, caseItem);
       return;
     }
 
@@ -277,6 +391,17 @@ export async function shadowCreateCase(caseItem: CaseStudy) {
         rawJson: JSON.stringify(caseItem),
       },
     );
+    const nextMysqlId = await findExistingCaseId(caseItem);
+    if (!nextMysqlId) {
+      warnShadowSkipped('case-row-missing-after-create', undefined, {
+        operation: 'create',
+        sourceId,
+        slug,
+      });
+      return;
+    }
+
+    await shadowReplaceCaseImages(nextMysqlId, caseItem);
   } catch (error) {
     warnShadowSkipped('mysql-shadow-create-failed', error, {
       operation: 'create',
@@ -361,6 +486,7 @@ export async function shadowUpdateCase(caseItem: CaseStudy) {
         rawJson: JSON.stringify(caseItem),
       },
     );
+    await shadowReplaceCaseImages(mysqlId, caseItem);
   });
 }
 

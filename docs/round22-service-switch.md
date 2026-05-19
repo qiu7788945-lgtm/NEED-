@@ -894,3 +894,15 @@ The synced fields are limited to scalar `cases` columns and full `raw_json`: sou
 This step does not write `case_images`, `media_files`, uploads, `media-library.json`, SEO tables, FAQ tables, media service behavior, route manifest, prerender, sitemap, robots, frontend UI, admin UI, solutions, or articles. `extractedImages` remains preserved through `raw_json` only; `case_images` shadow write, delete/tombstone behavior, MySQL primary writes, and stopping JSON writes remain separate later steps.
 
 `importCaseWord` remains on its existing JSON/uploads/media registration path and is not connected to the new create shadow writer. `deleteCase` remains JSON-only.
+
+## 22-5D-9 Cases Image Shadow Write
+
+22-5D-9 adds `case_images` shadow synchronization only after the ordinary `createCase` and full `updateCase` MySQL shadow writes have successfully resolved a MySQL `cases.id`. JSON remains the primary write source, and MySQL remains a non-blocking shadow target.
+
+The image sync reads only `CaseStudy.extractedImages` and uses a soft-delete replace-all strategy for the current case: existing `case_images` rows for the case are marked with `deleted_at`, then the current images are restored or inserted by image URL. No `case_images` rows are hard deleted.
+
+The synced `case_images` fields are limited to the existing schema: `case_id`, `image_url`, `alt_text`, `caption`, `sort_order`, `is_enabled`, and `deleted_at`. `media_id` is intentionally kept `NULL`; this step does not write or require `media_files`, and it does not write uploads or `media-library.json`.
+
+This step is not connected to `importCaseWord`, `deleteCase`, `updateCaseStatus`, or `reorderCases`. Word import remains on its existing JSON/uploads/media registration path, delete/tombstone behavior remains separate, and media-file association backfill remains a later step.
+
+The cases read adapter still prefers `cases.raw_json` for restoring `extractedImages`; `case_images` remains a shadow table for split-table consistency and future MySQL-primary readiness rather than a change to frontend or admin output.
