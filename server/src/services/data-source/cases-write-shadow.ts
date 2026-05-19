@@ -2,7 +2,7 @@ import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type { CaseStudy } from '../../../../shared/types/case.js';
 import { getDbPool, getSafeDatabaseConfig } from '../../db/client.js';
 
-type ShadowOperation = 'status' | 'reorder';
+type ShadowOperation = 'update' | 'status' | 'reorder';
 type WarningMeta = Record<string, unknown>;
 
 type CaseIdentityRow = RowDataPacket & {
@@ -133,6 +133,60 @@ export async function shadowUpdateCaseStatus(caseItem: CaseStudy) {
       {
         mysqlId,
         status: caseItem.status,
+        publishedAt: publishedAtForCase(caseItem),
+        updatedAt: toMysqlDateTime(caseItem.updatedAt),
+        rawJson: JSON.stringify(caseItem),
+      },
+    );
+  });
+}
+
+export async function shadowUpdateCase(caseItem: CaseStudy) {
+  if (!isMysqlConfigured()) {
+    return;
+  }
+
+  await withExistingCaseId(caseItem, 'update', async (mysqlId) => {
+    await getDbPool().execute<ResultSetHeader>(
+      `UPDATE cases
+       SET title = :title,
+           slug = :slug,
+           summary = :summary,
+           client_type = :clientType,
+           event_type = :eventType,
+           event_date = :eventDate,
+           location = :location,
+           cover_url = :coverUrl,
+           cover_file_name = :coverFileName,
+           cover_display_name = :coverDisplayName,
+           word_file_name = :wordFileName,
+           word_original_name = :wordOriginalName,
+           content_html = :contentHtml,
+           content_text = :contentText,
+           status = :status,
+           sort_order = :sortOrder,
+           published_at = :publishedAt,
+           updated_at = :updatedAt,
+           raw_json = :rawJson
+       WHERE id = :mysqlId`,
+      {
+        mysqlId,
+        title: caseItem.title,
+        slug: caseItem.slug,
+        summary: caseItem.summary,
+        clientType: caseItem.clientType,
+        eventType: caseItem.eventType,
+        eventDate: caseItem.eventDate,
+        location: caseItem.location,
+        coverUrl: caseItem.coverUrl,
+        coverFileName: caseItem.coverFileName,
+        coverDisplayName: caseItem.coverDisplayName,
+        wordFileName: caseItem.wordFileName,
+        wordOriginalName: caseItem.wordOriginalName,
+        contentHtml: caseItem.contentHtml,
+        contentText: caseItem.contentText,
+        status: caseItem.status,
+        sortOrder: caseItem.sortOrder,
         publishedAt: publishedAtForCase(caseItem),
         updatedAt: toMysqlDateTime(caseItem.updatedAt),
         rawJson: JSON.stringify(caseItem),

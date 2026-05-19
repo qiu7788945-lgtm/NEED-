@@ -6,7 +6,7 @@ import mammoth from 'mammoth';
 import type { CaseExtractedImage, CaseFaqItem, CaseInput, CaseStatus, CaseStudy } from '../../../../shared/types/case.js';
 import { imageUploadDir, normalizeOriginalFileName } from '../../middlewares/upload.middleware.js';
 import { readCasesWithMysqlFallback } from '../data-source/cases-content-source.js';
-import { shadowReorderCases, shadowUpdateCaseStatus } from '../data-source/cases-write-shadow.js';
+import { shadowReorderCases, shadowUpdateCase, shadowUpdateCaseStatus } from '../data-source/cases-write-shadow.js';
 import { registerLocalImageFile } from '../media/media.service.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -29,6 +29,10 @@ export interface CaseListFilters {
 export interface CaseReorderItem {
   id: string;
   sortOrder: number;
+}
+
+interface UpdateCaseOptions {
+  skipShadow?: boolean;
 }
 
 function createCaseError(message: string, statusCode: number, code: string) {
@@ -304,7 +308,7 @@ export async function createCase(input: CaseInput) {
   return item;
 }
 
-export async function updateCase(id: string, input: CaseInput) {
+export async function updateCase(id: string, input: CaseInput, options: UpdateCaseOptions = {}) {
   const cases = await readCasesFromJson();
   const item = cases.find((caseItem) => caseItem.id === id);
 
@@ -314,6 +318,9 @@ export async function updateCase(id: string, input: CaseInput) {
 
   const updatedCase = updateCaseFromInput(item, input, cases);
   await writeCases(cases.map((caseItem) => (caseItem.id === id ? updatedCase : caseItem)));
+  if (!options.skipShadow) {
+    await shadowUpdateCase(updatedCase);
+  }
   return updatedCase;
 }
 
@@ -330,7 +337,7 @@ export async function deleteCase(id: string) {
 }
 
 export async function updateCaseStatus(id: string, status: unknown) {
-  const updatedCase = await updateCase(id, { status: normalizeStatus(status) });
+  const updatedCase = await updateCase(id, { status: normalizeStatus(status) }, { skipShadow: true });
   await shadowUpdateCaseStatus(updatedCase);
   return updatedCase;
 }

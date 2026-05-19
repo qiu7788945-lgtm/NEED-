@@ -870,3 +870,15 @@ Route manifest, prerender, sitemap, robots, publish log logic, frontend UI, admi
 The shadow adapter skips silently when MySQL is not configured. MySQL lookup or update failures are reported with `console.warn` and do not change the API return value or roll back the JSON write. Missing MySQL case rows are skipped with a warning; this step does not insert missing rows, delete rows, or promote MySQL to the primary writer.
 
 This step does not add shadow write behavior for `createCase`, full `updateCase`, `deleteCase`, or `importCaseWord`. It does not update `case_images`, `media_files`, uploads, `media-library.json`, media service behavior, route manifest, prerender, sitemap, robots, frontend UI, admin UI, solutions, or articles. Those write paths must remain separate follow-up steps.
+
+## 22-5D-5 Cases Update Shadow Write
+
+22-5D-5 adds MySQL shadow update behavior only for the full `updateCase` path. JSON remains the primary write source: `updateCase` still reads `server/data/cases.json`, merges the incoming case input, writes the updated JSON file, and only then attempts the MySQL shadow update.
+
+The shadow update only touches the existing MySQL `cases` row. It matches by `source_id` first and `slug` second, skips missing rows with a warning, and never inserts or deletes rows. MySQL not being configured or a MySQL update failure must not affect the JSON write result or the API response.
+
+The synced MySQL fields are limited to `cases` scalar columns and full `raw_json`: title, slug, summary, client type, event type, event date, location, cover URL/display fields, Word source fields, content HTML/text, status, sort order, published time, updated time, and the complete JSON-era `CaseStudy` payload.
+
+This step does not update `case_images`, `media_files`, uploads, `media-library.json`, SEO tables, FAQ tables, media service behavior, route manifest, prerender, sitemap, robots, frontend UI, admin UI, solutions, or articles. `extractedImages` remains preserved through `raw_json` only; a dedicated `case_images` shadow write must be handled separately.
+
+`updateCaseStatus` and `reorderCases` continue to use their dedicated 22-5D-3 shadow updates. `createCase`, `deleteCase`, and `importCaseWord` remain outside this step and do not receive new MySQL shadow write behavior.
