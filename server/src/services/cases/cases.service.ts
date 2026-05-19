@@ -6,6 +6,7 @@ import mammoth from 'mammoth';
 import type { CaseExtractedImage, CaseFaqItem, CaseInput, CaseStatus, CaseStudy } from '../../../../shared/types/case.js';
 import { imageUploadDir, normalizeOriginalFileName } from '../../middlewares/upload.middleware.js';
 import { readCasesWithMysqlFallback } from '../data-source/cases-content-source.js';
+import { shadowReorderCases, shadowUpdateCaseStatus } from '../data-source/cases-write-shadow.js';
 import { registerLocalImageFile } from '../media/media.service.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -329,7 +330,9 @@ export async function deleteCase(id: string) {
 }
 
 export async function updateCaseStatus(id: string, status: unknown) {
-  return updateCase(id, { status: normalizeStatus(status) });
+  const updatedCase = await updateCase(id, { status: normalizeStatus(status) });
+  await shadowUpdateCaseStatus(updatedCase);
+  return updatedCase;
 }
 
 export async function reorderCases(items: CaseReorderItem[]) {
@@ -347,6 +350,7 @@ export async function reorderCases(items: CaseReorderItem[]) {
   ));
 
   await writeCases(nextCases);
+  await shadowReorderCases(nextCases);
   return nextCases.sort((a, b) => (a.sortOrder - b.sortOrder) || String(b.updatedAt).localeCompare(String(a.updatedAt)));
 }
 

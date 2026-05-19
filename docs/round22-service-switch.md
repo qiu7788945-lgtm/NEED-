@@ -860,3 +860,13 @@ The cases MySQL read adapter treats `cases.raw_json` as the main source for rest
 Fallback to JSON is required when MySQL configuration is missing or invalid, the connection or query fails, `cases` returns no rows, mapping fails, required fields such as `id`, `title`, or `slug` are missing, status cannot be mapped, or `getCase` cannot find the requested id/slug in the MySQL result.
 
 Route manifest, prerender, sitemap, robots, publish log logic, frontend UI, admin UI, media delete/shadow/upload/archive/restore behavior, solutions, and articles are unchanged. Any future switch for create/update/delete MySQL writes must be discussed as a separate small step.
+
+## 22-5D-3 Cases Status / Reorder Shadow Write
+
+22-5D-3 adds MySQL shadow updates only for `updateCaseStatus` and `reorderCases`. JSON remains the primary write source, and shadow updates run only after the JSON write has succeeded.
+
+`updateCaseStatus` continues to persist the status change through the existing JSON write path, then attempts to update the existing MySQL `cases` row with `status`, `published_at`, `updated_at`, and full `raw_json`. `reorderCases` continues to persist ordering through `server/data/cases.json`, then attempts to update existing MySQL `cases` rows with `sort_order`, `updated_at`, and full `raw_json`.
+
+The shadow adapter skips silently when MySQL is not configured. MySQL lookup or update failures are reported with `console.warn` and do not change the API return value or roll back the JSON write. Missing MySQL case rows are skipped with a warning; this step does not insert missing rows, delete rows, or promote MySQL to the primary writer.
+
+This step does not add shadow write behavior for `createCase`, full `updateCase`, `deleteCase`, or `importCaseWord`. It does not update `case_images`, `media_files`, uploads, `media-library.json`, media service behavior, route manifest, prerender, sitemap, robots, frontend UI, admin UI, solutions, or articles. Those write paths must remain separate follow-up steps.
