@@ -6,7 +6,7 @@ import mammoth from 'mammoth';
 import type { CaseExtractedImage, CaseFaqItem, CaseInput, CaseStatus, CaseStudy } from '../../../../shared/types/case.js';
 import { imageUploadDir, normalizeOriginalFileName } from '../../middlewares/upload.middleware.js';
 import { readCasesWithMysqlFallback } from '../data-source/cases-content-source.js';
-import { shadowReorderCases, shadowUpdateCase, shadowUpdateCaseStatus } from '../data-source/cases-write-shadow.js';
+import { shadowCreateCase, shadowReorderCases, shadowUpdateCase, shadowUpdateCaseStatus } from '../data-source/cases-write-shadow.js';
 import { registerLocalImageFile } from '../media/media.service.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -305,6 +305,7 @@ export async function createCase(input: CaseInput) {
   const cases = await readCasesFromJson();
   const item = createCaseFromInput(input, cases);
   await writeCases([...cases, item]);
+  await shadowCreateCase(item);
   return item;
 }
 

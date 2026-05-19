@@ -2,7 +2,7 @@ import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type { CaseStudy } from '../../../../shared/types/case.js';
 import { getDbPool, getSafeDatabaseConfig } from '../../db/client.js';
 
-type ShadowOperation = 'update' | 'status' | 'reorder';
+type ShadowOperation = 'create' | 'update' | 'status' | 'reorder';
 type WarningMeta = Record<string, unknown>;
 
 type CaseIdentityRow = RowDataPacket & {
@@ -111,6 +111,175 @@ async function withExistingCaseId(caseItem: CaseStudy, operation: ShadowOperatio
   } catch (error) {
     warnShadowSkipped('mysql-shadow-update-failed', error, {
       operation,
+      sourceId,
+      slug,
+    });
+  }
+}
+
+export async function shadowCreateCase(caseItem: CaseStudy) {
+  if (!isMysqlConfigured()) {
+    return;
+  }
+
+  const { sourceId, slug } = stableKeys(caseItem);
+  if (!sourceId && !slug) {
+    warnShadowSkipped('case-stable-key-missing', undefined, { operation: 'create' });
+    return;
+  }
+
+  try {
+    const mysqlId = await findExistingCaseId(caseItem);
+    if (mysqlId) {
+      await getDbPool().execute<ResultSetHeader>(
+        `UPDATE cases
+         SET source_id = :sourceId,
+             title = :title,
+             slug = :slug,
+             summary = :summary,
+             client_type = :clientType,
+             event_type = :eventType,
+             event_date = :eventDate,
+             location = :location,
+             cover_url = :coverUrl,
+             cover_file_name = :coverFileName,
+             cover_display_name = :coverDisplayName,
+             word_file_name = :wordFileName,
+             word_original_name = :wordOriginalName,
+             content_html = :contentHtml,
+             content_text = :contentText,
+             status = :status,
+             sort_order = :sortOrder,
+             published_at = :publishedAt,
+             created_at = :createdAt,
+             updated_at = :updatedAt,
+             raw_json = :rawJson,
+             deleted_at = NULL
+         WHERE id = :mysqlId`,
+        {
+          mysqlId,
+          sourceId,
+          title: caseItem.title,
+          slug: caseItem.slug,
+          summary: caseItem.summary,
+          clientType: caseItem.clientType,
+          eventType: caseItem.eventType,
+          eventDate: caseItem.eventDate,
+          location: caseItem.location,
+          coverUrl: caseItem.coverUrl,
+          coverFileName: caseItem.coverFileName,
+          coverDisplayName: caseItem.coverDisplayName,
+          wordFileName: caseItem.wordFileName,
+          wordOriginalName: caseItem.wordOriginalName,
+          contentHtml: caseItem.contentHtml,
+          contentText: caseItem.contentText,
+          status: caseItem.status,
+          sortOrder: caseItem.sortOrder,
+          publishedAt: publishedAtForCase(caseItem),
+          createdAt: toMysqlDateTime(caseItem.createdAt),
+          updatedAt: toMysqlDateTime(caseItem.updatedAt),
+          rawJson: JSON.stringify(caseItem),
+        },
+      );
+      return;
+    }
+
+    await getDbPool().execute<ResultSetHeader>(
+      `INSERT INTO cases (
+        source_id,
+        title,
+        slug,
+        summary,
+        client_type,
+        event_type,
+        event_date,
+        location,
+        cover_url,
+        cover_file_name,
+        cover_display_name,
+        word_file_name,
+        word_original_name,
+        content_html,
+        content_text,
+        raw_json,
+        status,
+        sort_order,
+        published_at,
+        created_at,
+        updated_at
+      ) VALUES (
+        :sourceId,
+        :title,
+        :slug,
+        :summary,
+        :clientType,
+        :eventType,
+        :eventDate,
+        :location,
+        :coverUrl,
+        :coverFileName,
+        :coverDisplayName,
+        :wordFileName,
+        :wordOriginalName,
+        :contentHtml,
+        :contentText,
+        :rawJson,
+        :status,
+        :sortOrder,
+        :publishedAt,
+        :createdAt,
+        :updatedAt
+      )
+      ON DUPLICATE KEY UPDATE
+        source_id = VALUES(source_id),
+        title = VALUES(title),
+        slug = VALUES(slug),
+        summary = VALUES(summary),
+        client_type = VALUES(client_type),
+        event_type = VALUES(event_type),
+        event_date = VALUES(event_date),
+        location = VALUES(location),
+        cover_url = VALUES(cover_url),
+        cover_file_name = VALUES(cover_file_name),
+        cover_display_name = VALUES(cover_display_name),
+        word_file_name = VALUES(word_file_name),
+        word_original_name = VALUES(word_original_name),
+        content_html = VALUES(content_html),
+        content_text = VALUES(content_text),
+        raw_json = VALUES(raw_json),
+        status = VALUES(status),
+        sort_order = VALUES(sort_order),
+        published_at = VALUES(published_at),
+        created_at = VALUES(created_at),
+        updated_at = VALUES(updated_at),
+        deleted_at = NULL`,
+      {
+        sourceId,
+        title: caseItem.title,
+        slug: caseItem.slug,
+        summary: caseItem.summary,
+        clientType: caseItem.clientType,
+        eventType: caseItem.eventType,
+        eventDate: caseItem.eventDate,
+        location: caseItem.location,
+        coverUrl: caseItem.coverUrl,
+        coverFileName: caseItem.coverFileName,
+        coverDisplayName: caseItem.coverDisplayName,
+        wordFileName: caseItem.wordFileName,
+        wordOriginalName: caseItem.wordOriginalName,
+        contentHtml: caseItem.contentHtml,
+        contentText: caseItem.contentText,
+        status: caseItem.status,
+        sortOrder: caseItem.sortOrder,
+        publishedAt: publishedAtForCase(caseItem),
+        createdAt: toMysqlDateTime(caseItem.createdAt),
+        updatedAt: toMysqlDateTime(caseItem.updatedAt),
+        rawJson: JSON.stringify(caseItem),
+      },
+    );
+  } catch (error) {
+    warnShadowSkipped('mysql-shadow-create-failed', error, {
+      operation: 'create',
       sourceId,
       slug,
     });

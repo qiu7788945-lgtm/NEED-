@@ -882,3 +882,15 @@ The synced MySQL fields are limited to `cases` scalar columns and full `raw_json
 This step does not update `case_images`, `media_files`, uploads, `media-library.json`, SEO tables, FAQ tables, media service behavior, route manifest, prerender, sitemap, robots, frontend UI, admin UI, solutions, or articles. `extractedImages` remains preserved through `raw_json` only; a dedicated `case_images` shadow write must be handled separately.
 
 `updateCaseStatus` and `reorderCases` continue to use their dedicated 22-5D-3 shadow updates. `createCase`, `deleteCase`, and `importCaseWord` remain outside this step and do not receive new MySQL shadow write behavior.
+
+## 22-5D-7 Cases Create Shadow Write
+
+22-5D-7 adds MySQL shadow insert/upsert behavior only for the ordinary `createCase` path. JSON remains the primary write source: `createCase` still reads `server/data/cases.json`, builds the `CaseStudy`, writes the updated JSON file, and only then attempts the MySQL shadow create.
+
+The shadow create writes only the MySQL `cases` main table and full `raw_json`. It uses `source_id` first and `slug` second as stable keys. If a matching row already exists, the row is updated instead of inserting a duplicate; if no matching row exists, a new `cases` row is inserted. MySQL not being configured or a MySQL failure must not affect the JSON create result or the API response.
+
+The synced fields are limited to scalar `cases` columns and full `raw_json`: source id, title, slug, summary, client type, event type, event date, location, cover URL/display fields, Word source fields, content HTML/text, status, sort order, published time, created time, updated time, and the complete JSON-era `CaseStudy` payload.
+
+This step does not write `case_images`, `media_files`, uploads, `media-library.json`, SEO tables, FAQ tables, media service behavior, route manifest, prerender, sitemap, robots, frontend UI, admin UI, solutions, or articles. `extractedImages` remains preserved through `raw_json` only; `case_images` shadow write, delete/tombstone behavior, MySQL primary writes, and stopping JSON writes remain separate later steps.
+
+`importCaseWord` remains on its existing JSON/uploads/media registration path and is not connected to the new create shadow writer. `deleteCase` remains JSON-only.
