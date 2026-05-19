@@ -846,3 +846,17 @@ Decision rules are conservative:
 `safe_candidate` is not permission to delete. It is only a dry-run candidate status for later human review and for a future formal guard acceptance step. The report intentionally avoids terms such as `allowed_delete`, `can_delete`, or `ready_to_delete`.
 
 If 22-5C-4H proceeds, it may consider connecting a read-only guard to the formal delete path before any destructive operation. True delete shadow write, MySQL tombstone behavior, and any JSON/uploads delete sequencing remain later work and are not implemented in 22-5C-4G.
+
+## 22-5D-1 Cases Service Read Switch
+
+22-5D-1 switches only `listCases` and `getCase` to MySQL-first reads with JSON fallback. The public API response remains the existing `CaseStudy` shape.
+
+The write paths stay JSON-only in this step: `createCase`, `updateCase`, `deleteCase`, `updateCaseStatus`, `reorderCases`, and `importCaseWord` continue to read from and write to `server/data/cases.json`. `importCaseWord` keeps its existing upload extraction and `registerLocalImageFile` flow, with no MySQL write connection.
+
+The cases MySQL read adapter treats `cases.raw_json` as the main source for restoring full JSON-era fields such as `extractedImages`, `displayName`, `contentHtml`, `contentText`, and FAQ/SEO-shaped data, then overlays safe top-level MySQL fields. `seo_settings` and `faq_items` may enrich the response but are not hard gates.
+
+`media_files` is not a hard dependency for cases reads in this step. Cover and case images are emitted from `cover_url`, `case_images.image_url`, or preserved `raw_json` fields. The known media historical test differences do not block this cases read switch.
+
+Fallback to JSON is required when MySQL configuration is missing or invalid, the connection or query fails, `cases` returns no rows, mapping fails, required fields such as `id`, `title`, or `slug` are missing, status cannot be mapped, or `getCase` cannot find the requested id/slug in the MySQL result.
+
+Route manifest, prerender, sitemap, robots, publish log logic, frontend UI, admin UI, media delete/shadow/upload/archive/restore behavior, solutions, and articles are unchanged. Any future switch for create/update/delete MySQL writes must be discussed as a separate small step.

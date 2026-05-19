@@ -5,6 +5,7 @@ import type { Express } from 'express';
 import mammoth from 'mammoth';
 import type { CaseExtractedImage, CaseFaqItem, CaseInput, CaseStatus, CaseStudy } from '../../../../shared/types/case.js';
 import { imageUploadDir, normalizeOriginalFileName } from '../../middlewares/upload.middleware.js';
+import { readCasesWithMysqlFallback } from '../data-source/cases-content-source.js';
 import { registerLocalImageFile } from '../media/media.service.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -36,13 +37,16 @@ function createCaseError(message: string, statusCode: number, code: string) {
   });
 }
 
-async function readCases(): Promise<CaseStudy[]> {
+function normalizeCases(value: unknown): CaseStudy[] {
+  return Array.isArray(value) ? value.map((item) => normalizeCase(item as Partial<CaseStudy>)) : [];
+}
+
+async function readCasesFromJson(): Promise<CaseStudy[]> {
   await fs.mkdir(dataDir, { recursive: true });
 
   try {
     const raw = await fs.readFile(casesPath, 'utf8');
-    const parsed = JSON.parse(raw) as CaseStudy[];
-    return Array.isArray(parsed) ? parsed.map(normalizeCase) : [];
+    return normalizeCases(JSON.parse(raw));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
       await writeCases([]);
@@ -51,6 +55,10 @@ async function readCases(): Promise<CaseStudy[]> {
 
     throw error;
   }
+}
+
+async function readCases(): Promise<CaseStudy[]> {
+  return readCasesWithMysqlFallback(readCasesFromJson, normalizeCases);
 }
 
 async function writeCases(cases: CaseStudy[]) {
@@ -272,24 +280,31 @@ export async function listCases(filters: CaseListFilters = {}) {
 
 export async function getCase(id: string) {
   const cases = await readCases();
-  const item = cases.find((caseItem) => caseItem.id === id);
+  const item = cases.find((caseItem) => caseItem.id === id || caseItem.slug === id);
 
-  if (!item) {
+  if (item) {
+    return item;
+  }
+
+  const jsonCases = await readCasesFromJson();
+  const jsonItem = jsonCases.find((caseItem) => caseItem.id === id || caseItem.slug === id);
+
+  if (!jsonItem) {
     throw createCaseError('没有找到这个案例。', 404, 'CASE_NOT_FOUND');
   }
 
-  return item;
+  return jsonItem;
 }
 
 export async function createCase(input: CaseInput) {
-  const cases = await readCases();
+  const cases = await readCasesFromJson();
   const item = createCaseFromInput(input, cases);
   await writeCases([...cases, item]);
   return item;
 }
 
 export async function updateCase(id: string, input: CaseInput) {
-  const cases = await readCases();
+  const cases = await readCasesFromJson();
   const item = cases.find((caseItem) => caseItem.id === id);
 
   if (!item) {
@@ -302,7 +317,7 @@ export async function updateCase(id: string, input: CaseInput) {
 }
 
 export async function deleteCase(id: string) {
-  const cases = await readCases();
+  const cases = await readCasesFromJson();
   const exists = cases.some((item) => item.id === id);
 
   if (!exists) {
@@ -322,7 +337,7 @@ export async function reorderCases(items: CaseReorderItem[]) {
     throw createCaseError('排序数据格式不正确。', 400, 'INVALID_CASE_REORDER');
   }
 
-  const cases = await readCases();
+  const cases = await readCasesFromJson();
   const sortOrderById = new Map(items.map((item) => [item.id, normalizeNumber(item.sortOrder, 0)]));
   const now = new Date().toISOString();
   const nextCases = cases.map((item) => (
@@ -340,7 +355,7 @@ export async function importCaseWord(file: Express.Multer.File) {
     throw createCaseError('请上传 .docx Word 文件。', 400, 'WORD_FILE_REQUIRED');
   }
 
-  const cases = await readCases();
+  const cases = await readCasesFromJson();
   const extractedImages: CaseExtractedImage[] = [];
   let imageIndex = 0;
 
