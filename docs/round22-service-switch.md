@@ -930,3 +930,15 @@ MySQL remains a non-blocking shadow target. If MySQL is not configured, if the r
 This step intentionally does not write `media_files`, does not delete uploads, does not clean `media-library.json`, and does not change import Word behavior, media service behavior, media shadow writer, delete guard, route manifest, prerender, sitemap, robots, frontend UI, admin UI, solutions, articles, schema, migrations, or migrators.
 
 No real delete API test is part of 22-5D-14. Media cleanup, reference scanning, physical file deletion, media_files tombstones, and a rollback-safe real delete test remain separate follow-up work.
+
+## 22-5E-2 Solutions MySQL-First Read Adapter
+
+22-5E-2 switches only the official `listSolutions` and `getSolutionScene` read paths to MySQL-first with JSON fallback. The API response shape remains the existing `SolutionScene` structure with scene metadata, groups, and group media items.
+
+Solutions are still the dedicated scene-solution model, not PageEditor pages. This step does not change the existing "scenario solutions" admin model, frontend routes, admin UI, route manifest, prerender, sitemap, robots, or PageEditor behavior.
+
+The MySQL adapter reads only `solutions`, `solution_groups`, and `solution_media_items`. It maps the rows back to the current JSON-era scene/group/item shape, preserves the `video-digital-assets` image/video behavior, and uses `media_url` directly for display. It does not query or require `media_files`, and it does not process `scenario-detail-pages`, `solution_pages`, or `solution_page_blocks`.
+
+All write paths remain JSON-only. Creating, updating, deleting, and reordering solution groups or media items still read from and write to `server/data/solutions.json`; MySQL read results must never be written back into JSON by these write flows.
+
+If MySQL is not configured, returns no usable solutions, has missing core fields, cannot restore groups or media items, or any query/mapping fails, the read path falls back to JSON. Future MySQL shadow writes for solutions remain separate follow-up work.

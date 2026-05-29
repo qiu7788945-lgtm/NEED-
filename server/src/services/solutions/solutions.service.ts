@@ -10,6 +10,7 @@ import type {
   SolutionScene,
   SolutionSceneSlug,
 } from '../../../../shared/types/solution.js';
+import { readSolutionsWithMysqlFallback } from '../data-source/solutions-content-source.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const dataDir = path.join(serverRoot, 'data');
@@ -175,7 +176,7 @@ function withSolutionsLock<T>(task: () => Promise<T>): Promise<T> {
   return run;
 }
 
-async function readSolutions(): Promise<SolutionScene[]> {
+async function readSolutionsFromJson(): Promise<SolutionScene[]> {
   await fs.mkdir(dataDir, { recursive: true });
 
   try {
@@ -200,9 +201,13 @@ async function readSolutions(): Promise<SolutionScene[]> {
   }
 }
 
+async function readSolutions(): Promise<SolutionScene[]> {
+  return readSolutionsWithMysqlFallback(readSolutionsFromJson, normalizeScenes);
+}
+
 async function updateSolutions(updater: (scenes: SolutionScene[]) => SolutionScene[] | Promise<SolutionScene[]>) {
   return withSolutionsLock(async () => {
-    const scenes = await readSolutions();
+    const scenes = await readSolutionsFromJson();
     const nextScenes = normalizeScenes(await updater(scenes));
     await writeSolutions(nextScenes);
     return nextScenes;
