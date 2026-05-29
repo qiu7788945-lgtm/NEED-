@@ -942,3 +942,13 @@ The MySQL adapter reads only `solutions`, `solution_groups`, and `solution_media
 All write paths remain JSON-only. Creating, updating, deleting, and reordering solution groups or media items still read from and write to `server/data/solutions.json`; MySQL read results must never be written back into JSON by these write flows.
 
 If MySQL is not configured, returns no usable solutions, has missing core fields, cannot restore groups or media items, or any query/mapping fails, the read path falls back to JSON. Future MySQL shadow writes for solutions remain separate follow-up work.
+
+## 22-5E-5 Solution Groups Shadow Write
+
+22-5E-5 adds MySQL shadow write behavior only for the non-delete `solution_groups` paths: create, update, and reorder. JSON remains the primary write source; these operations still read from and write to `server/data/solutions.json` first, and only after that JSON write succeeds do they attempt the MySQL shadow update.
+
+The shadow writer resolves the parent MySQL `solutions` row by the active scene slug and skips with a warning if the parent row is missing. Group create/update upserts only the existing `solution_groups` schema fields: `solution_id`, `source_id`, `title`, `slug`, `summary`, `scene_slug`, `sort_order`, `is_enabled`, timestamps, and active `deleted_at = NULL`. Reorder only updates group ordering, enabled state, and `updated_at`.
+
+Because solution groups are part of the scene JSON shape, successful group shadow operations also refresh the parent `solutions.raw_json` and `updated_at` for that scene. They do not change parent solution business columns such as slug/title/status/sort order.
+
+This step intentionally does not handle `deleteSolutionGroup`, does not write `solution_media_items`, does not write `media_files`, does not change uploads or `media-library.json`, does not process `scenario-detail-pages`, `solution_pages`, or `solution_page_blocks`, and does not change PageEditor, frontend UI, admin UI, route manifest, prerender, sitemap, robots, schema, migrations, or migrators. Solution media item shadow writes and delete/tombstone behavior remain separate follow-up work.

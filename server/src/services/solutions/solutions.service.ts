@@ -11,6 +11,11 @@ import type {
   SolutionSceneSlug,
 } from '../../../../shared/types/solution.js';
 import { readSolutionsWithMysqlFallback } from '../data-source/solutions-content-source.js';
+import {
+  shadowCreateSolutionGroup,
+  shadowReorderSolutionGroups,
+  shadowUpdateSolutionGroup,
+} from '../data-source/solutions-write-shadow.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 const dataDir = path.join(serverRoot, 'data');
@@ -281,13 +286,14 @@ export async function createSolutionGroup(sceneSlug: string, input: SolutionGrou
   if (!createdGroup) {
     throw createSolutionError('案例组创建失败。', 500, 'SOLUTION_GROUP_CREATE_FAILED');
   }
+  await shadowCreateSolutionGroup(sceneSlug, createdGroup, getSceneFromList(scenes, sceneSlug));
   return createdGroup;
 }
 
 export async function updateSolutionGroup(sceneSlug: string, groupId: string, input: SolutionGroupInput) {
   assertSceneSlug(sceneSlug);
   let updatedGroup: SolutionGroup | undefined;
-  await updateSolutions((scenes) => scenes.map((scene) => {
+  const scenes = await updateSolutions((currentScenes) => currentScenes.map((scene) => {
     if (scene.slug !== sceneSlug) {
       return scene;
     }
@@ -319,6 +325,7 @@ export async function updateSolutionGroup(sceneSlug: string, groupId: string, in
     throw createSolutionError('没有找到这个案例组。', 404, 'SOLUTION_GROUP_NOT_FOUND');
   }
 
+  await shadowUpdateSolutionGroup(sceneSlug, updatedGroup, getSceneFromList(scenes, sceneSlug));
   return updatedGroup;
 }
 
@@ -361,7 +368,9 @@ export async function reorderSolutionGroups(sceneSlug: string, items: ReorderIte
       }
       : scene
   )));
-  return getSceneFromList(scenes, sceneSlug).groups;
+  const sceneAfterWrite = getSceneFromList(scenes, sceneSlug);
+  await shadowReorderSolutionGroups(sceneSlug, sceneAfterWrite.groups, sceneAfterWrite);
+  return sceneAfterWrite.groups;
 }
 
 export async function addSolutionItem(sceneSlug: string, groupId: string, input: SolutionItemInput) {
