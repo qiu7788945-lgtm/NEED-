@@ -430,5 +430,15 @@ export async function importCaseWord(file: Express.Multer.File) {
   }
 
   await writeCases([...cases, draftCase]);
+  try {
+    await shadowCreateCase(draftCase);
+  } catch (error) {
+    console.warn('cases MySQL shadow update skipped.', {
+      reason: 'import-case-word-shadow-create-failed',
+      message: error instanceof Error ? error.message : String(error),
+      sourceId: draftCase.id,
+      slug: draftCase.slug,
+    });
+  }
   return draftCase;
 }

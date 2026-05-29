@@ -906,3 +906,15 @@ The synced `case_images` fields are limited to the existing schema: `case_id`, `
 This step is not connected to `importCaseWord`, `deleteCase`, `updateCaseStatus`, or `reorderCases`. Word import remains on its existing JSON/uploads/media registration path, delete/tombstone behavior remains separate, and media-file association backfill remains a later step.
 
 The cases read adapter still prefers `cases.raw_json` for restoring `extractedImages`; `case_images` remains a shadow table for split-table consistency and future MySQL-primary readiness rather than a change to frontend or admin output.
+
+## 22-5D-12 Import Case Word Shadow Write
+
+22-5D-12 adds the smallest MySQL shadow connection for `importCaseWord`. The Word import flow still keeps its existing order: parse the uploaded Word file, extract images into uploads, register those images through `registerLocalImageFile()`, and write the new draft case to `server/data/cases.json`.
+
+Only after the `cases.json` write succeeds does `importCaseWord` attempt `shadowCreateCase(draftCase)`. JSON remains the primary write source, and MySQL remains a non-blocking shadow target. MySQL not being configured or a MySQL shadow failure must not fail the Word import response.
+
+The reused `shadowCreateCase` path syncs only the already-supported cases shadow scope: the MySQL `cases` main table, full `raw_json`, and `case_images`. It does not create a new MySQL write path and does not change the draft case shape, extracted image generation, image storage path, or `registerLocalImageFile()` metadata.
+
+This step intentionally does not write `media_files`, does not add an extra `media-library.json` shadow path, does not change uploads behavior, and does not modify the media service, media shadow writer, delete guard, route manifest, prerender, sitemap, robots, frontend UI, admin UI, solutions, articles, schema, migrations, or migrators.
+
+`deleteCase` remains JSON-only. Media registration consistency for the `registerLocalImageFile()` path, `media-library.json` versus `media_files`, Word image media association, and future `case_images.media_id` backfill remain separate follow-up work. No real Word import test is part of 22-5D-12 because it would write uploads, media-library JSON, cases JSON, and, when MySQL is configured, shadow rows.
