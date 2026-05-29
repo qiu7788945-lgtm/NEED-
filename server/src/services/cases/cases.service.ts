@@ -6,7 +6,13 @@ import mammoth from 'mammoth';
 import type { CaseExtractedImage, CaseFaqItem, CaseInput, CaseStatus, CaseStudy } from '../../../../shared/types/case.js';
 import { imageUploadDir, normalizeOriginalFileName } from '../../middlewares/upload.middleware.js';
 import { readCasesWithMysqlFallback } from '../data-source/cases-content-source.js';
-import { shadowCreateCase, shadowReorderCases, shadowUpdateCase, shadowUpdateCaseStatus } from '../data-source/cases-write-shadow.js';
+import {
+  shadowCreateCase,
+  shadowDeleteCaseTombstone,
+  shadowReorderCases,
+  shadowUpdateCase,
+  shadowUpdateCaseStatus,
+} from '../data-source/cases-write-shadow.js';
 import { registerLocalImageFile } from '../media/media.service.js';
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
@@ -327,13 +333,23 @@ export async function updateCase(id: string, input: CaseInput, options: UpdateCa
 
 export async function deleteCase(id: string) {
   const cases = await readCasesFromJson();
-  const exists = cases.some((item) => item.id === id);
+  const deletedCase = cases.find((item) => item.id === id);
 
-  if (!exists) {
+  if (!deletedCase) {
     throw createCaseError('没有找到这个案例。', 404, 'CASE_NOT_FOUND');
   }
 
   await writeCases(cases.filter((item) => item.id !== id));
+  try {
+    await shadowDeleteCaseTombstone(deletedCase);
+  } catch (error) {
+    console.warn('cases MySQL shadow update skipped.', {
+      reason: 'delete-case-shadow-tombstone-failed',
+      message: error instanceof Error ? error.message : String(error),
+      sourceId: deletedCase.id,
+      slug: deletedCase.slug,
+    });
+  }
   return { id };
 }
 

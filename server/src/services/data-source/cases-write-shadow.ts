@@ -2,7 +2,7 @@ import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type { CaseStudy } from '../../../../shared/types/case.js';
 import { getDbPool, getSafeDatabaseConfig } from '../../db/client.js';
 
-type ShadowOperation = 'create' | 'update' | 'status' | 'reorder';
+type ShadowOperation = 'create' | 'update' | 'status' | 'reorder' | 'delete';
 type WarningMeta = Record<string, unknown>;
 
 type CaseIdentityRow = RowDataPacket & {
@@ -487,6 +487,34 @@ export async function shadowUpdateCase(caseItem: CaseStudy) {
       },
     );
     await shadowReplaceCaseImages(mysqlId, caseItem);
+  });
+}
+
+export async function shadowDeleteCaseTombstone(caseItem: CaseStudy) {
+  if (!isMysqlConfigured()) {
+    return;
+  }
+
+  await withExistingCaseId(caseItem, 'delete', async (mysqlId) => {
+    const pool = getDbPool();
+
+    await pool.execute<ResultSetHeader>(
+      `UPDATE cases
+       SET status = 'offline',
+           deleted_at = NOW(),
+           updated_at = NOW()
+       WHERE id = :mysqlId`,
+      { mysqlId },
+    );
+
+    await pool.execute<ResultSetHeader>(
+      `UPDATE case_images
+       SET deleted_at = NOW(),
+           updated_at = NOW()
+       WHERE case_id = :mysqlId
+         AND deleted_at IS NULL`,
+      { mysqlId },
+    );
   });
 }
 

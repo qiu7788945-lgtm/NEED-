@@ -918,3 +918,15 @@ The reused `shadowCreateCase` path syncs only the already-supported cases shadow
 This step intentionally does not write `media_files`, does not add an extra `media-library.json` shadow path, does not change uploads behavior, and does not modify the media service, media shadow writer, delete guard, route manifest, prerender, sitemap, robots, frontend UI, admin UI, solutions, articles, schema, migrations, or migrators.
 
 `deleteCase` remains JSON-only. Media registration consistency for the `registerLocalImageFile()` path, `media-library.json` versus `media_files`, Word image media association, and future `case_images.media_id` backfill remain separate follow-up work. No real Word import test is part of 22-5D-12 because it would write uploads, media-library JSON, cases JSON, and, when MySQL is configured, shadow rows.
+
+## 22-5D-14 Delete Case Tombstone Shadow Write
+
+22-5D-14 adds the smallest MySQL shadow tombstone for `deleteCase`. Deleting a case still uses `server/data/cases.json` as the primary source of truth: the service reads the target case from JSON, writes the filtered JSON list, and only after that JSON write succeeds attempts the MySQL tombstone.
+
+The tombstone does not hard delete any MySQL rows. It locates the active MySQL `cases` row by `source_id` first and `slug` second, then sets `cases.deleted_at`, changes `cases.status` to `offline`, and updates `cases.updated_at` while preserving `cases.raw_json`. It also soft deletes active `case_images` rows for that MySQL case by setting `case_images.deleted_at` and `case_images.updated_at`.
+
+MySQL remains a non-blocking shadow target. If MySQL is not configured, if the row is missing, or if the tombstone update fails, the failure is logged as a warning and must not change the successful JSON delete response.
+
+This step intentionally does not write `media_files`, does not delete uploads, does not clean `media-library.json`, and does not change import Word behavior, media service behavior, media shadow writer, delete guard, route manifest, prerender, sitemap, robots, frontend UI, admin UI, solutions, articles, schema, migrations, or migrators.
+
+No real delete API test is part of 22-5D-14. Media cleanup, reference scanning, physical file deletion, media_files tombstones, and a rollback-safe real delete test remain separate follow-up work.
