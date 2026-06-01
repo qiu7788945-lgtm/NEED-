@@ -12,6 +12,7 @@ type ShadowOperation =
   | 'create-group'
   | 'update-group'
   | 'reorder-groups'
+  | 'delete-group'
   | 'add-item'
   | 'update-item'
   | 'reorder-items'
@@ -598,6 +599,26 @@ async function tombstoneSolutionMediaItem(
   );
 }
 
+async function tombstoneSolutionGroup(groupId: number) {
+  await getDbPool().execute<ResultSetHeader>(
+    `UPDATE solution_media_items
+     SET deleted_at = NOW(),
+         updated_at = NOW()
+     WHERE group_id = :groupId
+       AND deleted_at IS NULL`,
+    { groupId },
+  );
+
+  await getDbPool().execute<ResultSetHeader>(
+    `UPDATE solution_groups
+     SET deleted_at = NOW(),
+         updated_at = NOW()
+     WHERE id = :groupId
+       AND deleted_at IS NULL`,
+    { groupId },
+  );
+}
+
 async function withSolutionId(
   sceneSlug: SolutionSceneSlug,
   operation: ShadowOperation,
@@ -669,6 +690,29 @@ export async function shadowCreateSolutionGroup(
 ) {
   await withSolutionId(sceneSlug, 'create-group', async (solutionId) => {
     await upsertSolutionGroup(solutionId, sceneSlug, group);
+    await updateSceneRawJson(solutionId, sceneAfterWrite);
+  });
+}
+
+export async function shadowDeleteSolutionGroup(
+  sceneSlug: SolutionSceneSlug,
+  deletedGroup: SolutionGroup,
+  sceneAfterWrite: SolutionScene,
+) {
+  await withSolutionId(sceneSlug, 'delete-group', async (solutionId) => {
+    const solutionGroupId = await findSolutionGroupId(solutionId, deletedGroup, { includeDeleted: false });
+    if (!solutionGroupId) {
+      warnShadowSkipped('solution-group-row-missing', undefined, {
+        operation: 'delete-group',
+        sceneSlug,
+        groupSourceId: deletedGroup.id,
+        groupSlug: deletedGroup.slug,
+      });
+      await updateSceneRawJson(solutionId, sceneAfterWrite);
+      return;
+    }
+
+    await tombstoneSolutionGroup(solutionGroupId);
     await updateSceneRawJson(solutionId, sceneAfterWrite);
   });
 }

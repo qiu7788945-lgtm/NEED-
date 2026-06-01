@@ -980,3 +980,19 @@ Because solution media items are part of the scene JSON shape, the shadow step r
 This step intentionally does not handle `deleteSolutionGroup`, does not write `media_files`, does not delete uploads, does not clean `media-library.json`, does not process `scenario-detail-pages`, `solution_pages`, or `solution_page_blocks`, and does not change PageEditor, frontend UI, admin UI, route manifest, prerender, sitemap, robots, schema, migrations, or migrators.
 
 No real delete API test is part of 22-5E-8 because it would modify `server/data/solutions.json` and, when MySQL is configured, tombstone `solution_media_items`. A real delete test should be added only after a dedicated test item and rollback plan cover `solutions.json`, parent `solutions.raw_json`, parent `solution_groups.updated_at`, `solution_media_items.deleted_at`, media-library checks, uploads checks, compare rerun, and git status cleanup. `deleteSolutionGroup` tombstone behavior remains a separate follow-up step.
+
+## 22-5E-9 Delete Solution Group Shadow Tombstone
+
+22-5E-9 adds MySQL shadow tombstone behavior only for `deleteSolutionGroup`. JSON remains the primary delete source: `deleteSolutionGroup` still reads `server/data/solutions.json`, removes the matched group from the scene, writes the updated JSON file, and only after that JSON write succeeds attempts the MySQL shadow tombstone.
+
+The shadow writer resolves the active parent `solutions` row by scene slug, then resolves the active `solution_groups` row by `source_id` first and by `solution_id + slug` second. Missing solution or group rows are warning-only skips and never create replacement rows.
+
+The tombstone updates the matched `solution_groups` row by setting `deleted_at = NOW()` and `updated_at = NOW()`. It preserves the existing group content, including source id, title, slug, summary, scene slug, sort order, and enabled state. No MySQL rows are hard deleted.
+
+The same shadow step also tombstones all active `solution_media_items` rows under that MySQL group by setting `deleted_at = NOW()` and `updated_at = NOW()` where `group_id` matches and `deleted_at IS NULL`. Item content, media URLs, file types, captions, alt text, source ids, and media ids are preserved.
+
+Because solution groups are part of the scene JSON shape, the shadow step refreshes the parent `solutions.raw_json` and `updated_at` with the post-delete scene. This prevents MySQL-first reads and raw JSON fallback behavior from returning a group that was already removed from `solutions.json`.
+
+This step intentionally does not change `deleteSolutionItem`, does not write `media_files`, does not delete uploads, does not clean `media-library.json`, does not process `scenario-detail-pages`, `solution_pages`, or `solution_page_blocks`, and does not change PageEditor, frontend UI, admin UI, route manifest, prerender, sitemap, robots, schema, migrations, or migrators.
+
+No real delete API test is part of 22-5E-9 because it would modify `server/data/solutions.json` and, when MySQL is configured, tombstone `solution_groups` and child `solution_media_items`. A real delete test should be added only after a dedicated test group and rollback plan cover `solutions.json`, parent `solutions.raw_json`, `solution_groups.deleted_at`, `solution_media_items.deleted_at`, media-library checks, uploads checks, compare rerun, and git status cleanup. Media cleanup, physical deletion tests, and MySQL-primary delete behavior remain separate follow-up steps.

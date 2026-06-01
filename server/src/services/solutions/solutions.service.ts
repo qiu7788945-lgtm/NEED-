@@ -14,6 +14,7 @@ import { readSolutionsWithMysqlFallback } from '../data-source/solutions-content
 import {
   shadowAddSolutionItem,
   shadowCreateSolutionGroup,
+  shadowDeleteSolutionGroup,
   shadowDeleteSolutionItem,
   shadowReorderSolutionGroups,
   shadowReorderSolutionItems,
@@ -335,22 +336,23 @@ export async function updateSolutionGroup(sceneSlug: string, groupId: string, in
 
 export async function deleteSolutionGroup(sceneSlug: string, groupId: string) {
   assertSceneSlug(sceneSlug);
-  let deleted = false;
-  await updateSolutions((scenes) => scenes.map((scene) => {
+  let deletedGroup: SolutionGroup | undefined;
+  const scenes = await updateSolutions((scenes) => scenes.map((scene) => {
     if (scene.slug !== sceneSlug) {
       return scene;
     }
-    deleted = scene.groups.some((group) => group.id === groupId);
+    deletedGroup = scene.groups.find((group) => group.id === groupId);
     return {
       ...scene,
       groups: scene.groups.filter((group) => group.id !== groupId),
     };
   }));
 
-  if (!deleted) {
+  if (!deletedGroup) {
     throw createSolutionError('没有找到这个案例组。', 404, 'SOLUTION_GROUP_NOT_FOUND');
   }
 
+  await shadowDeleteSolutionGroup(sceneSlug, deletedGroup, getSceneFromList(scenes, sceneSlug));
   return { id: groupId };
 }
 
