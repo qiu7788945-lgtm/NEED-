@@ -14,7 +14,8 @@ type ShadowOperation =
   | 'reorder-groups'
   | 'add-item'
   | 'update-item'
-  | 'reorder-items';
+  | 'reorder-items'
+  | 'delete-item';
 
 type SolutionIdentityRow = RowDataPacket & {
   id: unknown;
@@ -566,6 +567,37 @@ async function updateSolutionMediaItemOrder(
   );
 }
 
+async function tombstoneSolutionMediaItem(
+  groupId: number,
+  sceneSlug: SolutionSceneSlug,
+  group: SolutionGroup,
+  item: SolutionItem,
+) {
+  const { sourceId, mediaUrl, sortOrder } = itemStableKeys(item);
+  const itemId = await findSolutionMediaItemId(groupId, item, { includeDeleted: false });
+
+  if (!itemId) {
+    warnShadowSkipped('solution-media-item-row-missing', undefined, {
+      operation: 'delete-item',
+      sceneSlug,
+      groupSourceId: group.id,
+      sourceId,
+      mediaUrl,
+      sortOrder,
+    });
+    return;
+  }
+
+  await getDbPool().execute<ResultSetHeader>(
+    `UPDATE solution_media_items
+     SET deleted_at = NOW(),
+         updated_at = NOW()
+     WHERE id = :itemId
+       AND deleted_at IS NULL`,
+    { itemId },
+  );
+}
+
 async function withSolutionId(
   sceneSlug: SolutionSceneSlug,
   operation: ShadowOperation,
@@ -697,6 +729,22 @@ export async function shadowReorderSolutionItems(
       for (const item of items) {
         await updateSolutionMediaItemOrder(solutionGroupId, sceneSlug, group, item);
       }
+    });
+  });
+}
+
+export async function shadowDeleteSolutionItem(
+  sceneSlug: SolutionSceneSlug,
+  groupId: string,
+  deletedItem: SolutionItem,
+  sceneAfterWrite: SolutionScene,
+) {
+  await withSolutionId(sceneSlug, 'delete-item', async (solutionId) => {
+    await withSolutionGroupId(solutionId, sceneSlug, groupId, sceneAfterWrite, 'delete-item', async (
+      solutionGroupId,
+      group,
+    ) => {
+      await tombstoneSolutionMediaItem(solutionGroupId, sceneSlug, group, deletedItem);
     });
   });
 }

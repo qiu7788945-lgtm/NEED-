@@ -14,6 +14,7 @@ import { readSolutionsWithMysqlFallback } from '../data-source/solutions-content
 import {
   shadowAddSolutionItem,
   shadowCreateSolutionGroup,
+  shadowDeleteSolutionItem,
   shadowReorderSolutionGroups,
   shadowReorderSolutionItems,
   shadowUpdateSolutionItem,
@@ -465,8 +466,8 @@ export async function updateSolutionItem(sceneSlug: string, groupId: string, ite
 
 export async function deleteSolutionItem(sceneSlug: string, groupId: string, itemId: string) {
   assertSceneSlug(sceneSlug);
-  let deleted = false;
-  await updateSolutions((scenes) => scenes.map((scene) => {
+  let deletedItem: SolutionItem | undefined;
+  const scenes = await updateSolutions((scenes) => scenes.map((scene) => {
     if (scene.slug !== sceneSlug) {
       return scene;
     }
@@ -476,7 +477,7 @@ export async function deleteSolutionItem(sceneSlug: string, groupId: string, ite
         if (group.id !== groupId) {
           return group;
         }
-        deleted = group.items.some((item) => item.id === itemId);
+        deletedItem = group.items.find((item) => item.id === itemId);
         return {
           ...group,
           items: group.items.filter((item) => item.id !== itemId),
@@ -486,10 +487,11 @@ export async function deleteSolutionItem(sceneSlug: string, groupId: string, ite
     };
   }));
 
-  if (!deleted) {
+  if (!deletedItem) {
     throw createSolutionError('没有找到这个素材。', 404, 'SOLUTION_ITEM_NOT_FOUND');
   }
 
+  await shadowDeleteSolutionItem(sceneSlug, groupId, deletedItem, getSceneFromList(scenes, sceneSlug));
   return { id: itemId };
 }
 

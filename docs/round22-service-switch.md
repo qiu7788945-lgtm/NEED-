@@ -966,3 +966,17 @@ Because solution media items are part of the scene JSON shape, item shadow attem
 This step intentionally does not handle `deleteSolutionItem`, does not handle `deleteSolutionGroup`, does not add new `solution_groups` behavior beyond the previous 22-5E-5 step, does not write `media_files`, does not write uploads or `media-library.json`, does not process `scenario-detail-pages`, `solution_pages`, or `solution_page_blocks`, and does not change PageEditor, frontend UI, admin UI, route manifest, prerender, sitemap, robots, schema, migrations, or migrators.
 
 The `video-digital-assets` service rules remain owned by the JSON write path. The shadow writer only mirrors the post-write scene state, warns and skips abnormal video item mappings, and does not relax the existing one-active-item behavior. Solution item delete/tombstone behavior and any future media-file association/backfill remain separate follow-up steps.
+
+## 22-5E-8 Delete Solution Item Shadow Tombstone
+
+22-5E-8 adds MySQL shadow tombstone behavior only for `deleteSolutionItem`. JSON remains the primary delete source: `deleteSolutionItem` still reads `server/data/solutions.json`, removes the item from the matched group, writes the updated JSON file, and only after that JSON write succeeds attempts the MySQL shadow tombstone.
+
+The shadow writer resolves the active parent `solutions` row by scene slug, then resolves the active parent `solution_groups` row by `source_id` first and by `solution_id + slug` second. It resolves the active `solution_media_items` row by `source_id` first and by `group_id + media_url + sort_order` second. Missing solution, group, or item rows are warning-only skips and never create replacement rows.
+
+The tombstone updates only the matched `solution_media_items` row by setting `deleted_at = NOW()` and `updated_at = NOW()`. It preserves the existing item content, including source id, media URL, file type, file names, display name, alt text, caption, sort order, enabled state, and media id. No MySQL rows are hard deleted.
+
+Because solution media items are part of the scene JSON shape, the shadow step refreshes the parent `solutions.raw_json` and `updated_at` with the post-delete scene. When the parent group row is found, it may update only `solution_groups.updated_at`; it does not change group title, slug, summary, scene slug, sort order, enabled state, or other group business fields.
+
+This step intentionally does not handle `deleteSolutionGroup`, does not write `media_files`, does not delete uploads, does not clean `media-library.json`, does not process `scenario-detail-pages`, `solution_pages`, or `solution_page_blocks`, and does not change PageEditor, frontend UI, admin UI, route manifest, prerender, sitemap, robots, schema, migrations, or migrators.
+
+No real delete API test is part of 22-5E-8 because it would modify `server/data/solutions.json` and, when MySQL is configured, tombstone `solution_media_items`. A real delete test should be added only after a dedicated test item and rollback plan cover `solutions.json`, parent `solutions.raw_json`, parent `solution_groups.updated_at`, `solution_media_items.deleted_at`, media-library checks, uploads checks, compare rerun, and git status cleanup. `deleteSolutionGroup` tombstone behavior remains a separate follow-up step.
