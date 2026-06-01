@@ -12,8 +12,11 @@ import type {
 } from '../../../../shared/types/solution.js';
 import { readSolutionsWithMysqlFallback } from '../data-source/solutions-content-source.js';
 import {
+  shadowAddSolutionItem,
   shadowCreateSolutionGroup,
   shadowReorderSolutionGroups,
+  shadowReorderSolutionItems,
+  shadowUpdateSolutionItem,
   shadowUpdateSolutionGroup,
 } from '../data-source/solutions-write-shadow.js';
 
@@ -376,7 +379,7 @@ export async function reorderSolutionGroups(sceneSlug: string, items: ReorderIte
 export async function addSolutionItem(sceneSlug: string, groupId: string, input: SolutionItemInput) {
   assertSceneSlug(sceneSlug);
   let createdItem: SolutionItem | undefined;
-  await updateSolutions((scenes) => scenes.map((scene) => {
+  const scenes = await updateSolutions((scenes) => scenes.map((scene) => {
     if (scene.slug !== sceneSlug) {
       return scene;
     }
@@ -414,13 +417,14 @@ export async function addSolutionItem(sceneSlug: string, groupId: string, input:
     throw createSolutionError('没有找到这个案例组。', 404, 'SOLUTION_GROUP_NOT_FOUND');
   }
 
+  await shadowAddSolutionItem(sceneSlug, groupId, createdItem, getSceneFromList(scenes, sceneSlug));
   return createdItem;
 }
 
 export async function updateSolutionItem(sceneSlug: string, groupId: string, itemId: string, input: SolutionItemInput) {
   assertSceneSlug(sceneSlug);
   let updatedItem: SolutionItem | undefined;
-  await updateSolutions((scenes) => scenes.map((scene) => {
+  const scenes = await updateSolutions((scenes) => scenes.map((scene) => {
     if (scene.slug !== sceneSlug) {
       return scene;
     }
@@ -455,6 +459,7 @@ export async function updateSolutionItem(sceneSlug: string, groupId: string, ite
     throw createSolutionError('没有找到这个素材。', 404, 'SOLUTION_ITEM_NOT_FOUND');
   }
 
+  await shadowUpdateSolutionItem(sceneSlug, groupId, updatedItem, getSceneFromList(scenes, sceneSlug));
   return updatedItem;
 }
 
@@ -495,7 +500,7 @@ export async function reorderSolutionItems(sceneSlug: string, groupId: string, i
   }
   const sortOrderById = new Map(items.map((item) => [item.id, normalizeNumber(item.sortOrder, 0)]));
   let nextItems: SolutionItem[] | undefined;
-  await updateSolutions((scenes) => scenes.map((scene) => {
+  const scenes = await updateSolutions((scenes) => scenes.map((scene) => {
     if (scene.slug !== sceneSlug) {
       return scene;
     }
@@ -523,5 +528,6 @@ export async function reorderSolutionItems(sceneSlug: string, groupId: string, i
     throw createSolutionError('没有找到这个案例组。', 404, 'SOLUTION_GROUP_NOT_FOUND');
   }
 
+  await shadowReorderSolutionItems(sceneSlug, groupId, nextItems, getSceneFromList(scenes, sceneSlug));
   return nextItems;
 }

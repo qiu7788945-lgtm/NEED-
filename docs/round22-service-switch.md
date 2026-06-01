@@ -952,3 +952,17 @@ The shadow writer resolves the parent MySQL `solutions` row by the active scene 
 Because solution groups are part of the scene JSON shape, successful group shadow operations also refresh the parent `solutions.raw_json` and `updated_at` for that scene. They do not change parent solution business columns such as slug/title/status/sort order.
 
 This step intentionally does not handle `deleteSolutionGroup`, does not write `solution_media_items`, does not write `media_files`, does not change uploads or `media-library.json`, does not process `scenario-detail-pages`, `solution_pages`, or `solution_page_blocks`, and does not change PageEditor, frontend UI, admin UI, route manifest, prerender, sitemap, robots, schema, migrations, or migrators. Solution media item shadow writes and delete/tombstone behavior remain separate follow-up work.
+
+## 22-5E-6 Solution Media Items Shadow Write
+
+22-5E-6 adds MySQL shadow write behavior only for the non-delete `solution_media_items` paths: add, update, and reorder. JSON remains the primary write source; these operations still read from and write to `server/data/solutions.json` first, and only after that JSON write succeeds do they attempt the MySQL shadow update.
+
+The shadow writer resolves the active parent `solutions` row by scene slug, then resolves the active parent `solution_groups` row by `source_id` first and by `solution_id + slug` second. If either parent row is missing, the shadow step logs a warning and skips item writes; it never inserts a missing solution or group for this item step.
+
+Add/update upserts only the existing `solution_media_items` schema fields: `group_id`, `source_id`, `media_id = NULL`, `file_type`, `media_url`, `media_file_name`, `media_display_name`, `alt_text`, `caption`, `sort_order`, `is_enabled`, timestamps, and active `deleted_at = NULL`. It matches items by `source_id` first and by `group_id + media_url + sort_order` second to avoid duplicates. Reorder only updates item ordering, enabled state, and `updated_at`.
+
+Because solution media items are part of the scene JSON shape, item shadow attempts also refresh the parent `solutions.raw_json` and `updated_at` for that scene. When the parent group row is found, the shadow step may update only `solution_groups.updated_at`; it does not change group business fields such as title, slug, summary, scene slug, sort order, or enabled state.
+
+This step intentionally does not handle `deleteSolutionItem`, does not handle `deleteSolutionGroup`, does not add new `solution_groups` behavior beyond the previous 22-5E-5 step, does not write `media_files`, does not write uploads or `media-library.json`, does not process `scenario-detail-pages`, `solution_pages`, or `solution_page_blocks`, and does not change PageEditor, frontend UI, admin UI, route manifest, prerender, sitemap, robots, schema, migrations, or migrators.
+
+The `video-digital-assets` service rules remain owned by the JSON write path. The shadow writer only mirrors the post-write scene state, warns and skips abnormal video item mappings, and does not relax the existing one-active-item behavior. Solution item delete/tombstone behavior and any future media-file association/backfill remain separate follow-up steps.
