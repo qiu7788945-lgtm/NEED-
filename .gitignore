@@ -36,3 +36,4 @@ dist-static/
 dist-prerender/
 server/data/publish-logs/
 server/data-backups/mysql-migration/
+server/data-exports/

@@ -996,3 +996,17 @@ Because solution groups are part of the scene JSON shape, the shadow step refres
 This step intentionally does not change `deleteSolutionItem`, does not write `media_files`, does not delete uploads, does not clean `media-library.json`, does not process `scenario-detail-pages`, `solution_pages`, or `solution_page_blocks`, and does not change PageEditor, frontend UI, admin UI, route manifest, prerender, sitemap, robots, schema, migrations, or migrators.
 
 No real delete API test is part of 22-5E-9 because it would modify `server/data/solutions.json` and, when MySQL is configured, tombstone `solution_groups` and child `solution_media_items`. A real delete test should be added only after a dedicated test group and rollback plan cover `solutions.json`, parent `solutions.raw_json`, `solution_groups.deleted_at`, `solution_media_items.deleted_at`, media-library checks, uploads checks, compare rerun, and git status cleanup. Media cleanup, physical deletion tests, and MySQL-primary delete behavior remain separate follow-up steps.
+
+## 22-6-2 MySQL to JSON Export Dry-Run Skeleton
+
+22-6-2 adds a standalone MySQL-to-JSON export dry-run skeleton. It does not change any business service, frontend UI, admin UI, route manifest, prerender, sitemap, robots, upload handling, media service behavior, JSON write path, or MySQL write path.
+
+The CLI is exposed as `npm.cmd run export:content` and `npm.cmd run export:content:dry-run`. Dry-run is the default. `--module` supports `all`, `contact-info`, `company-assets`, `home-video`, `home-interactive-images`, `articles`, `cases`, `solutions`, and `pages`. `--output-dir` can redirect artifacts, but it must not point inside `server/data` or `server/uploads`.
+
+The skeleton writes reports only under `server/data-exports/mysql-json-export/<timestamp>/`. It generates `export-manifest.json`, `export-summary.json`, `diff-report.json`, `risks.json`, and per-module `source.json`, `exported.json`, and `diff.json` files. These artifacts are ignored by Git and are not official content sources.
+
+The registered modules are intentionally not real exporters yet. They read source JSON, perform read-only MySQL count checks when MySQL is configured, and mark unimplemented transforms as `skeleton_only` or empty-source modules as `skipped_empty_source`. The reports must not present skeleton output as matched content.
+
+`--write` is intentionally disabled in this step and fails safely. The skeleton never overwrites `server/data`, never writes MySQL, never modifies uploads, and does not implement rollback. Future write mode must first add automatic `server/data` backup, rollback manifest, diff validation, compare validation, and prerender validation.
+
+`media-library` remains deferred because `media_files` is shared and upload/delete rollback is not defined. `publish-logs` remain JSON-primary with MySQL `publish_logs` as a shadow index only. `scenario-detail-pages`, `solution_pages`, and `solution_page_blocks` remain deferred because the current source is empty and they are outside this skeleton.
