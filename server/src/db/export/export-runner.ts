@@ -9,6 +9,7 @@ import {
   writeModuleArtifacts,
   writeRootReports,
 } from './export-writer.js';
+import { readMysqlExportedData } from './mysql-exporters.js';
 import { readMysqlModuleCounts } from './mysql-readers.js';
 import { exportModuleRegistry } from './registry.js';
 import { readSourceJson } from './source-json-reader.js';
@@ -108,7 +109,7 @@ function buildRisks(): ExportRunResult['risks'] {
     {
       code: 'scenario_detail_pages_deferred',
       level: 'info',
-      message: 'scenario-detail-pages are deferred in 22-6-2; current JSON source is empty and outside the main export registry.',
+      message: 'scenario-detail-pages are deferred in 22-6-3; current JSON source is empty and outside the main export registry.',
     },
     {
       code: 'solution_pages_deferred',
@@ -118,7 +119,7 @@ function buildRisks(): ExportRunResult['risks'] {
     {
       code: 'write_mode_disabled',
       level: 'blocker',
-      message: '--write is disabled in 22-6-2 and must not overwrite server/data.',
+      message: '--write is disabled in 22-6-3 and must not overwrite server/data.',
     },
     {
       code: 'rollback_not_implemented',
@@ -138,7 +139,7 @@ function buildRisks(): ExportRunResult['risks'] {
     {
       code: 'real_api_tests_not_run',
       level: 'info',
-      message: 'No real API write tests are part of the 22-6-2 skeleton.',
+      message: 'No real API write tests are part of the 22-6-3 dry-run export.',
     },
     {
       code: 'uploads_not_handled',
@@ -150,7 +151,7 @@ function buildRisks(): ExportRunResult['risks'] {
 
 export async function runExportDryRun(options: ExportCliOptions): Promise<ExportRunResult> {
   if (options.writeRequested) {
-    throw new Error('--write is not supported in 22-6-2. This dry-run skeleton never overwrites server/data.');
+    throw new Error('--write is not supported in 22-6-3. This dry-run export never overwrites server/data.');
   }
 
   const projectRoot = process.cwd();
@@ -162,17 +163,24 @@ export async function runExportDryRun(options: ExportCliOptions): Promise<Export
     const source = await readSourceJson(projectRoot, definition);
     const mysql = await readMysqlModuleCounts(definition);
     const exportStatus = moduleExportStatus(definition, source.recordCount);
+    const mysqlExport = await readMysqlExportedData({
+      definition,
+      exportStatus,
+    });
     const diff = buildModuleDiffReport({
       definition,
       source,
       mysql,
+      mysqlExport,
       exportStatus,
     });
     const moduleOutputDir = await writeModuleArtifacts({
       outputRoot: outputDir,
       definition,
       source,
-      exportedPayload: buildSkeletonExportPayload({ definition, exportStatus }),
+      exportedPayload: exportStatus === 'implemented'
+        ? mysqlExport.data
+        : buildSkeletonExportPayload({ definition, exportStatus }),
       diff,
     });
 
@@ -180,6 +188,7 @@ export async function runExportDryRun(options: ExportCliOptions): Promise<Export
       definition,
       source,
       mysql,
+      mysqlExport,
       diff,
       exportStatus,
       moduleOutputDir,
@@ -187,7 +196,7 @@ export async function runExportDryRun(options: ExportCliOptions): Promise<Export
   }
 
   const manifest: ExportManifest = {
-    exportVersion: '22-6-2',
+    exportVersion: '22-6-3',
     generatedAt: new Date().toISOString(),
     gitHead: readGitValue(['rev-parse', 'HEAD'], 'unknown'),
     branch: readGitValue(['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown'),
@@ -199,8 +208,8 @@ export async function runExportDryRun(options: ExportCliOptions): Promise<Export
     wroteMysql: false,
     canRollback: false,
     warnings: [
-      '22-6-2 is a dry-run skeleton only; module exports are not implemented yet.',
-      'Diff reports are structural readiness reports and must not be treated as matched content.',
+      '22-6-3 is still dry-run only; implemented module exports are report artifacts, not official server/data writes.',
+      'Diff reports compare current source JSON with MySQL-exported JSON and must not overwrite source files.',
     ],
     blockers: [
       '--write is disabled.',

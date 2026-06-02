@@ -52,6 +52,26 @@ The 22-6-2 registry includes:
 
 All real MySQL-to-JSON transforms remain future work. The skeleton reads the current source JSON, checks MySQL configuration and table counts when available, writes explicit skeleton `exported.json` files, and marks reports as not comparable when a transform is not implemented. It must not report skeleton output as matched content.
 
+## 22-6-3 Low-Risk Implemented Dry-Run Exports
+
+22-6-3 keeps the same dry-run boundaries, but implements real MySQL-to-JSON export readers for four low-risk modules:
+
+- `contact-info`: reads `contact_info.content_json` from the active singleton row and restores the current `contact-info.json` object shape.
+- `company-assets`: reads active `company_assets` rows, uses `raw_json` for core display fields, and uses primary table fields for media URL, alt text, description, ordering, and enabled state.
+- `home-video`: reads the active `home_video` singleton row and optional `media_files` metadata for file names; missing media metadata is reported as a warning, not a hard failure.
+- `home-interactive-images`: reads active `home_interactive_images` rows, preserves a stable 12-slot array, and reports a warning if the active row count is not exactly 12.
+
+These modules now report `exportStatus=implemented`. `articles`, `cases`, and `solutions` remain `skeleton_only`; `pages` remains `skipped_empty_source` when the JSON source is empty.
+
+For implemented modules, `modules/<module-name>/exported.json` contains the restored JSON shape. `modules/<module-name>/diff.json` compares source JSON with exported JSON and records:
+
+- `diffStatus`: `matched`, `warning`, `error`, or `mysql_unavailable`
+- `fieldDiffs`: field path, source value, exported value, severity, and reason
+- source/exported counts
+- module warnings and blockers
+
+The exporter must not hide differences. If MySQL is unavailable, implemented modules report `mysql_unavailable` and do not pretend to match. If the core JSON shape cannot be restored, the module reports `error` / `shape_risk`. Non-core media metadata gaps are warnings only.
+
 ## Deferred Areas
 
 `media-library` is deferred because `media_files` is shared across modules and upload/delete rollback is not defined.
@@ -82,13 +102,15 @@ npm.cmd run typecheck:server
 npm.cmd run db:health
 npm.cmd run export:content:dry-run
 npm.cmd run export:content -- --module contact-info
-npm.cmd run export:content -- --module cases
-npm.cmd run export:content -- --module solutions
+npm.cmd run export:content -- --module company-assets
+npm.cmd run export:content -- --module home-video
+npm.cmd run export:content -- --module home-interactive-images
+npm.cmd run export:content -- --module articles
 npm.cmd run export:content -- --write
 npm.cmd run build:prerender
 ```
 
-The `--write` command must fail safely and must not overwrite `server/data`. Module dry-runs may report `skeleton_only`, `skipped_empty_source`, or `mysql_unavailable`; they must not present skeleton payloads as matched exports.
+The `--write` command must fail safely and must not overwrite `server/data`. Low-risk module dry-runs may report `matched`, `warning`, `error`, or `mysql_unavailable`; skeleton modules must not present skeleton payloads as matched exports.
 
 No-MySQL validation should also run with all `MYSQL_*` variables removed:
 
@@ -100,7 +122,7 @@ Expected no-MySQL behavior:
 
 - the CLI does not crash
 - `export-manifest.json` and `export-summary.json` report `mysqlConfigured=false`
-- module reports mark MySQL as unavailable
+- implemented module reports mark MySQL as unavailable
 - `server/data` is not modified
 - MySQL is not written
 

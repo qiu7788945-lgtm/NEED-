@@ -14,6 +14,15 @@ export type ExportModuleFilter = ExportModuleName | 'all';
 export type ExportStatus = 'implemented' | 'skeleton_only' | 'skipped_empty_source' | 'deferred';
 export type RiskLevel = 'low' | 'medium' | 'high';
 export type MysqlStatus = 'configured' | 'mysql_unavailable';
+export type ExportReadStatus = 'exported' | 'mysql_unavailable' | 'shape_risk' | 'not_implemented';
+export type ExportDiffStatus =
+  | 'matched'
+  | 'warning'
+  | 'error'
+  | 'mysql_unavailable'
+  | 'not_implemented'
+  | 'skipped_empty_source';
+export type ExportFieldDiffSeverity = 'info' | 'warning' | 'error';
 
 export type ExportModuleDefinition = {
   moduleName: ExportModuleName;
@@ -60,15 +69,40 @@ export type MysqlReadResult = {
   tableCounts: MysqlTableCount[];
 };
 
+export type MysqlExportReadResult = {
+  moduleName: ExportModuleName;
+  implemented: boolean;
+  status: ExportReadStatus;
+  data: unknown;
+  recordCount: number;
+  warnings: string[];
+  blockers: string[];
+};
+
+export type ExportFieldDiff = {
+  fieldPath: string;
+  sourceValue: unknown;
+  exportedValue: unknown;
+  severity: ExportFieldDiffSeverity;
+  reason: string;
+};
+
 export type ModuleDiffReport = {
   moduleName: ExportModuleName;
   comparable: boolean;
+  matched: boolean;
+  diffStatus: ExportDiffStatus;
   sourceJsonRead: boolean;
   mysqlConfigured: boolean;
   mysqlAvailable: boolean;
   exportImplemented: boolean;
   shapeRisk: RiskLevel;
   status: ExportStatus;
+  sourceRecordCount: number;
+  exportedRecordCount: number;
+  fieldDiffs: ExportFieldDiff[];
+  warnings: string[];
+  blockers: string[];
   reason: string;
 };
 
@@ -81,6 +115,7 @@ export type ExportModuleResult = {
   outputDir: string;
   sourceJson: Omit<SourceJsonSnapshot, 'data'>;
   mysql: MysqlReadResult;
+  mysqlExport: Omit<MysqlExportReadResult, 'data'>;
   diff: ModuleDiffReport;
   warnings: string[];
   blockers: string[];
@@ -93,7 +128,7 @@ export type ExportRisk = {
 };
 
 export type ExportManifest = {
-  exportVersion: '22-6-2';
+  exportVersion: '22-6-3';
   generatedAt: string;
   gitHead: string;
   branch: string;
@@ -113,8 +148,13 @@ export type ExportSummary = {
   outputDir: string;
   selectedModules: ExportModuleFilter;
   moduleCount: number;
+  implementedCount: number;
   skeletonOnlyCount: number;
   skippedEmptySourceCount: number;
+  matchedCount: number;
+  warningCount: number;
+  errorCount: number;
+  mysqlUnavailableCount: number;
   mysqlConfigured: boolean;
   mysqlAvailable: boolean;
   wroteServerData: false;

@@ -17,7 +17,7 @@ Options:
                        Supported: all, ${exportModuleNames.join(', ')}
   --output-dir <path>  Optional output directory. Must not be inside server/data or server/uploads.
   --format json        JSON output only.
-  --write              Rejected in 22-6-2; server/data is never overwritten.`);
+  --write              Rejected in 22-6-3; server/data is never overwritten.`);
 }
 
 function isExportModuleName(value: string): value is ExportModuleName {
@@ -68,7 +68,7 @@ function parseCliOptions(args: string[]): ExportCliOptions {
     if (arg === '--format') {
       const format = args[index + 1];
       if (format !== 'json') {
-        throw new Error('Only --format json is supported in 22-6-2.');
+        throw new Error('Only --format json is supported in 22-6-3.');
       }
 
       options.format = 'json';
@@ -112,8 +112,13 @@ async function main(): Promise<void> {
       outputDir: result.summary.outputDir,
       selectedModules: result.summary.selectedModules,
       moduleCount: result.summary.moduleCount,
+      implementedCount: result.summary.implementedCount,
       skeletonOnlyCount: result.summary.skeletonOnlyCount,
       skippedEmptySourceCount: result.summary.skippedEmptySourceCount,
+      matchedCount: result.summary.matchedCount,
+      warningCount: result.summary.warningCount,
+      errorCount: result.summary.errorCount,
+      mysqlUnavailableCount: result.summary.mysqlUnavailableCount,
       mysqlConfigured: result.summary.mysqlConfigured,
       mysqlAvailable: result.summary.mysqlAvailable,
       wroteServerData: result.summary.wroteServerData,

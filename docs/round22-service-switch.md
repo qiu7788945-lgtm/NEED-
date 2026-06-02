@@ -1010,3 +1010,13 @@ The registered modules are intentionally not real exporters yet. They read sourc
 `--write` is intentionally disabled in this step and fails safely. The skeleton never overwrites `server/data`, never writes MySQL, never modifies uploads, and does not implement rollback. Future write mode must first add automatic `server/data` backup, rollback manifest, diff validation, compare validation, and prerender validation.
 
 `media-library` remains deferred because `media_files` is shared and upload/delete rollback is not defined. `publish-logs` remain JSON-primary with MySQL `publish_logs` as a shadow index only. `scenario-detail-pages`, `solution_pages`, and `solution_page_blocks` remain deferred because the current source is empty and they are outside this skeleton.
+
+## 22-6-3 Low-Risk MySQL to JSON Dry-Run Exports
+
+22-6-3 upgrades four low-risk export modules from `skeleton_only` to `implemented`: `contact-info`, `company-assets`, `home-video`, and `home-interactive-images`.
+
+The step is still dry-run only. It does not overwrite `server/data`, does not write MySQL, does not modify uploads, does not implement rollback, and does not change business services, frontend UI, admin UI, route manifest, prerender, sitemap, robots, schema, migrations, or migrators.
+
+The implemented modules read MySQL and write only export artifacts under `server/data-exports/mysql-json-export/<timestamp>/`. Their `exported.json` files contain restored JSON shapes, and their `diff.json` files record `diffStatus`, field-level differences, source/exported counts, warnings, and blockers. `contact-info`, `company-assets`, and `home-interactive-images` can match the current source JSON exactly when MySQL contains the migrated values. `home-video` may warn on `updatedAt` if the MySQL row timestamp differs from the historical JSON timestamp.
+
+`articles`, `cases`, and `solutions` remain `skeleton_only`; `pages` remains empty-source/skipped. `media-library`, `scenario-detail-pages`, `solution_pages`, `solution_page_blocks`, and `publish-logs` remain deferred or non-blocking exactly as in 22-6-2. `--write` remains disabled and must fail safely with `wroteServerData=false` and `wroteMysql=false`.
