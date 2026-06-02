@@ -26,8 +26,8 @@ export function buildSkeletonExportPayload(input: {
     implemented: false,
     exportedData: null,
     note: input.exportStatus === 'skipped_empty_source'
-      ? 'This module is treated as empty-source/skipped in the 22-6-6 dry-run export.'
-      : 'MySQL-to-JSON export is not implemented for this module in the 22-6-6 dry-run export.',
+      ? 'This module is treated as empty-source/skipped in the 22-6-8 dry-run export.'
+      : 'MySQL-to-JSON export is not implemented for this module in the 22-6-8 dry-run export.',
   };
 }
 
@@ -113,6 +113,15 @@ export function buildSummary(manifest: ExportManifest): ExportSummary {
     wroteServerData: false,
     wroteMysql: false,
     canRollback: false,
+    writeModeEnabled: manifest.writeModeEnabled,
+    backupCreated: manifest.backupCreated,
+    rollbackAvailable: manifest.rollbackAvailable,
+    rollbackModeEnabled: manifest.rollbackModeEnabled,
+    backupRequiredBeforeWrite: manifest.backupRequiredBeforeWrite,
+    backupPlan: manifest.backupPlan,
+    rollbackPlan: manifest.rollbackPlan,
+    rollbackScope: manifest.rollbackScope,
+    rollbackDeferredItems: manifest.rollbackDeferredItems,
     moduleSummaries: manifest.moduleResults.map((result) => ({
       moduleName: result.moduleName,
       exportStatus: result.exportStatus,

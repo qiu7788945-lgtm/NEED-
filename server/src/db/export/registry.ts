@@ -63,7 +63,7 @@ export const exportModuleRegistry: ExportModuleDefinition[] = [
     mysqlTables: ['pages', 'page_blocks', 'seo_settings'],
     exportStatus: 'skipped_empty_source',
     riskLevel: 'low',
-    notes: ['Current JSON source is expected to be empty in 22-6-6; keep as empty-source confirmation only.'],
+    notes: ['Current JSON source is expected to be empty in 22-6-8; keep as empty-source confirmation only.'],
   },
 ];
 

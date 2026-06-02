@@ -9,7 +9,9 @@ function printUsage(): void {
   npm.cmd run export:content
   npm.cmd run export:content -- --module contact-info
   npm.cmd run export:content -- --module all --output-dir server/data-exports/mysql-json-export/manual
+  npm.cmd run export:content -- --plan-backup
   npm.cmd run export:content -- --write
+  npm.cmd run export:content -- --rollback server/data-backups/mysql-json-export/<timestamp>/rollback-manifest.json
 
 Options:
   --dry-run            Default. Generate reports under server/data-exports only.
@@ -17,7 +19,9 @@ Options:
                        Supported: all, ${exportModuleNames.join(', ')}
   --output-dir <path>  Optional output directory. Must not be inside server/data or server/uploads.
   --format json        JSON output only.
-  --write              Rejected in 22-6-6; server/data is never overwritten.`);
+  --plan-backup        Add a backup plan to the dry-run report only; no backup directory is created.
+  --rollback <path>    Rejected in 22-6-8; rollback restore is not implemented.
+  --write              Rejected in 22-6-8; server/data is never overwritten.`);
 }
 
 function isExportModuleName(value: string): value is ExportModuleName {
@@ -30,6 +34,7 @@ function parseCliOptions(args: string[]): ExportCliOptions {
     format: 'json',
     dryRun: true,
     writeRequested: false,
+    planBackupRequested: false,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -68,7 +73,7 @@ function parseCliOptions(args: string[]): ExportCliOptions {
     if (arg === '--format') {
       const format = args[index + 1];
       if (format !== 'json') {
-        throw new Error('Only --format json is supported in 22-6-6.');
+        throw new Error('Only --format json is supported in 22-6-8.');
       }
 
       options.format = 'json';
@@ -78,6 +83,22 @@ function parseCliOptions(args: string[]): ExportCliOptions {
 
     if (arg === '--write') {
       options.writeRequested = true;
+      continue;
+    }
+
+    if (arg === '--plan-backup') {
+      options.planBackupRequested = true;
+      continue;
+    }
+
+    if (arg === '--rollback') {
+      const rollbackManifestPath = args[index + 1];
+      if (!rollbackManifestPath) {
+        throw new Error('--rollback requires a rollback manifest path.');
+      }
+
+      options.rollbackManifestPath = rollbackManifestPath;
+      index += 1;
       continue;
     }
 
@@ -124,6 +145,11 @@ async function main(): Promise<void> {
       wroteServerData: result.summary.wroteServerData,
       wroteMysql: result.summary.wroteMysql,
       canRollback: result.summary.canRollback,
+      writeModeEnabled: result.summary.writeModeEnabled,
+      backupCreated: result.summary.backupCreated,
+      rollbackAvailable: result.summary.rollbackAvailable,
+      rollbackModeEnabled: result.summary.rollbackModeEnabled,
+      backupRequiredBeforeWrite: result.summary.backupRequiredBeforeWrite,
     }, null, 2));
   } catch (error) {
     console.error(JSON.stringify({
@@ -133,6 +159,11 @@ async function main(): Promise<void> {
       wroteServerData: false,
       wroteMysql: false,
       canRollback: false,
+      writeModeEnabled: false,
+      backupCreated: false,
+      rollbackAvailable: false,
+      rollbackModeEnabled: false,
+      backupRequiredBeforeWrite: true,
     }, null, 2));
     process.exitCode = 1;
   } finally {

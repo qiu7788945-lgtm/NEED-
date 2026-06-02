@@ -133,6 +133,34 @@ Solution diff reports align scenes by `slug`, groups by `slug` first and `id` se
 
 `solutions` now reports `exportStatus=implemented`. Implemented export modules are `contact-info`, `company-assets`, `home-video`, `home-interactive-images`, `articles`, `cases`, and `solutions`; `pages` remains empty-source/skipped. `media-library`, `scenario-detail-pages`, `solution_pages`, `solution_page_blocks`, and `publish-logs` remain deferred or non-blocking exactly as in earlier 22-6 steps.
 
+## 22-6-8 Backup / Rollback Skeleton
+
+22-6-8 adds only the safety skeleton required before any future write mode. It does not enable `--write`, does not create a real backup, does not execute rollback, does not overwrite `server/data`, does not write MySQL, and does not restore uploads.
+
+Dry-run reports now include:
+
+- `writeModeEnabled=false`
+- `backupCreated=false`
+- `rollbackAvailable=false`
+- `rollbackModeEnabled=false`
+- `backupRequiredBeforeWrite=true`
+- `backupPlan`
+- `rollbackPlan`
+- `rollbackScope`
+- `rollbackDeferredItems`
+
+The backup plan is report-only. Its future default directory naming rule is:
+
+```text
+server/data-backups/mysql-json-export/<YYYYMMDD-HHmmss>/
+```
+
+In 22-6-8 the exporter only records which selected module JSON files would be included in a future backup. It writes this plan inside the normal dry-run report under `server/data-exports/mysql-json-export/<timestamp>/`; it does not copy files to `server/data-backups`.
+
+The rollback skeleton defines the future minimum scope as restoring `server/data/*.json` from a verified backup manifest. It explicitly excludes MySQL rows, uploads, publish logs, media-library physical files, migration logs, and tombstone/deleted rows. `canRollback` remains `false`.
+
+The optional `--plan-backup` flag marks the backup plan as requested but still does not create a backup. The optional `--rollback <manifest>` placeholder is parsed but safely rejected in 22-6-8.
+
 ## Deferred Areas
 
 `media-library` is deferred because `media_files` is shared across modules and upload/delete rollback is not defined.

@@ -1054,3 +1054,13 @@ The solutions exporter reads active `solutions`, `solution_groups`, and `solutio
 The export preserves the fixed seven-scene structure and validates the `video-digital-assets` one-item group rule. Tombstoned rows with `deleted_at IS NOT NULL` stay out of the exported report artifacts, and `solution_media_items.media_id = NULL` remains valid because media-file association is outside this step.
 
 After 22-6-6, implemented export modules are `contact-info`, `company-assets`, `home-video`, `home-interactive-images`, `articles`, `cases`, and `solutions`. `pages` remains empty-source/skipped. `media-library`, `scenario-detail-pages`, `solution_pages`, `solution_page_blocks`, and `publish-logs` remain deferred or non-blocking exactly as in earlier 22-6 steps.
+
+## 22-6-8 Export Backup / Rollback Skeleton
+
+22-6-8 adds only the export-tool backup and rollback safety skeleton. It does not change business services, frontend UI, admin UI, route manifest, prerender, sitemap, robots, upload handling, media-library export, JSON write paths, or MySQL write paths.
+
+The export dry-run manifest and summary now expose `writeModeEnabled=false`, `backupCreated=false`, `rollbackAvailable=false`, `rollbackModeEnabled=false`, `backupRequiredBeforeWrite=true`, and report-only `backupPlan` / `rollbackPlan` structures. The future backup directory rule is `server/data-backups/mysql-json-export/<YYYYMMDD-HHmmss>/`, but 22-6-8 does not create that directory or copy `server/data`.
+
+The rollback skeleton records the future minimum restore scope as `server/data/*.json` only. MySQL rows, uploads, publish logs, media-library physical files, migration logs, and tombstone/deleted rows are explicitly excluded. `--write` remains disabled, and the placeholder `--rollback <manifest>` is safely rejected.
+
+After 22-6-8, the implemented export modules remain `contact-info`, `company-assets`, `home-video`, `home-interactive-images`, `articles`, `cases`, and `solutions`. `pages` remains empty-source/skipped. `media-library`, `scenario-detail-pages`, `solution_pages`, `solution_page_blocks`, and `publish-logs` remain deferred or non-blocking.

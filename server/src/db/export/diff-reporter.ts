@@ -703,8 +703,8 @@ export function buildModuleDiffReport(input: {
       blockers: mysqlExport.blockers,
       metrics: mysqlExport.metrics,
       reason: exportStatus === 'skipped_empty_source'
-        ? 'Current source is empty or intentionally skipped in the 22-6-6 dry-run export.'
-        : 'MySQL-to-JSON export is not implemented for this module in 22-6-6.',
+        ? 'Current source is empty or intentionally skipped in the 22-6-8 dry-run export.'
+        : 'MySQL-to-JSON export is not implemented for this module in 22-6-8.',
     };
   }
 

@@ -40,6 +40,8 @@ export type ExportCliOptions = {
   format: 'json';
   dryRun: true;
   writeRequested: boolean;
+  planBackupRequested: boolean;
+  rollbackManifestPath?: string;
 };
 
 export type SourceJsonSnapshot = {
@@ -130,8 +132,61 @@ export type ExportRisk = {
   message: string;
 };
 
+export type BackupPlanFile = {
+  moduleName: ExportModuleName;
+  jsonPath: string;
+  absolutePath: string;
+  exists: boolean;
+  sourceHash: string | null;
+  recordCount: number;
+};
+
+export type BackupManifestPlan = {
+  schemaVersion: '22-6-8-backup-plan';
+  status: 'planned_only';
+  requested: boolean;
+  backupCreated: false;
+  writesBackupDirectory: false;
+  writesServerData: false;
+  writesMysql: false;
+  defaultBackupRoot: string;
+  plannedBackupDir: string;
+  directoryNamingRule: string;
+  moduleNames: ExportModuleName[];
+  files: BackupPlanFile[];
+  notes: string[];
+};
+
+export type RollbackScope = {
+  included: string[];
+  excluded: string[];
+};
+
+export type RestorePlan = {
+  status: 'not_implemented';
+  source: 'future_backup_manifest';
+  requiredManifest: string;
+  willRestoreServerDataJson: false;
+  willWriteMysql: false;
+  willRestoreUploads: false;
+  willRestorePublishLogs: false;
+};
+
+export type RollbackManifestPlan = {
+  schemaVersion: '22-6-8-rollback-plan';
+  status: 'not_implemented';
+  requested: boolean;
+  rollbackAvailable: false;
+  rollbackModeEnabled: false;
+  rollbackManifestPath: string | null;
+  restorePlan: RestorePlan;
+  rollbackScope: RollbackScope;
+  deferredItems: string[];
+  notes: string[];
+};
+
 export type ExportManifest = {
-  exportVersion: '22-6-6';
+  exportVersion: '22-6-8';
   generatedAt: string;
   gitHead: string;
   branch: string;
@@ -142,6 +197,15 @@ export type ExportManifest = {
   wroteServerData: false;
   wroteMysql: false;
   canRollback: false;
+  writeModeEnabled: false;
+  backupCreated: false;
+  rollbackAvailable: false;
+  rollbackModeEnabled: false;
+  backupRequiredBeforeWrite: true;
+  backupPlan: BackupManifestPlan;
+  rollbackPlan: RollbackManifestPlan;
+  rollbackScope: RollbackScope;
+  rollbackDeferredItems: string[];
   warnings: string[];
   blockers: string[];
 };
@@ -174,6 +238,15 @@ export type ExportSummary = {
   wroteServerData: false;
   wroteMysql: false;
   canRollback: false;
+  writeModeEnabled: false;
+  backupCreated: false;
+  rollbackAvailable: false;
+  rollbackModeEnabled: false;
+  backupRequiredBeforeWrite: true;
+  backupPlan: BackupManifestPlan;
+  rollbackPlan: RollbackManifestPlan;
+  rollbackScope: RollbackScope;
+  rollbackDeferredItems: string[];
   moduleSummaries: ExportModuleSummary[];
 };
 
