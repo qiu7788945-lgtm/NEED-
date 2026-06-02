@@ -11,6 +11,13 @@ import type {
   CaseStatus,
   CaseStudy,
 } from '../../../../shared/types/case.js';
+import type {
+  SolutionGroup,
+  SolutionItem,
+  SolutionItemFileType,
+  SolutionScene,
+  SolutionSceneSlug,
+} from '../../../../shared/types/solution.js';
 import { getDbPool, getSafeDatabaseConfig } from '../client.js';
 import type {
   ExportModuleDefinition,
@@ -145,6 +152,48 @@ type CaseFaqRow = RowDataPacket & {
   status: unknown;
 };
 
+type SolutionRow = RowDataPacket & {
+  mysql_id: unknown;
+  source_id: unknown;
+  title: unknown;
+  slug: unknown;
+  summary: unknown;
+  raw_json?: unknown;
+  status: unknown;
+  sort_order: unknown;
+  published_at: unknown;
+  created_at: unknown;
+  updated_at: unknown;
+};
+
+type SolutionGroupRow = RowDataPacket & {
+  mysql_id: unknown;
+  solution_id: unknown;
+  source_id: unknown;
+  title: unknown;
+  slug: unknown;
+  summary: unknown;
+  scene_slug: unknown;
+  sort_order: unknown;
+  is_enabled: unknown;
+  created_at: unknown;
+  updated_at: unknown;
+};
+
+type SolutionMediaItemRow = RowDataPacket & {
+  group_id: unknown;
+  source_id: unknown;
+  file_type: unknown;
+  media_url: unknown;
+  media_file_name: unknown;
+  media_display_name: unknown;
+  alt_text: unknown;
+  caption: unknown;
+  sort_order: unknown;
+  is_enabled: unknown;
+  created_at: unknown;
+};
+
 const implementedExportModules = new Set<ExportModuleName>([
   'contact-info',
   'company-assets',
@@ -152,6 +201,7 @@ const implementedExportModules = new Set<ExportModuleName>([
   'home-interactive-images',
   'articles',
   'cases',
+  'solutions',
 ]);
 
 const allowedArticleCategories = new Set<ArticleCategory>([
@@ -169,6 +219,16 @@ const allowedCaseStatuses = new Set<CaseStatus>([
   'published',
   'offline',
 ]);
+const solutionSceneSlugs: SolutionSceneSlug[] = [
+  'family-day',
+  'client-appreciation',
+  'annual-meeting',
+  'commercial-display',
+  'video-digital-assets',
+  'academic-forum',
+  'other',
+];
+const allowedSolutionSceneSlugs = new Set<SolutionSceneSlug>(solutionSceneSlugs);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -561,6 +621,558 @@ function mysqlCaseImages(rows: CaseImageRow[]): CaseExtractedImage[] {
       };
     })
     .filter((image) => image.fileName && image.url);
+}
+
+function normalizeSolutionSceneSlug(value: unknown): SolutionSceneSlug | null {
+  const slug = asString(value);
+  return allowedSolutionSceneSlugs.has(slug as SolutionSceneSlug) ? slug as SolutionSceneSlug : null;
+}
+
+function solutionStatusToEnabled(value: unknown, fallback: boolean): boolean {
+  const status = asString(value).toLowerCase();
+  return status ? asMysqlBoolean(status, fallback) : fallback;
+}
+
+function normalizeSolutionFileType(value: unknown, mediaUrl: string): SolutionItemFileType {
+  const fileType = asString(value).toLowerCase();
+  if (fileType === 'video') {
+    return 'video';
+  }
+
+  if (fileType === 'image') {
+    return 'image';
+  }
+
+  return /\.(mp4|webm)(\?|#|$)/i.test(mediaUrl) ? 'video' : 'image';
+}
+
+function solutionRowKey(row: SolutionRow, index: number): string {
+  return asString(row.source_id) || asString(row.slug) || String(row.mysql_id ?? `row_${index + 1}`);
+}
+
+function parseSolutionRawJson(input: {
+  row: SolutionRow;
+  index: number;
+  warnings: string[];
+  blockers: string[];
+}): Record<string, unknown> {
+  const rawValue = input.row.raw_json;
+  if (rawValue === null || rawValue === undefined || rawValue === '') {
+    return {};
+  }
+
+  try {
+    const parsed = parseJsonColumn(rawValue);
+    if (isRecord(parsed)) {
+      return parsed;
+    }
+
+    input.warnings.push(`solutions.${solutionRowKey(input.row, input.index)} raw_json is not an object; split rows were used where possible.`);
+    return {};
+  } catch (error) {
+    input.blockers.push(
+      `solutions.${solutionRowKey(input.row, input.index)} raw_json could not be parsed: ${
+        error instanceof Error ? error.message : 'invalid JSON'
+      }.`,
+    );
+    return {};
+  }
+}
+
+function solutionGroupStableKey(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const slug = pickString(value, ['slug']);
+  if (slug) {
+    return `slug:${slug}`;
+  }
+
+  const id = pickString(value, ['id', 'source_id']);
+  return id ? `id:${id}` : null;
+}
+
+function solutionItemStableKey(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const id = pickString(value, ['id', 'source_id']);
+  if (id) {
+    return `id:${id}`;
+  }
+
+  const mediaUrl = pickString(value, ['mediaUrl', 'media_url']);
+  const sortOrder = pickNumber(value, ['sortOrder', 'sort_order'], Number.NaN);
+  return mediaUrl && Number.isFinite(sortOrder) ? `media:${mediaUrl}|sort:${sortOrder}` : null;
+}
+
+function buildRecordMapByStableKey(records: Record<string, unknown>[], keyForRecord: (record: unknown) => string | null) {
+  const map = new Map<string, Record<string, unknown>>();
+
+  for (const record of records) {
+    const key = keyForRecord(record);
+    if (key && !map.has(key)) {
+      map.set(key, record);
+    }
+  }
+
+  return map;
+}
+
+function solutionItemsFromRows(rows: SolutionMediaItemRow[], warnings: string[], blockers: string[]) {
+  const byGroupId = new Map<string, SolutionItem[]>();
+
+  for (const [index, row] of rows.entries()) {
+    const groupId = ownerIdKey(row.group_id);
+    const rowKey = asString(row.source_id) || `${asString(row.media_url) || 'row'}#${index + 1}`;
+    if (!groupId) {
+      blockers.push(`solution_media_items.${rowKey} is missing a valid group_id.`);
+      continue;
+    }
+
+    const mediaUrl = asString(row.media_url);
+    const rawFileType = asString(row.file_type).toLowerCase();
+    if (!rawFileType) {
+      blockers.push(`solution_media_items.${rowKey} is missing required file_type.`);
+    } else if (rawFileType !== 'image' && rawFileType !== 'video') {
+      warnings.push(`solution_media_items.${rowKey} has unsupported file_type "${rawFileType}"; file type was inferred for export.`);
+    }
+
+    if (!mediaUrl) {
+      blockers.push(`solution_media_items.${rowKey} is missing required media_url.`);
+    }
+
+    const sortOrder = asNumber(row.sort_order, index + 1);
+    const id = asString(row.source_id) || (mediaUrl ? `${mediaUrl}#${sortOrder}` : `row-${index + 1}`);
+    if (!asString(row.source_id)) {
+      warnings.push(`solution_media_items.${rowKey} has no source_id; item id was derived from mediaUrl and sortOrder for dry-run shape recovery.`);
+    }
+
+    const item: SolutionItem = {
+      id,
+      fileType: normalizeSolutionFileType(row.file_type, mediaUrl),
+      mediaUrl,
+      mediaFileName: asString(row.media_file_name),
+      mediaDisplayName: asString(row.media_display_name),
+      alt: asString(row.alt_text),
+      caption: asString(row.caption),
+      sortOrder,
+      enabled: asMysqlBoolean(row.is_enabled, true),
+      createdAt: toIsoString(row.created_at),
+    };
+    const items = byGroupId.get(groupId) ?? [];
+    items.push(item);
+    byGroupId.set(groupId, items);
+  }
+
+  for (const items of byGroupId.values()) {
+    items.sort((left, right) => left.sortOrder - right.sortOrder);
+  }
+
+  return byGroupId;
+}
+
+function solutionGroupsFromRows(input: {
+  groupRows: SolutionGroupRow[];
+  itemsByGroupId: Map<string, SolutionItem[]>;
+  warnings: string[];
+  blockers: string[];
+}) {
+  const bySolutionId = new Map<string, SolutionGroup[]>();
+
+  for (const [index, row] of input.groupRows.entries()) {
+    const solutionId = ownerIdKey(row.solution_id);
+    const groupMysqlId = ownerIdKey(row.mysql_id);
+    const rowKey = asString(row.source_id) || asString(row.slug) || String(row.mysql_id ?? `row_${index + 1}`);
+
+    if (!solutionId || !groupMysqlId) {
+      input.blockers.push(`solution_groups.${rowKey} is missing a valid solution_id or id.`);
+      continue;
+    }
+
+    const sourceId = asString(row.source_id);
+    const title = asString(row.title);
+    const slug = asString(row.slug);
+    const sceneSlug = normalizeSolutionSceneSlug(row.scene_slug);
+
+    if (!sourceId) {
+      input.warnings.push(`solution_groups.${rowKey} has no source_id; group id was derived from slug for dry-run shape recovery.`);
+    }
+
+    if (!title || !slug || !sceneSlug) {
+      input.blockers.push(`solution_groups.${rowKey} is missing required title, slug, or scene_slug.`);
+    }
+
+    const group: SolutionGroup = {
+      id: sourceId || slug || `group-${groupMysqlId}`,
+      title,
+      slug,
+      summary: asString(row.summary),
+      sceneSlug: sceneSlug ?? 'other',
+      sortOrder: asNumber(row.sort_order, index + 1),
+      enabled: asMysqlBoolean(row.is_enabled, true),
+      items: input.itemsByGroupId.get(groupMysqlId) ?? [],
+      createdAt: toIsoString(row.created_at),
+      updatedAt: toIsoString(row.updated_at),
+    };
+
+    const groups = bySolutionId.get(solutionId) ?? [];
+    groups.push(group);
+    bySolutionId.set(solutionId, groups);
+  }
+
+  for (const groups of bySolutionId.values()) {
+    groups.sort((left, right) => left.sortOrder - right.sortOrder);
+  }
+
+  return bySolutionId;
+}
+
+function warnSolutionStringConflict(input: {
+  warnings: string[];
+  key: string;
+  fieldName: string;
+  rawValue: unknown;
+  mysqlValue: unknown;
+}): void {
+  const rawValue = asString(input.rawValue);
+  const mysqlValue = asString(input.mysqlValue);
+  if (!rawValue || !mysqlValue || rawValue === mysqlValue) {
+    return;
+  }
+
+  input.warnings.push(
+    `solutions.${input.key} ${input.fieldName} differs between raw_json and split MySQL rows; raw_json shape was preserved.`,
+  );
+}
+
+function warnSolutionNumberConflict(input: {
+  warnings: string[];
+  key: string;
+  fieldName: string;
+  rawValue: unknown;
+  mysqlValue: unknown;
+}): void {
+  if (input.rawValue === undefined || input.mysqlValue === undefined || input.mysqlValue === null) {
+    return;
+  }
+
+  const rawValue = asNumber(input.rawValue, Number.NaN);
+  const mysqlValue = asNumber(input.mysqlValue, Number.NaN);
+  if (!Number.isFinite(rawValue) || !Number.isFinite(mysqlValue) || rawValue === mysqlValue) {
+    return;
+  }
+
+  input.warnings.push(
+    `solutions.${input.key} ${input.fieldName} differs between raw_json and split MySQL rows; raw_json shape was preserved.`,
+  );
+}
+
+function warnSolutionBooleanConflict(input: {
+  warnings: string[];
+  key: string;
+  fieldName: string;
+  rawValue: unknown;
+  mysqlValue: boolean;
+}): void {
+  if (typeof input.rawValue !== 'boolean' || input.rawValue === input.mysqlValue) {
+    return;
+  }
+
+  input.warnings.push(
+    `solutions.${input.key} ${input.fieldName} differs between raw_json and split MySQL rows; raw_json shape was preserved.`,
+  );
+}
+
+function rawRecordList(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function warnSolutionItemDifferences(input: {
+  warnings: string[];
+  key: string;
+  rawItems: Record<string, unknown>[];
+  mysqlItems: SolutionItem[];
+}): void {
+  if (input.rawItems.length === 0 && input.mysqlItems.length === 0) {
+    return;
+  }
+
+  if (input.rawItems.length === 0 && input.mysqlItems.length > 0) {
+    input.warnings.push(`solutions.${input.key} has no raw_json items; active solution_media_items rows were exported.`);
+    return;
+  }
+
+  if (input.rawItems.length > 0 && input.mysqlItems.length === 0) {
+    input.warnings.push(`solutions.${input.key} has raw_json items but no active solution_media_items rows; raw_json items were preserved.`);
+    return;
+  }
+
+  if (input.rawItems.length !== input.mysqlItems.length) {
+    input.warnings.push(
+      `solutions.${input.key} item count (${input.rawItems.length}) differs from active solution_media_items count (${input.mysqlItems.length}); raw_json items were preserved.`,
+    );
+  }
+
+  const rawByKey = buildRecordMapByStableKey(input.rawItems, solutionItemStableKey);
+  const mysqlByKey = buildRecordMapByStableKey(input.mysqlItems as unknown as Record<string, unknown>[], solutionItemStableKey);
+
+  for (const [itemKey, rawItem] of rawByKey.entries()) {
+    const mysqlItem = mysqlByKey.get(itemKey);
+    if (!mysqlItem) {
+      input.warnings.push(`solutions.${input.key} raw_json item ${itemKey} has no matching active solution_media_items row.`);
+      continue;
+    }
+
+    for (const fieldName of ['fileType', 'mediaUrl', 'mediaFileName', 'mediaDisplayName', 'alt', 'caption'] as const) {
+      warnSolutionStringConflict({
+        warnings: input.warnings,
+        key: `${input.key}.${itemKey}`,
+        fieldName,
+        rawValue: rawItem[fieldName],
+        mysqlValue: mysqlItem[fieldName],
+      });
+    }
+    warnSolutionNumberConflict({
+      warnings: input.warnings,
+      key: `${input.key}.${itemKey}`,
+      fieldName: 'sortOrder',
+      rawValue: rawItem.sortOrder,
+      mysqlValue: mysqlItem.sortOrder,
+    });
+    warnSolutionBooleanConflict({
+      warnings: input.warnings,
+      key: `${input.key}.${itemKey}`,
+      fieldName: 'enabled',
+      rawValue: rawItem.enabled,
+      mysqlValue: asMysqlBoolean(mysqlItem.enabled, true),
+    });
+  }
+
+  for (const itemKey of mysqlByKey.keys()) {
+    if (!rawByKey.has(itemKey)) {
+      input.warnings.push(`solutions.${input.key} active solution_media_items row ${itemKey} is missing from raw_json items.`);
+    }
+  }
+}
+
+function warnSolutionGroupDifferences(input: {
+  warnings: string[];
+  sceneKey: string;
+  rawGroups: Record<string, unknown>[];
+  mysqlGroups: SolutionGroup[];
+}): void {
+  if (input.rawGroups.length === 0 && input.mysqlGroups.length === 0) {
+    return;
+  }
+
+  if (input.rawGroups.length === 0 && input.mysqlGroups.length > 0) {
+    input.warnings.push(`solutions.${input.sceneKey} has no raw_json groups; active solution_groups rows were exported.`);
+    return;
+  }
+
+  if (input.rawGroups.length > 0 && input.mysqlGroups.length === 0) {
+    input.warnings.push(`solutions.${input.sceneKey} has raw_json groups but no active solution_groups rows; raw_json groups were preserved.`);
+    return;
+  }
+
+  if (input.rawGroups.length !== input.mysqlGroups.length) {
+    input.warnings.push(
+      `solutions.${input.sceneKey} group count (${input.rawGroups.length}) differs from active solution_groups count (${input.mysqlGroups.length}); raw_json groups were preserved.`,
+    );
+  }
+
+  const rawByKey = buildRecordMapByStableKey(input.rawGroups, solutionGroupStableKey);
+  const mysqlByKey = buildRecordMapByStableKey(input.mysqlGroups as unknown as Record<string, unknown>[], solutionGroupStableKey);
+
+  for (const [groupKey, rawGroup] of rawByKey.entries()) {
+    const mysqlGroup = mysqlByKey.get(groupKey);
+    if (!mysqlGroup) {
+      input.warnings.push(`solutions.${input.sceneKey} raw_json group ${groupKey} has no matching active solution_groups row.`);
+      continue;
+    }
+
+    for (const fieldName of ['title', 'slug', 'summary', 'sceneSlug'] as const) {
+      warnSolutionStringConflict({
+        warnings: input.warnings,
+        key: `${input.sceneKey}.${groupKey}`,
+        fieldName,
+        rawValue: rawGroup[fieldName],
+        mysqlValue: mysqlGroup[fieldName],
+      });
+    }
+    warnSolutionNumberConflict({
+      warnings: input.warnings,
+      key: `${input.sceneKey}.${groupKey}`,
+      fieldName: 'sortOrder',
+      rawValue: rawGroup.sortOrder,
+      mysqlValue: mysqlGroup.sortOrder,
+    });
+    warnSolutionBooleanConflict({
+      warnings: input.warnings,
+      key: `${input.sceneKey}.${groupKey}`,
+      fieldName: 'enabled',
+      rawValue: rawGroup.enabled,
+      mysqlValue: asMysqlBoolean(mysqlGroup.enabled, true),
+    });
+
+    warnSolutionItemDifferences({
+      warnings: input.warnings,
+      key: `${input.sceneKey}.${groupKey}`,
+      rawItems: rawRecordList(rawGroup.items),
+      mysqlItems: Array.isArray(mysqlGroup.items) ? mysqlGroup.items : [],
+    });
+  }
+
+  for (const groupKey of mysqlByKey.keys()) {
+    if (!rawByKey.has(groupKey)) {
+      input.warnings.push(`solutions.${input.sceneKey} active solution_groups row ${groupKey} is missing from raw_json groups.`);
+    }
+  }
+}
+
+function validateSolutionSceneSet(scenes: SolutionScene[], blockers: string[]): void {
+  if (scenes.length !== solutionSceneSlugs.length) {
+    blockers.push(`solutions export restored ${scenes.length} active scenes; expected fixed ${solutionSceneSlugs.length} scene structure.`);
+  }
+
+  const seenSlugs = new Set<SolutionSceneSlug>();
+  for (const scene of scenes) {
+    if (seenSlugs.has(scene.slug)) {
+      blockers.push(`solutions export restored duplicate scene "${scene.slug}".`);
+    }
+    seenSlugs.add(scene.slug);
+  }
+
+  for (const slug of solutionSceneSlugs) {
+    if (!seenSlugs.has(slug)) {
+      blockers.push(`solutions export is missing fixed scene "${slug}".`);
+    }
+  }
+}
+
+function validateSolutionVideoRules(scenes: SolutionScene[], blockers: string[]): void {
+  for (const scene of scenes) {
+    for (const group of scene.groups) {
+      const items = Array.isArray(group.items) ? group.items : [];
+      if (scene.slug === 'video-digital-assets') {
+        if (items.length > 1) {
+          blockers.push(`solutions.video-digital-assets group "${group.slug || group.id}" has more than one active item.`);
+        }
+        continue;
+      }
+
+      if (items.some((item) => item.fileType === 'video')) {
+        blockers.push(`solutions.${scene.slug} group "${group.slug || group.id}" contains a video item outside video-digital-assets.`);
+      }
+    }
+  }
+}
+
+function validateSolutionSplitVideoRules(groupsBySolutionId: Map<string, SolutionGroup[]>, blockers: string[]): void {
+  for (const groups of groupsBySolutionId.values()) {
+    for (const group of groups) {
+      const items = Array.isArray(group.items) ? group.items : [];
+      if (group.sceneSlug === 'video-digital-assets') {
+        if (items.length > 1) {
+          blockers.push(`solution_groups.${group.slug || group.id} has more than one active split item for video-digital-assets.`);
+        }
+        continue;
+      }
+
+      if (items.some((item) => item.fileType === 'video')) {
+        blockers.push(`solution_groups.${group.slug || group.id} has an active video split item outside video-digital-assets.`);
+      }
+    }
+  }
+}
+
+function buildSolutionSceneFromMysql(input: {
+  row: SolutionRow;
+  rawRecord: Record<string, unknown>;
+  mysqlGroups: SolutionGroup[];
+  index: number;
+  warnings: string[];
+  blockers: string[];
+}): SolutionScene {
+  const { row, rawRecord, mysqlGroups, index, warnings, blockers } = input;
+  const rawSlug = normalizeSolutionSceneSlug(rawRecord.slug);
+  const mysqlSlug = normalizeSolutionSceneSlug(row.slug);
+  const slug = rawSlug ?? mysqlSlug;
+  const key = slug ?? solutionRowKey(row, index);
+  const rawEnabledFallback = typeof rawRecord.enabled === 'boolean' ? rawRecord.enabled : true;
+  const mysqlEnabled = solutionStatusToEnabled(row.status, rawEnabledFallback);
+  const rawGroupsValue = rawRecord.groups;
+  const rawGroups = rawRecordList(rawGroupsValue);
+  const groups = Array.isArray(rawGroupsValue) ? rawGroupsValue as SolutionGroup[] : mysqlGroups;
+
+  if (!slug) {
+    blockers.push(`solutions.${solutionRowKey(row, index)} cannot restore required scene slug.`);
+  }
+
+  if (!pickString(rawRecord, ['name', 'title']) && !asString(row.title)) {
+    blockers.push(`solutions.${solutionRowKey(row, index)} cannot restore required scene name/title.`);
+  }
+
+  if (!Array.isArray(rawGroupsValue) && mysqlGroups.length > 0) {
+    warnings.push(`solutions.${key} raw_json has no groups array; active split groups were used for dry-run export.`);
+  }
+
+  if (Array.isArray(rawGroupsValue)) {
+    warnSolutionGroupDifferences({
+      warnings,
+      sceneKey: key,
+      rawGroups,
+      mysqlGroups,
+    });
+  }
+
+  warnSolutionStringConflict({
+    warnings,
+    key,
+    fieldName: 'slug',
+    rawValue: rawRecord.slug,
+    mysqlValue: row.slug,
+  });
+  warnSolutionStringConflict({
+    warnings,
+    key,
+    fieldName: 'name/title',
+    rawValue: rawRecord.name ?? rawRecord.title,
+    mysqlValue: row.title,
+  });
+  warnSolutionStringConflict({
+    warnings,
+    key,
+    fieldName: 'description/summary',
+    rawValue: rawRecord.description ?? rawRecord.summary,
+    mysqlValue: row.summary,
+  });
+  warnSolutionNumberConflict({
+    warnings,
+    key,
+    fieldName: 'sortOrder',
+    rawValue: rawRecord.sortOrder ?? rawRecord.sort_order,
+    mysqlValue: row.sort_order,
+  });
+  warnSolutionBooleanConflict({
+    warnings,
+    key,
+    fieldName: 'enabled/status',
+    rawValue: rawRecord.enabled,
+    mysqlValue: mysqlEnabled,
+  });
+
+  return {
+    slug: slug ?? 'other',
+    name: pickString(rawRecord, ['name', 'title']) || asString(row.title),
+    description: pickString(rawRecord, ['description', 'summary']) || asString(row.summary),
+    sortOrder: pickNumber(rawRecord, ['sortOrder', 'sort_order'], asNumber(row.sort_order, index + 1)),
+    enabled: typeof rawRecord.enabled === 'boolean' ? rawRecord.enabled : mysqlEnabled,
+    groups,
+  };
 }
 
 async function tableColumnExists(tableName: string, columnName: string): Promise<boolean> {
@@ -1427,6 +2039,165 @@ async function readCasesExport(definition: ExportModuleDefinition): Promise<Mysq
   };
 }
 
+async function readSolutionsExport(definition: ExportModuleDefinition): Promise<MysqlExportReadResult> {
+  const hasRawJsonColumn = await tableColumnExists('solutions', 'raw_json');
+  const rawJsonSelect = hasRawJsonColumn ? 'raw_json' : 'NULL AS raw_json';
+  const [solutionRows] = await getDbPool().query<SolutionRow[]>(
+    `SELECT
+       id AS mysql_id,
+       source_id,
+       title,
+       slug,
+       summary,
+       ${rawJsonSelect},
+       status,
+       sort_order,
+       published_at,
+       created_at,
+       updated_at
+     FROM solutions
+     WHERE deleted_at IS NULL
+     ORDER BY sort_order ASC, id ASC`,
+  );
+
+  const warnings: string[] = [];
+  const blockers: string[] = [];
+
+  if (!hasRawJsonColumn) {
+    warnings.push('solutions.raw_json column is absent; scenes are reconstructed from normalized split tables with reduced shape confidence.');
+  }
+
+  const [groupRows] = await getDbPool().query<SolutionGroupRow[]>(
+    `SELECT
+       id AS mysql_id,
+       solution_id,
+       source_id,
+       title,
+       slug,
+       summary,
+       scene_slug,
+       sort_order,
+       is_enabled,
+       created_at,
+       updated_at
+     FROM solution_groups
+     WHERE deleted_at IS NULL
+     ORDER BY solution_id ASC, sort_order ASC, id ASC`,
+  );
+
+  const [mediaRows] = await getDbPool().query<SolutionMediaItemRow[]>(
+    `SELECT
+       group_id,
+       source_id,
+       file_type,
+       media_url,
+       media_file_name,
+       media_display_name,
+       alt_text,
+       caption,
+       sort_order,
+       is_enabled,
+       created_at
+     FROM solution_media_items
+     WHERE deleted_at IS NULL
+     ORDER BY group_id ASC, sort_order ASC, id ASC`,
+  );
+
+  if (solutionRows.length === 0) {
+    blockers.push('No active solutions rows were found.');
+  }
+
+  const activeSolutionIds = new Set(solutionRows.map((row) => ownerIdKey(row.mysql_id)).filter((value): value is string => Boolean(value)));
+  const activeGroupIds = new Set(groupRows.map((row) => ownerIdKey(row.mysql_id)).filter((value): value is string => Boolean(value)));
+  const orphanGroupCount = groupRows.filter((row) => {
+    const solutionId = ownerIdKey(row.solution_id);
+    return solutionId !== null && !activeSolutionIds.has(solutionId);
+  }).length;
+  const orphanItemCount = mediaRows.filter((row) => {
+    const groupId = ownerIdKey(row.group_id);
+    return groupId !== null && !activeGroupIds.has(groupId);
+  }).length;
+
+  if (orphanGroupCount > 0) {
+    warnings.push(`${orphanGroupCount} active solution_groups rows reference inactive or missing solutions and were not exported.`);
+  }
+
+  if (orphanItemCount > 0) {
+    warnings.push(`${orphanItemCount} active solution_media_items rows reference inactive or missing groups and were not exported.`);
+  }
+
+  const itemsByGroupId = solutionItemsFromRows(mediaRows, warnings, blockers);
+  const groupsBySolutionId = solutionGroupsFromRows({
+    groupRows,
+    itemsByGroupId,
+    warnings,
+    blockers,
+  });
+
+  let rawJsonBaseCount = 0;
+  let missingRawJsonCount = 0;
+  const scenes = solutionRows.map((row, index) => {
+    const rawRecord = parseSolutionRawJson({ row, index, warnings, blockers });
+    if (Object.keys(rawRecord).length > 0) {
+      rawJsonBaseCount += 1;
+    } else {
+      missingRawJsonCount += 1;
+    }
+
+    const mysqlId = ownerIdKey(row.mysql_id);
+    return buildSolutionSceneFromMysql({
+      row,
+      rawRecord,
+      mysqlGroups: mysqlId ? groupsBySolutionId.get(mysqlId) ?? [] : [],
+      index,
+      warnings,
+      blockers,
+    });
+  }).sort((left, right) => left.sortOrder - right.sortOrder);
+
+  if (hasRawJsonColumn && missingRawJsonCount > 0) {
+    warnings.push(
+      `solutions.raw_json is missing or unusable for ${missingRawJsonCount} active rows; normalized table fields and split rows were used for those rows.`,
+    );
+  }
+
+  validateSolutionSceneSet(scenes, blockers);
+  validateSolutionVideoRules(scenes, blockers);
+  validateSolutionSplitVideoRules(groupsBySolutionId, blockers);
+
+  const exportedGroupCount = scenes.reduce((sum, scene) => sum + scene.groups.length, 0);
+  const exportedItemCount = scenes.reduce(
+    (sceneSum, scene) => sceneSum + scene.groups.reduce((groupSum, group) => groupSum + group.items.length, 0),
+    0,
+  );
+
+  return {
+    moduleName: definition.moduleName,
+    implemented: true,
+    status: blockers.length > 0 ? 'shape_risk' : 'exported',
+    data: scenes,
+    recordCount: scenes.length,
+    warnings,
+    blockers,
+    metrics: {
+      activeMysqlSolutionCount: solutionRows.length,
+      activeMysqlGroupCount: groupRows.length,
+      activeMysqlItemCount: mediaRows.length,
+      exportedSceneCount: scenes.length,
+      exportedGroupCount,
+      exportedItemCount,
+      rawJsonBaseCount,
+      missingRawJsonCount,
+      orphanGroupCount,
+      orphanItemCount,
+      usesMediaFiles: false,
+      wroteServerData: false,
+      wroteMysql: false,
+      canRollback: false,
+    },
+  };
+}
+
 export async function readMysqlExportedData(input: {
   definition: ExportModuleDefinition;
   exportStatus: ExportStatus;
@@ -1465,6 +2236,8 @@ export async function readMysqlExportedData(input: {
         return readArticlesExport(input.definition);
       case 'cases':
         return readCasesExport(input.definition);
+      case 'solutions':
+        return readSolutionsExport(input.definition);
       default:
         return emptyExportResult({
           definition: input.definition,

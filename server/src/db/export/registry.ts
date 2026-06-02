@@ -53,9 +53,9 @@ export const exportModuleRegistry: ExportModuleDefinition[] = [
     moduleName: 'solutions',
     jsonPath: 'server/data/solutions.json',
     mysqlTables: ['solutions', 'solution_groups', 'solution_media_items'],
-    exportStatus: 'skeleton_only',
+    exportStatus: 'implemented',
     riskLevel: 'high',
-    notes: ['Future export should use solutions.raw_json as the scene-shape base and validate active split rows.'],
+    notes: ['Exports active solution scenes from solutions.raw_json plus active solution_groups and solution_media_items split rows.'],
   },
   {
     moduleName: 'pages',
@@ -63,7 +63,7 @@ export const exportModuleRegistry: ExportModuleDefinition[] = [
     mysqlTables: ['pages', 'page_blocks', 'seo_settings'],
     exportStatus: 'skipped_empty_source',
     riskLevel: 'low',
-    notes: ['Current JSON source is expected to be empty in 22-6-5; keep as empty-source confirmation only.'],
+    notes: ['Current JSON source is expected to be empty in 22-6-6; keep as empty-source confirmation only.'],
   },
 ];
 

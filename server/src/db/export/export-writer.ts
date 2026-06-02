@@ -26,8 +26,8 @@ export function buildSkeletonExportPayload(input: {
     implemented: false,
     exportedData: null,
     note: input.exportStatus === 'skipped_empty_source'
-      ? 'This module is treated as empty-source/skipped in the 22-6-5 dry-run export.'
-      : 'MySQL-to-JSON export is not implemented for this module in the 22-6-5 dry-run export.',
+      ? 'This module is treated as empty-source/skipped in the 22-6-6 dry-run export.'
+      : 'MySQL-to-JSON export is not implemented for this module in the 22-6-6 dry-run export.',
   };
 }
 
@@ -113,5 +113,15 @@ export function buildSummary(manifest: ExportManifest): ExportSummary {
     wroteServerData: false,
     wroteMysql: false,
     canRollback: false,
+    moduleSummaries: manifest.moduleResults.map((result) => ({
+      moduleName: result.moduleName,
+      exportStatus: result.exportStatus,
+      diffStatus: result.diff.diffStatus,
+      sourceRecordCount: result.diff.sourceRecordCount,
+      exportedRecordCount: result.diff.exportedRecordCount,
+      warningCount: result.warnings.length,
+      blockerCount: result.blockers.length,
+      ...(result.mysqlExport.metrics ? { metrics: result.mysqlExport.metrics } : {}),
+    })),
   };
 }

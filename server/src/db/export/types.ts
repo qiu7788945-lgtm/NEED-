@@ -23,6 +23,7 @@ export type ExportDiffStatus =
   | 'not_implemented'
   | 'skipped_empty_source';
 export type ExportFieldDiffSeverity = 'info' | 'warning' | 'error';
+export type ExportMetrics = Record<string, string | number | boolean | null>;
 
 export type ExportModuleDefinition = {
   moduleName: ExportModuleName;
@@ -77,6 +78,7 @@ export type MysqlExportReadResult = {
   recordCount: number;
   warnings: string[];
   blockers: string[];
+  metrics?: ExportMetrics;
 };
 
 export type ExportFieldDiff = {
@@ -103,6 +105,7 @@ export type ModuleDiffReport = {
   fieldDiffs: ExportFieldDiff[];
   warnings: string[];
   blockers: string[];
+  metrics?: ExportMetrics;
   reason: string;
 };
 
@@ -128,7 +131,7 @@ export type ExportRisk = {
 };
 
 export type ExportManifest = {
-  exportVersion: '22-6-5';
+  exportVersion: '22-6-6';
   generatedAt: string;
   gitHead: string;
   branch: string;
@@ -141,6 +144,17 @@ export type ExportManifest = {
   canRollback: false;
   warnings: string[];
   blockers: string[];
+};
+
+export type ExportModuleSummary = {
+  moduleName: ExportModuleName;
+  exportStatus: ExportStatus;
+  diffStatus: ExportDiffStatus;
+  sourceRecordCount: number;
+  exportedRecordCount: number;
+  warningCount: number;
+  blockerCount: number;
+  metrics?: ExportMetrics;
 };
 
 export type ExportSummary = {
@@ -160,6 +174,7 @@ export type ExportSummary = {
   wroteServerData: false;
   wroteMysql: false;
   canRollback: false;
+  moduleSummaries: ExportModuleSummary[];
 };
 
 export type ExportRunResult = {

@@ -109,7 +109,7 @@ function buildRisks(): ExportRunResult['risks'] {
     {
       code: 'scenario_detail_pages_deferred',
       level: 'info',
-      message: 'scenario-detail-pages are deferred in 22-6-5; current JSON source is empty and outside the main export registry.',
+      message: 'scenario-detail-pages are deferred in 22-6-6; current JSON source is empty and outside the main export registry.',
     },
     {
       code: 'solution_pages_deferred',
@@ -119,7 +119,7 @@ function buildRisks(): ExportRunResult['risks'] {
     {
       code: 'write_mode_disabled',
       level: 'blocker',
-      message: '--write is disabled in 22-6-5 and must not overwrite server/data.',
+      message: '--write is disabled in 22-6-6 and must not overwrite server/data.',
     },
     {
       code: 'rollback_not_implemented',
@@ -139,7 +139,7 @@ function buildRisks(): ExportRunResult['risks'] {
     {
       code: 'real_api_tests_not_run',
       level: 'info',
-      message: 'No real API write tests are part of the 22-6-5 dry-run export.',
+      message: 'No real API write tests are part of the 22-6-6 dry-run export.',
     },
     {
       code: 'uploads_not_handled',
@@ -151,7 +151,7 @@ function buildRisks(): ExportRunResult['risks'] {
 
 export async function runExportDryRun(options: ExportCliOptions): Promise<ExportRunResult> {
   if (options.writeRequested) {
-    throw new Error('--write is not supported in 22-6-5. This dry-run export never overwrites server/data.');
+    throw new Error('--write is not supported in 22-6-6. This dry-run export never overwrites server/data.');
   }
 
   const projectRoot = process.cwd();
@@ -196,7 +196,7 @@ export async function runExportDryRun(options: ExportCliOptions): Promise<Export
   }
 
   const manifest: ExportManifest = {
-    exportVersion: '22-6-5',
+    exportVersion: '22-6-6',
     generatedAt: new Date().toISOString(),
     gitHead: readGitValue(['rev-parse', 'HEAD'], 'unknown'),
     branch: readGitValue(['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown'),
@@ -208,7 +208,7 @@ export async function runExportDryRun(options: ExportCliOptions): Promise<Export
     wroteMysql: false,
     canRollback: false,
     warnings: [
-      '22-6-5 is still dry-run only; implemented module exports are report artifacts, not official server/data writes.',
+      '22-6-6 is still dry-run only; implemented module exports are report artifacts, not official server/data writes.',
       'Diff reports compare current source JSON with MySQL-exported JSON and must not overwrite source files.',
     ],
     blockers: [

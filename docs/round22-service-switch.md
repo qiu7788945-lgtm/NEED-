@@ -1044,3 +1044,13 @@ The cases exporter reads active `cases` rows and looks up active `case_images`, 
 Case diff reports compare records by stable `slug` first and `id` second before field comparison. If raw JSON is missing, unparseable, or inconsistent with split rows, the dry-run report records warnings or blockers instead of treating the export as silently matched.
 
 After 22-6-5, implemented export modules are `contact-info`, `company-assets`, `home-video`, `home-interactive-images`, `articles`, and `cases`. `solutions` remains `skeleton_only`; `pages` remains empty-source/skipped. `media-library`, `scenario-detail-pages`, `solution_pages`, `solution_page_blocks`, and `publish-logs` remain deferred or non-blocking exactly as in earlier 22-6 steps.
+
+## 22-6-6 Solutions MySQL to JSON Dry-Run Export
+
+22-6-6 upgrades only the `solutions` export module from `skeleton_only` to `implemented`. It keeps the export-only boundary: no `server/data` overwrite, no MySQL write, no upload changes, no rollback implementation, and no frontend/admin/service/route/prerender/sitemap/robots changes.
+
+The solutions exporter reads active `solutions`, `solution_groups`, and `solution_media_items` rows. It uses `solutions.raw_json` as the preferred `SolutionScene` recovery base, preserves the current JSON shape when `raw_json.groups/items` are present, and uses split groups/items for validation and missing-shape reconstruction. It does not query `media_files`, does not infer solutions from the media library, and does not process `scenario-detail-pages`, `solution_pages`, or `solution_page_blocks`.
+
+The export preserves the fixed seven-scene structure and validates the `video-digital-assets` one-item group rule. Tombstoned rows with `deleted_at IS NOT NULL` stay out of the exported report artifacts, and `solution_media_items.media_id = NULL` remains valid because media-file association is outside this step.
+
+After 22-6-6, implemented export modules are `contact-info`, `company-assets`, `home-video`, `home-interactive-images`, `articles`, `cases`, and `solutions`. `pages` remains empty-source/skipped. `media-library`, `scenario-detail-pages`, `solution_pages`, `solution_page_blocks`, and `publish-logs` remain deferred or non-blocking exactly as in earlier 22-6 steps.

@@ -115,6 +115,24 @@ Case diff reports align source/exported arrays by stable `slug` first and `id` s
 
 `cases` now reports `exportStatus=implemented`. `solutions` remains `skeleton_only`; `pages` remains `skipped_empty_source` when the JSON source is empty. The exporter still never overwrites `server/data`, never writes MySQL, never modifies uploads, and does not implement rollback.
 
+## 22-6-6 Solutions Implemented Dry-Run Export
+
+22-6-6 keeps the same dry-run boundaries and upgrades `solutions` from `skeleton_only` to `implemented`.
+
+The solutions exporter reads only active MySQL rows:
+
+- `solutions` for the scene row and `raw_json` scene-shape base.
+- `solution_groups` for active grouped case/gallery sections.
+- `solution_media_items` for active group image/video items.
+
+It does not read `media_files`, does not touch uploads, does not process `media-library`, `scenario-detail-pages`, `solution_pages`, or `solution_page_blocks`, and does not export rows where `deleted_at IS NOT NULL`.
+
+`solutions.raw_json` is the preferred recovery base because it preserves the current `SolutionScene` JSON shape, including fixed scenes, `groups`, `items`, `enabled`, `sortOrder`, timestamps, and the special `video-digital-assets` image/video structure. When `raw_json.groups` exists, that shape is preserved and split rows are used for validation. When `raw_json` or `groups` is missing, the exporter reconstructs the smallest compatible shape from `solutions`, `solution_groups`, and `solution_media_items` and records warnings. Unparseable `raw_json`, missing fixed scenes, missing core media URL/file type, duplicate scenes, or invalid video-scene rules are reported as `shape_risk` / `error`.
+
+Solution diff reports align scenes by `slug`, groups by `slug` first and `id` second, and items by `id` first and `mediaUrl + sortOrder` second. This avoids order-only noise while still comparing scene fields, group fields, item fields, group counts, and item counts.
+
+`solutions` now reports `exportStatus=implemented`. Implemented export modules are `contact-info`, `company-assets`, `home-video`, `home-interactive-images`, `articles`, `cases`, and `solutions`; `pages` remains empty-source/skipped. `media-library`, `scenario-detail-pages`, `solution_pages`, `solution_page_blocks`, and `publish-logs` remain deferred or non-blocking exactly as in earlier 22-6 steps.
+
 ## Deferred Areas
 
 `media-library` is deferred because `media_files` is shared across modules and upload/delete rollback is not defined.
