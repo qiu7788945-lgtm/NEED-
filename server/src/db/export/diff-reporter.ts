@@ -24,6 +24,122 @@ function primitiveMatches(sourceValue: unknown, exportedValue: unknown): boolean
   return sourceValue === exportedValue;
 }
 
+function asDiffString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function stableArticleKey(value: unknown): string | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const slug = asDiffString(value.slug);
+  if (slug) {
+    return `slug:${slug}`;
+  }
+
+  const id = asDiffString(value.id);
+  return id ? `id:${id}` : null;
+}
+
+function articleFieldPath(key: string): string {
+  return `$[${key}]`;
+}
+
+function buildStableRecordMap(input: {
+  records: unknown[];
+  side: 'source' | 'exported';
+  fieldDiffs: ExportFieldDiff[];
+}): Map<string, unknown> {
+  const map = new Map<string, unknown>();
+
+  input.records.forEach((record, index) => {
+    const key = stableArticleKey(record);
+    if (!key) {
+      input.fieldDiffs.push({
+        fieldPath: `$[${index}]`,
+        sourceValue: input.side === 'source' ? record : undefined,
+        exportedValue: input.side === 'exported' ? record : undefined,
+        severity: 'error',
+        reason: `Article ${input.side} record has no stable slug or id key.`,
+      });
+      return;
+    }
+
+    if (map.has(key)) {
+      input.fieldDiffs.push({
+        fieldPath: articleFieldPath(key),
+        sourceValue: input.side === 'source' ? record : undefined,
+        exportedValue: input.side === 'exported' ? record : undefined,
+        severity: 'error',
+        reason: `Duplicate article ${input.side} record stable key.`,
+      });
+      return;
+    }
+
+    map.set(key, record);
+  });
+
+  return map;
+}
+
+function collectArticleFieldDiffs(sourceValue: unknown, exportedValue: unknown): ExportFieldDiff[] {
+  if (!Array.isArray(sourceValue) || !Array.isArray(exportedValue)) {
+    return collectFieldDiffs(sourceValue, exportedValue);
+  }
+
+  const fieldDiffs: ExportFieldDiff[] = [];
+  if (sourceValue.length !== exportedValue.length) {
+    fieldDiffs.push({
+      fieldPath: '$.length',
+      sourceValue: sourceValue.length,
+      exportedValue: exportedValue.length,
+      severity: 'warning',
+      reason: 'Article count differs between source JSON and exported JSON.',
+    });
+  }
+
+  const sourceMap = buildStableRecordMap({ records: sourceValue, side: 'source', fieldDiffs });
+  const exportedMap = buildStableRecordMap({ records: exportedValue, side: 'exported', fieldDiffs });
+  const sourceKeys = Array.from(sourceMap.keys());
+  const allKeys = Array.from(new Set([...sourceKeys, ...exportedMap.keys()])).sort((left, right) => {
+    const leftIndex = sourceKeys.indexOf(left);
+    const rightIndex = sourceKeys.indexOf(right);
+    if (leftIndex >= 0 && rightIndex >= 0) {
+      return leftIndex - rightIndex;
+    }
+    if (leftIndex >= 0) {
+      return -1;
+    }
+    if (rightIndex >= 0) {
+      return 1;
+    }
+    return left.localeCompare(right);
+  });
+
+  for (const key of allKeys) {
+    const sourceRecord = sourceMap.get(key);
+    const exportedRecord = exportedMap.get(key);
+
+    if (sourceRecord === undefined || exportedRecord === undefined) {
+      fieldDiffs.push({
+        fieldPath: articleFieldPath(key),
+        sourceValue: sourceRecord,
+        exportedValue: exportedRecord,
+        severity: 'error',
+        reason: sourceRecord === undefined
+          ? 'Exported article record has no matching source record by slug/id.'
+          : 'Source article record has no matching exported record by slug/id.',
+      });
+      continue;
+    }
+
+    fieldDiffs.push(...collectFieldDiffs(sourceRecord, exportedRecord, articleFieldPath(key)));
+  }
+
+  return fieldDiffs;
+}
+
 function collectFieldDiffs(sourceValue: unknown, exportedValue: unknown, basePath = ''): ExportFieldDiff[] {
   if (Array.isArray(sourceValue) || Array.isArray(exportedValue)) {
     if (!Array.isArray(sourceValue) || !Array.isArray(exportedValue)) {
@@ -213,13 +329,15 @@ export function buildModuleDiffReport(input: {
       warnings: mysqlExport.warnings,
       blockers: mysqlExport.blockers,
       reason: exportStatus === 'skipped_empty_source'
-        ? 'Current source is empty or intentionally skipped in the 22-6-3 dry-run export.'
-        : 'MySQL-to-JSON export is not implemented for this module in 22-6-3.',
+        ? 'Current source is empty or intentionally skipped in the 22-6-4 dry-run export.'
+        : 'MySQL-to-JSON export is not implemented for this module in 22-6-4.',
     };
   }
 
   const fieldDiffs = mysqlExport.status === 'exported' || mysqlExport.status === 'shape_risk'
-    ? collectFieldDiffs(source.data, mysqlExport.data)
+    ? (definition.moduleName === 'articles'
+        ? collectArticleFieldDiffs(source.data, mysqlExport.data)
+        : collectFieldDiffs(source.data, mysqlExport.data))
     : [];
   const diffStatus = mysqlExport.status === 'shape_risk'
     ? 'error'

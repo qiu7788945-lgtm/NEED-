@@ -1,4 +1,10 @@
 import type { RowDataPacket } from 'mysql2/promise';
+import type {
+  Article,
+  ArticleCategory,
+  ArticleFaqItem,
+  ArticleStatus,
+} from '../../../../shared/types/article.js';
 import { getDbPool, getSafeDatabaseConfig } from '../client.js';
 import type {
   ExportModuleDefinition,
@@ -47,11 +53,58 @@ type HomeInteractiveImageRow = RowDataPacket & {
   media_file_name: unknown;
 };
 
+type ArticleRow = RowDataPacket & {
+  mysql_id: unknown;
+  source_id: unknown;
+  title: unknown;
+  slug: unknown;
+  summary: unknown;
+  content: unknown;
+  category_slug: unknown;
+  category_join_slug: unknown;
+  category_name: unknown;
+  status: unknown;
+  sort_order: unknown;
+  published_at: unknown;
+  created_at: unknown;
+  updated_at: unknown;
+  raw_json?: unknown;
+};
+
+type ArticleSeoRow = RowDataPacket & {
+  owner_source_id: unknown;
+  owner_id: unknown;
+  title: unknown;
+  description: unknown;
+  keywords: unknown;
+};
+
+type ArticleFaqRow = RowDataPacket & {
+  owner_source_id: unknown;
+  owner_id: unknown;
+  question: unknown;
+  answer: unknown;
+  sort_order: unknown;
+  status: unknown;
+};
+
 const implementedExportModules = new Set<ExportModuleName>([
   'contact-info',
   'company-assets',
   'home-video',
   'home-interactive-images',
+  'articles',
+]);
+
+const allowedArticleCategories = new Set<ArticleCategory>([
+  'how_to_choose',
+  'choose_between_two',
+  'method_judgment',
+]);
+const allowedArticleStatuses = new Set<ArticleStatus>([
+  'draft',
+  'published',
+  'offline',
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -146,6 +199,17 @@ function pickBoolean(record: Record<string, unknown>, keys: string[], fallback: 
   return fallback;
 }
 
+function pickArray(record: Record<string, unknown>, keys: string[]): unknown[] {
+  for (const key of keys) {
+    const value = record[key];
+    if (Array.isArray(value)) {
+      return value;
+    }
+  }
+
+  return [];
+}
+
 function toIsoString(value: unknown): string {
   if (value instanceof Date) {
     return value.toISOString();
@@ -157,6 +221,138 @@ function toIsoString(value: unknown): string {
   }
 
   return '';
+}
+
+function ownerIdKey(value: unknown): string | null {
+  const text = String(value ?? '').trim();
+  return text || null;
+}
+
+function ownerSourceKey(value: unknown): string | null {
+  return asString(value) || null;
+}
+
+function addToMapList<T>(map: Map<string, T[]>, key: string | null, value: T): void {
+  if (!key) {
+    return;
+  }
+
+  const existing = map.get(key) ?? [];
+  existing.push(value);
+  map.set(key, existing);
+}
+
+function normalizeArticleCategory(value: unknown): ArticleCategory | null {
+  const category = asString(value);
+  return allowedArticleCategories.has(category as ArticleCategory)
+    ? category as ArticleCategory
+    : null;
+}
+
+function normalizeArticleStatus(value: unknown): ArticleStatus | null {
+  const status = asString(value);
+  return allowedArticleStatuses.has(status as ArticleStatus)
+    ? status as ArticleStatus
+    : null;
+}
+
+function buildArticleSeoLookup(rows: ArticleSeoRow[]) {
+  const byOwnerId = new Map<string, ArticleSeoRow>();
+  const byOwnerSourceId = new Map<string, ArticleSeoRow>();
+
+  for (const row of rows) {
+    const ownerId = ownerIdKey(row.owner_id);
+    const ownerSourceId = ownerSourceKey(row.owner_source_id);
+
+    if (ownerId) {
+      byOwnerId.set(ownerId, row);
+    }
+
+    if (ownerSourceId) {
+      byOwnerSourceId.set(ownerSourceId, row);
+    }
+  }
+
+  return { byOwnerId, byOwnerSourceId };
+}
+
+function buildArticleFaqLookup(rows: ArticleFaqRow[]) {
+  const byOwnerId = new Map<string, ArticleFaqRow[]>();
+  const byOwnerSourceId = new Map<string, ArticleFaqRow[]>();
+
+  for (const row of rows) {
+    addToMapList(byOwnerId, ownerIdKey(row.owner_id), row);
+    addToMapList(byOwnerSourceId, ownerSourceKey(row.owner_source_id), row);
+  }
+
+  return { byOwnerId, byOwnerSourceId };
+}
+
+function findArticleSeo(input: {
+  lookupByOwnerId: Map<string, ArticleSeoRow>;
+  lookupByOwnerSourceId: Map<string, ArticleSeoRow>;
+  mysqlId: unknown;
+  ownerSourceId: string;
+  slug: string;
+}): ArticleSeoRow | undefined {
+  return input.lookupByOwnerSourceId.get(input.ownerSourceId)
+    ?? input.lookupByOwnerSourceId.get(input.slug)
+    ?? input.lookupByOwnerId.get(ownerIdKey(input.mysqlId) ?? '');
+}
+
+function findArticleFaqRows(input: {
+  lookupByOwnerId: Map<string, ArticleFaqRow[]>;
+  lookupByOwnerSourceId: Map<string, ArticleFaqRow[]>;
+  mysqlId: unknown;
+  ownerSourceId: string;
+  slug: string;
+}): ArticleFaqRow[] {
+  return input.lookupByOwnerSourceId.get(input.ownerSourceId)
+    ?? input.lookupByOwnerSourceId.get(input.slug)
+    ?? input.lookupByOwnerId.get(ownerIdKey(input.mysqlId) ?? '')
+    ?? [];
+}
+
+function toArticleFaqItems(rows: ArticleFaqRow[]): ArticleFaqItem[] {
+  return rows
+    .filter((row) => {
+      const status = asString(row.status).toLowerCase();
+      return status !== 'disabled' && status !== 'inactive' && status !== 'offline';
+    })
+    .sort((left, right) => asNumber(left.sort_order, 0) - asNumber(right.sort_order, 0))
+    .map((row) => ({
+      question: asString(row.question),
+      answer: asString(row.answer),
+    }))
+    .filter((item) => item.question || item.answer);
+}
+
+function rawArticleFaqItems(rawRecord: Record<string, unknown>): ArticleFaqItem[] {
+  return pickArray(rawRecord, ['faqItems', 'faq_items'])
+    .map((item) => {
+      if (!isRecord(item)) {
+        return null;
+      }
+
+      return {
+        question: pickString(item, ['question', 'q']),
+        answer: pickString(item, ['answer', 'a']),
+      };
+    })
+    .filter((item): item is ArticleFaqItem => item !== null && Boolean(item.question || item.answer));
+}
+
+async function tableColumnExists(tableName: string, columnName: string): Promise<boolean> {
+  const [rows] = await getDbPool().query<(RowDataPacket & { count: unknown })[]>(
+    `SELECT COUNT(*) AS count
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE()
+       AND TABLE_NAME = ?
+       AND COLUMN_NAME = ?`,
+    [tableName, columnName],
+  );
+
+  return asNumber(rows[0]?.count, 0) > 0;
 }
 
 function emptyExportResult(input: {
@@ -452,6 +648,225 @@ async function readHomeInteractiveImagesExport(definition: ExportModuleDefinitio
   };
 }
 
+function articleKey(row: ArticleRow, index: number): string {
+  return asString(row.source_id) || asString(row.slug) || String(row.mysql_id ?? `row_${index + 1}`);
+}
+
+function parseArticleRawJson(input: {
+  row: ArticleRow;
+  index: number;
+  warnings: string[];
+  blockers: string[];
+}): Record<string, unknown> {
+  const rawValue = input.row.raw_json;
+  if (rawValue === null || rawValue === undefined || rawValue === '') {
+    return {};
+  }
+
+  try {
+    const parsed = parseJsonColumn(rawValue);
+    if (isRecord(parsed)) {
+      return parsed;
+    }
+
+    input.warnings.push(`articles.${articleKey(input.row, input.index)} raw_json is not an object; table fields were used.`);
+    return {};
+  } catch (error) {
+    input.blockers.push(
+      `articles.${articleKey(input.row, input.index)} raw_json could not be parsed: ${
+        error instanceof Error ? error.message : 'invalid JSON'
+      }.`,
+    );
+    return {};
+  }
+}
+
+function buildArticleFromMysql(input: {
+  row: ArticleRow;
+  rawRecord: Record<string, unknown>;
+  seo?: ArticleSeoRow;
+  faqItems: ArticleFaqItem[];
+  index: number;
+  warnings: string[];
+  blockers: string[];
+}): Article {
+  const { row, rawRecord, seo, faqItems, index, warnings, blockers } = input;
+  const sourceId = asString(row.source_id);
+  const slug = asString(row.slug) || pickString(rawRecord, ['slug']);
+  const rawCategory = asString(row.category_slug)
+    || asString(row.category_join_slug)
+    || pickString(rawRecord, ['category', 'categorySlug', 'category_slug']);
+  const rawStatus = asString(row.status) || pickString(rawRecord, ['status']);
+  const category = normalizeArticleCategory(rawCategory);
+  const status = normalizeArticleStatus(rawStatus);
+  const title = asString(row.title) || pickString(rawRecord, ['title']);
+  const content = asString(row.content) || pickString(rawRecord, ['content', 'contentHtml', 'content_html', 'body']);
+  const rawFaqFallback = rawArticleFaqItems(rawRecord);
+  const outputFaqItems = faqItems.length > 0 ? faqItems : rawFaqFallback;
+  const seoTitle = asString(seo?.title) || pickString(rawRecord, ['seoTitle', 'seo_title']);
+  const seoDescription = asString(seo?.description) || pickString(rawRecord, ['seoDescription', 'seo_description']);
+  const keywords = asString(seo?.keywords) || pickString(rawRecord, ['keywords']);
+  const key = sourceId || slug || String(row.mysql_id ?? `row_${index + 1}`);
+
+  if (!title) {
+    blockers.push(`articles.${key} cannot restore required field: title.`);
+  }
+
+  if (!slug) {
+    blockers.push(`articles.${key} cannot restore required field: slug.`);
+  }
+
+  if (!rawCategory || !category) {
+    blockers.push(`articles.${key} has unsupported or missing category "${rawCategory}".`);
+  }
+
+  if (!rawStatus || !status) {
+    blockers.push(`articles.${key} has unsupported or missing status "${rawStatus}".`);
+  }
+
+  if (!content) {
+    blockers.push(`articles.${key} cannot restore required field: content.`);
+  }
+
+  if (!seoTitle && !seoDescription && !keywords) {
+    warnings.push(
+      seo
+        ? `articles.${key} has an empty article seo_settings row; SEO fields were reconstructed from raw_json or left empty.`
+        : `articles.${key} has no matching article seo_settings row; SEO fields were reconstructed from raw_json or left empty.`,
+    );
+  }
+
+  if (faqItems.length === 0 && rawFaqFallback.length > 0) {
+    warnings.push(`articles.${key} has no matching active faq_items rows; FAQ fields were reconstructed from raw_json.`);
+  }
+
+  return {
+    id: sourceId || pickString(rawRecord, ['id', 'sourceId', 'source_id']) || slug || String(row.mysql_id ?? index + 1),
+    title,
+    slug,
+    category: (category ?? rawCategory) as ArticleCategory,
+    summary: asString(row.summary) || pickString(rawRecord, ['summary', 'excerpt', 'description']),
+    content,
+    sortOrder: asNumber(row.sort_order, pickNumber(rawRecord, ['sortOrder', 'sort_order'], index + 1)),
+    status: (status ?? rawStatus) as ArticleStatus,
+    seoTitle,
+    seoDescription,
+    keywords,
+    faqItems: outputFaqItems,
+    createdAt: toIsoString(row.created_at) || pickString(rawRecord, ['createdAt', 'created_at']),
+    updatedAt: toIsoString(row.updated_at) || pickString(rawRecord, ['updatedAt', 'updated_at']),
+  };
+}
+
+async function readArticlesExport(definition: ExportModuleDefinition): Promise<MysqlExportReadResult> {
+  const hasRawJsonColumn = await tableColumnExists('articles', 'raw_json');
+  const rawJsonSelect = hasRawJsonColumn ? 'a.raw_json' : 'NULL AS raw_json';
+  const [articleRows] = await getDbPool().query<ArticleRow[]>(
+    `SELECT
+       a.id AS mysql_id,
+       a.source_id,
+       a.title,
+       a.slug,
+       a.summary,
+       a.content,
+       COALESCE(a.category_slug, c.slug) AS category_slug,
+       c.slug AS category_join_slug,
+       c.name AS category_name,
+       a.status,
+       a.sort_order,
+       a.published_at,
+       a.created_at,
+       a.updated_at,
+       ${rawJsonSelect}
+     FROM articles a
+     LEFT JOIN article_categories c
+       ON c.id = a.category_id
+      AND c.deleted_at IS NULL
+     WHERE a.deleted_at IS NULL
+     ORDER BY a.sort_order ASC, a.updated_at DESC, a.id ASC`,
+  );
+
+  const warnings: string[] = [];
+  const blockers: string[] = [];
+
+  if (!hasRawJsonColumn) {
+    warnings.push(
+      'articles.raw_json column is absent; articles are reconstructed from articles, article_categories, seo_settings, and faq_items.',
+    );
+  }
+
+  const [seoRows] = await getDbPool().query<ArticleSeoRow[]>(
+    `SELECT owner_source_id, owner_id, title, description, keywords
+     FROM seo_settings
+     WHERE owner_type = 'article'
+       AND deleted_at IS NULL`,
+  );
+  const [faqRows] = await getDbPool().query<ArticleFaqRow[]>(
+    `SELECT owner_source_id, owner_id, question, answer, sort_order, status
+     FROM faq_items
+     WHERE owner_type = 'article'
+       AND deleted_at IS NULL
+     ORDER BY sort_order ASC, id ASC`,
+  );
+  const seoLookup = buildArticleSeoLookup(seoRows);
+  const faqLookup = buildArticleFaqLookup(faqRows);
+  let missingRawJsonCount = 0;
+
+  const articles = articleRows.map((row, index) => {
+    const rawRecord = parseArticleRawJson({ row, index, warnings, blockers });
+    if (!isRecord(rawRecord) || Object.keys(rawRecord).length === 0) {
+      missingRawJsonCount += 1;
+    }
+
+    const ownerSourceId = asString(row.source_id) || asString(row.slug) || pickString(rawRecord, ['id', 'slug']);
+    const slug = asString(row.slug) || pickString(rawRecord, ['slug']);
+    const seo = findArticleSeo({
+      lookupByOwnerId: seoLookup.byOwnerId,
+      lookupByOwnerSourceId: seoLookup.byOwnerSourceId,
+      mysqlId: row.mysql_id,
+      ownerSourceId,
+      slug,
+    });
+    const ownerFaqRows = findArticleFaqRows({
+      lookupByOwnerId: faqLookup.byOwnerId,
+      lookupByOwnerSourceId: faqLookup.byOwnerSourceId,
+      mysqlId: row.mysql_id,
+      ownerSourceId,
+      slug,
+    });
+
+    return buildArticleFromMysql({
+      row,
+      rawRecord,
+      seo,
+      faqItems: toArticleFaqItems(ownerFaqRows),
+      index,
+      warnings,
+      blockers,
+    });
+  });
+
+  if (hasRawJsonColumn && missingRawJsonCount > 0) {
+    warnings.push(
+      `articles.raw_json is missing or unusable for ${missingRawJsonCount} active rows; normalized table fields were used for those rows.`,
+    );
+  }
+
+  if (articleRows.length === 0) {
+    blockers.push('No active articles rows were found.');
+  }
+
+  return {
+    moduleName: definition.moduleName,
+    implemented: true,
+    status: blockers.length > 0 ? 'shape_risk' : 'exported',
+    data: articles,
+    recordCount: articleRows.length,
+    warnings,
+    blockers,
+  };
+}
+
 export async function readMysqlExportedData(input: {
   definition: ExportModuleDefinition;
   exportStatus: ExportStatus;
@@ -486,6 +901,8 @@ export async function readMysqlExportedData(input: {
         return readHomeVideoExport(input.definition);
       case 'home-interactive-images':
         return readHomeInteractiveImagesExport(input.definition);
+      case 'articles':
+        return readArticlesExport(input.definition);
       default:
         return emptyExportResult({
           definition: input.definition,

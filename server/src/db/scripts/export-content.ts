@@ -17,7 +17,7 @@ Options:
                        Supported: all, ${exportModuleNames.join(', ')}
   --output-dir <path>  Optional output directory. Must not be inside server/data or server/uploads.
   --format json        JSON output only.
-  --write              Rejected in 22-6-3; server/data is never overwritten.`);
+  --write              Rejected in 22-6-4; server/data is never overwritten.`);
 }
 
 function isExportModuleName(value: string): value is ExportModuleName {
@@ -68,7 +68,7 @@ function parseCliOptions(args: string[]): ExportCliOptions {
     if (arg === '--format') {
       const format = args[index + 1];
       if (format !== 'json') {
-        throw new Error('Only --format json is supported in 22-6-3.');
+        throw new Error('Only --format json is supported in 22-6-4.');
       }
 
       options.format = 'json';

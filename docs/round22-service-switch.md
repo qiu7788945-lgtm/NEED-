@@ -1020,3 +1020,15 @@ The step is still dry-run only. It does not overwrite `server/data`, does not wr
 The implemented modules read MySQL and write only export artifacts under `server/data-exports/mysql-json-export/<timestamp>/`. Their `exported.json` files contain restored JSON shapes, and their `diff.json` files record `diffStatus`, field-level differences, source/exported counts, warnings, and blockers. `contact-info`, `company-assets`, and `home-interactive-images` can match the current source JSON exactly when MySQL contains the migrated values. `home-video` may warn on `updatedAt` if the MySQL row timestamp differs from the historical JSON timestamp.
 
 `articles`, `cases`, and `solutions` remain `skeleton_only`; `pages` remains empty-source/skipped. `media-library`, `scenario-detail-pages`, `solution_pages`, `solution_page_blocks`, and `publish-logs` remain deferred or non-blocking exactly as in 22-6-2. `--write` remains disabled and must fail safely with `wroteServerData=false` and `wroteMysql=false`.
+
+## 22-6-4 Articles MySQL to JSON Dry-Run Export
+
+22-6-4 upgrades only the `articles` export module from `skeleton_only` to `implemented`. It keeps the same dry-run boundary: no `server/data` overwrite, no MySQL write, no upload changes, no rollback implementation, and no frontend/admin/service/route/prerender/sitemap/robots changes.
+
+The articles exporter reads active `articles` rows and joins or looks up `article_categories`, `seo_settings` with `owner_type = 'article'`, and `faq_items` with `owner_type = 'article'`. It restores the existing article JSON shape: `id`, `title`, `slug`, `category`, `summary`, `content`, `sortOrder`, `status`, `seoTitle`, `seoDescription`, `keywords`, `faqItems`, `createdAt`, and `updatedAt`.
+
+If an `articles.raw_json` column exists, the exporter can use it as the JSON-shape base. The normalized table fields, category slug, SEO row, FAQ rows, ordering, status, and timestamps are still overlaid for validation against the split MySQL tables. If `raw_json` is absent, the export is reconstructed from those normalized tables and the report records a warning. If `raw_json` is unparseable or required core fields cannot be restored, the module reports `shape_risk` / `error`.
+
+Article diff reports compare records by stable `slug` first and `id` second before field comparison, which keeps ordering differences from masking real source/export mismatches.
+
+After 22-6-4, implemented export modules are `contact-info`, `company-assets`, `home-video`, `home-interactive-images`, and `articles`. `cases` and `solutions` remain `skeleton_only`; `pages` remains empty-source/skipped. `media-library`, `scenario-detail-pages`, `solution_pages`, `solution_page_blocks`, and `publish-logs` remain deferred or non-blocking exactly as in 22-6-2/22-6-3.

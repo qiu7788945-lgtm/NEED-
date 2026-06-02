@@ -72,6 +72,30 @@ For implemented modules, `modules/<module-name>/exported.json` contains the rest
 
 The exporter must not hide differences. If MySQL is unavailable, implemented modules report `mysql_unavailable` and do not pretend to match. If the core JSON shape cannot be restored, the module reports `error` / `shape_risk`. Non-core media metadata gaps are warnings only.
 
+## 22-6-4 Articles Implemented Dry-Run Export
+
+22-6-4 keeps the same dry-run boundaries and upgrades `articles` from `skeleton_only` to `implemented`.
+
+The articles exporter reads only active MySQL rows:
+
+- `articles` for the article scalar fields and stable source key.
+- `article_categories` for category slug fallback.
+- `seo_settings` with `owner_type = 'article'` for `seoTitle`, `seoDescription`, and `keywords`.
+- `faq_items` with `owner_type = 'article'` for active `faqItems`.
+
+If an `articles.raw_json` column exists, it is used as the JSON-shape base where available. The exporter then overlays the normalized article table fields, SEO rows, FAQ rows, ordering, status, and timestamps so the output remains the existing `Article` shape:
+
+```text
+id, title, slug, category, summary, content, sortOrder, status,
+seoTitle, seoDescription, keywords, faqItems, createdAt, updatedAt
+```
+
+If `articles.raw_json` is absent or missing for some rows, the exporter reconstructs the shape from normalized tables and records a warning. If `raw_json` exists but cannot be parsed, or if required core article fields cannot be restored, the module reports `shape_risk` / `error` rather than pretending to match.
+
+Article diff reports align source/exported arrays by stable `slug` first and `id` second before comparing fields, so ordering differences do not hide real slug/key mismatches or create noisy cross-record diffs.
+
+`articles` now reports `exportStatus=implemented`. `cases` and `solutions` remain `skeleton_only`; `pages` remains `skipped_empty_source` when the JSON source is empty. The exporter still never overwrites `server/data`, never writes MySQL, never modifies uploads, and does not implement rollback.
+
 ## Deferred Areas
 
 `media-library` is deferred because `media_files` is shared across modules and upload/delete rollback is not defined.
@@ -106,11 +130,13 @@ npm.cmd run export:content -- --module company-assets
 npm.cmd run export:content -- --module home-video
 npm.cmd run export:content -- --module home-interactive-images
 npm.cmd run export:content -- --module articles
+npm.cmd run export:content -- --module cases
+npm.cmd run export:content -- --module solutions
 npm.cmd run export:content -- --write
 npm.cmd run build:prerender
 ```
 
-The `--write` command must fail safely and must not overwrite `server/data`. Low-risk module dry-runs may report `matched`, `warning`, `error`, or `mysql_unavailable`; skeleton modules must not present skeleton payloads as matched exports.
+The `--write` command must fail safely and must not overwrite `server/data`. Implemented module dry-runs may report `matched`, `warning`, `error`, or `mysql_unavailable`; skeleton modules must not present skeleton payloads as matched exports.
 
 No-MySQL validation should also run with all `MYSQL_*` variables removed:
 

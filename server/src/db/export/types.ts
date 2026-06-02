@@ -128,7 +128,7 @@ export type ExportRisk = {
 };
 
 export type ExportManifest = {
-  exportVersion: '22-6-3';
+  exportVersion: '22-6-4';
   generatedAt: string;
   gitHead: string;
   branch: string;

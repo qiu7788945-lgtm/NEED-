@@ -37,9 +37,9 @@ export const exportModuleRegistry: ExportModuleDefinition[] = [
     moduleName: 'articles',
     jsonPath: 'server/data/articles.json',
     mysqlTables: ['articles', 'article_categories', 'seo_settings', 'faq_items'],
-    exportStatus: 'skeleton_only',
+    exportStatus: 'implemented',
     riskLevel: 'medium',
-    notes: ['Future export should merge article rows with category, SEO, and FAQ rows into articles.json shape.'],
+    notes: ['Exports active article rows and merges category, SEO, and FAQ rows into the articles.json shape.'],
   },
   {
     moduleName: 'cases',
@@ -63,7 +63,7 @@ export const exportModuleRegistry: ExportModuleDefinition[] = [
     mysqlTables: ['pages', 'page_blocks', 'seo_settings'],
     exportStatus: 'skipped_empty_source',
     riskLevel: 'low',
-    notes: ['Current JSON source is expected to be empty in 22-6-3; keep as empty-source confirmation only.'],
+    notes: ['Current JSON source is expected to be empty in 22-6-4; keep as empty-source confirmation only.'],
   },
 ];
 
