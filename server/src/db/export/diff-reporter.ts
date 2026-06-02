@@ -28,7 +28,7 @@ function asDiffString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
-function stableArticleKey(value: unknown): string | null {
+function stableContentKey(value: unknown): string | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -42,11 +42,12 @@ function stableArticleKey(value: unknown): string | null {
   return id ? `id:${id}` : null;
 }
 
-function articleFieldPath(key: string): string {
+function stableRecordFieldPath(key: string): string {
   return `$[${key}]`;
 }
 
 function buildStableRecordMap(input: {
+  moduleLabel: string;
   records: unknown[];
   side: 'source' | 'exported';
   fieldDiffs: ExportFieldDiff[];
@@ -54,25 +55,25 @@ function buildStableRecordMap(input: {
   const map = new Map<string, unknown>();
 
   input.records.forEach((record, index) => {
-    const key = stableArticleKey(record);
+    const key = stableContentKey(record);
     if (!key) {
       input.fieldDiffs.push({
         fieldPath: `$[${index}]`,
         sourceValue: input.side === 'source' ? record : undefined,
         exportedValue: input.side === 'exported' ? record : undefined,
         severity: 'error',
-        reason: `Article ${input.side} record has no stable slug or id key.`,
+        reason: `${input.moduleLabel} ${input.side} record has no stable slug or id key.`,
       });
       return;
     }
 
     if (map.has(key)) {
       input.fieldDiffs.push({
-        fieldPath: articleFieldPath(key),
+        fieldPath: stableRecordFieldPath(key),
         sourceValue: input.side === 'source' ? record : undefined,
         exportedValue: input.side === 'exported' ? record : undefined,
         severity: 'error',
-        reason: `Duplicate article ${input.side} record stable key.`,
+        reason: `Duplicate ${input.moduleLabel.toLowerCase()} ${input.side} record stable key.`,
       });
       return;
     }
@@ -83,7 +84,12 @@ function buildStableRecordMap(input: {
   return map;
 }
 
-function collectArticleFieldDiffs(sourceValue: unknown, exportedValue: unknown): ExportFieldDiff[] {
+function collectStableRecordFieldDiffs(input: {
+  moduleLabel: string;
+  sourceValue: unknown;
+  exportedValue: unknown;
+}): ExportFieldDiff[] {
+  const { moduleLabel, sourceValue, exportedValue } = input;
   if (!Array.isArray(sourceValue) || !Array.isArray(exportedValue)) {
     return collectFieldDiffs(sourceValue, exportedValue);
   }
@@ -95,12 +101,12 @@ function collectArticleFieldDiffs(sourceValue: unknown, exportedValue: unknown):
       sourceValue: sourceValue.length,
       exportedValue: exportedValue.length,
       severity: 'warning',
-      reason: 'Article count differs between source JSON and exported JSON.',
+      reason: `${moduleLabel} count differs between source JSON and exported JSON.`,
     });
   }
 
-  const sourceMap = buildStableRecordMap({ records: sourceValue, side: 'source', fieldDiffs });
-  const exportedMap = buildStableRecordMap({ records: exportedValue, side: 'exported', fieldDiffs });
+  const sourceMap = buildStableRecordMap({ moduleLabel, records: sourceValue, side: 'source', fieldDiffs });
+  const exportedMap = buildStableRecordMap({ moduleLabel, records: exportedValue, side: 'exported', fieldDiffs });
   const sourceKeys = Array.from(sourceMap.keys());
   const allKeys = Array.from(new Set([...sourceKeys, ...exportedMap.keys()])).sort((left, right) => {
     const leftIndex = sourceKeys.indexOf(left);
@@ -123,18 +129,18 @@ function collectArticleFieldDiffs(sourceValue: unknown, exportedValue: unknown):
 
     if (sourceRecord === undefined || exportedRecord === undefined) {
       fieldDiffs.push({
-        fieldPath: articleFieldPath(key),
+        fieldPath: stableRecordFieldPath(key),
         sourceValue: sourceRecord,
         exportedValue: exportedRecord,
         severity: 'error',
         reason: sourceRecord === undefined
-          ? 'Exported article record has no matching source record by slug/id.'
-          : 'Source article record has no matching exported record by slug/id.',
+          ? `Exported ${moduleLabel.toLowerCase()} record has no matching source record by slug/id.`
+          : `Source ${moduleLabel.toLowerCase()} record has no matching exported record by slug/id.`,
       });
       continue;
     }
 
-    fieldDiffs.push(...collectFieldDiffs(sourceRecord, exportedRecord, articleFieldPath(key)));
+    fieldDiffs.push(...collectFieldDiffs(sourceRecord, exportedRecord, stableRecordFieldPath(key)));
   }
 
   return fieldDiffs;
@@ -329,14 +335,18 @@ export function buildModuleDiffReport(input: {
       warnings: mysqlExport.warnings,
       blockers: mysqlExport.blockers,
       reason: exportStatus === 'skipped_empty_source'
-        ? 'Current source is empty or intentionally skipped in the 22-6-4 dry-run export.'
-        : 'MySQL-to-JSON export is not implemented for this module in 22-6-4.',
+        ? 'Current source is empty or intentionally skipped in the 22-6-5 dry-run export.'
+        : 'MySQL-to-JSON export is not implemented for this module in 22-6-5.',
     };
   }
 
   const fieldDiffs = mysqlExport.status === 'exported' || mysqlExport.status === 'shape_risk'
-    ? (definition.moduleName === 'articles'
-        ? collectArticleFieldDiffs(source.data, mysqlExport.data)
+    ? (definition.moduleName === 'articles' || definition.moduleName === 'cases'
+        ? collectStableRecordFieldDiffs({
+            moduleLabel: definition.moduleName === 'articles' ? 'Article' : 'Case',
+            sourceValue: source.data,
+            exportedValue: mysqlExport.data,
+          })
         : collectFieldDiffs(source.data, mysqlExport.data))
     : [];
   const diffStatus = mysqlExport.status === 'shape_risk'

@@ -45,9 +45,9 @@ export const exportModuleRegistry: ExportModuleDefinition[] = [
     moduleName: 'cases',
     jsonPath: 'server/data/cases.json',
     mysqlTables: ['cases', 'case_images', 'seo_settings', 'faq_items'],
-    exportStatus: 'skeleton_only',
+    exportStatus: 'implemented',
     riskLevel: 'high',
-    notes: ['Future export should use cases.raw_json as the JSON-shape base and validate active case_images.'],
+    notes: ['Exports active cases from raw_json plus cases, case_images, SEO, and FAQ split tables.'],
   },
   {
     moduleName: 'solutions',
@@ -63,7 +63,7 @@ export const exportModuleRegistry: ExportModuleDefinition[] = [
     mysqlTables: ['pages', 'page_blocks', 'seo_settings'],
     exportStatus: 'skipped_empty_source',
     riskLevel: 'low',
-    notes: ['Current JSON source is expected to be empty in 22-6-4; keep as empty-source confirmation only.'],
+    notes: ['Current JSON source is expected to be empty in 22-6-5; keep as empty-source confirmation only.'],
   },
 ];
 

@@ -1032,3 +1032,15 @@ If an `articles.raw_json` column exists, the exporter can use it as the JSON-sha
 Article diff reports compare records by stable `slug` first and `id` second before field comparison, which keeps ordering differences from masking real source/export mismatches.
 
 After 22-6-4, implemented export modules are `contact-info`, `company-assets`, `home-video`, `home-interactive-images`, and `articles`. `cases` and `solutions` remain `skeleton_only`; `pages` remains empty-source/skipped. `media-library`, `scenario-detail-pages`, `solution_pages`, `solution_page_blocks`, and `publish-logs` remain deferred or non-blocking exactly as in 22-6-2/22-6-3.
+
+## 22-6-5 Cases MySQL to JSON Dry-Run Export
+
+22-6-5 upgrades only the `cases` export module from `skeleton_only` to `implemented`. It keeps the same dry-run boundary: no `server/data` overwrite, no MySQL write, no upload changes, no rollback implementation, and no frontend/admin/service/route/prerender/sitemap/robots changes.
+
+The cases exporter reads active `cases` rows and looks up active `case_images`, `seo_settings` with `owner_type = 'case'`, and `faq_items` with `owner_type = 'case'`. It restores the existing `CaseStudy` JSON shape: `id`, `title`, `slug`, `summary`, `clientType`, `eventType`, `eventDate`, `location`, cover and Word file fields, `contentHtml`, `contentText`, `extractedImages`, ordering, status, SEO, FAQ, and timestamps.
+
+`cases.raw_json` remains the preferred shape base. Main table fields are overlaid for split-table validation, `case_images` is used only to validate or supplement `extractedImages`, and SEO/FAQ rows are folded back into the case object. The exporter does not query `media_files`, does not infer the case structure from media-library data, and does not export tombstoned `cases` or `case_images` rows.
+
+Case diff reports compare records by stable `slug` first and `id` second before field comparison. If raw JSON is missing, unparseable, or inconsistent with split rows, the dry-run report records warnings or blockers instead of treating the export as silently matched.
+
+After 22-6-5, implemented export modules are `contact-info`, `company-assets`, `home-video`, `home-interactive-images`, `articles`, and `cases`. `solutions` remains `skeleton_only`; `pages` remains empty-source/skipped. `media-library`, `scenario-detail-pages`, `solution_pages`, `solution_page_blocks`, and `publish-logs` remain deferred or non-blocking exactly as in earlier 22-6 steps.

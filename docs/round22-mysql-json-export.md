@@ -96,6 +96,25 @@ Article diff reports align source/exported arrays by stable `slug` first and `id
 
 `articles` now reports `exportStatus=implemented`. `cases` and `solutions` remain `skeleton_only`; `pages` remains `skipped_empty_source` when the JSON source is empty. The exporter still never overwrites `server/data`, never writes MySQL, never modifies uploads, and does not implement rollback.
 
+## 22-6-5 Cases Implemented Dry-Run Export
+
+22-6-5 keeps the same dry-run boundaries and upgrades `cases` from `skeleton_only` to `implemented`.
+
+The cases exporter reads only active MySQL rows:
+
+- `cases` for the main case row and `raw_json` shape base.
+- `case_images` for active image split rows, grouped by `case_id`.
+- `seo_settings` with `owner_type = 'case'` for case SEO fields.
+- `faq_items` with `owner_type = 'case'` for case FAQ fields.
+
+It does not read `media_files`, does not touch uploads, and does not export tombstoned rows where `deleted_at IS NOT NULL`.
+
+`cases.raw_json` is the preferred recovery base because it preserves the current `CaseStudy` JSON shape, including long content fields, Word-import metadata, and `extractedImages`. The exporter overlays normalized `cases` table fields, uses `case_images` only to validate or supplement images, and fills SEO/FAQ fields into the existing case JSON shape. If raw JSON is missing, the exporter attempts a reduced reconstruction from the split tables and records a warning. If raw JSON is unparseable or required fields such as `id`, `title`, `slug`, or supported `status` cannot be restored, the module reports `shape_risk` / `error`.
+
+Case diff reports align source/exported arrays by stable `slug` first and `id` second before comparing fields. This avoids noisy cross-record diffs when MySQL ordering differs from the current JSON source.
+
+`cases` now reports `exportStatus=implemented`. `solutions` remains `skeleton_only`; `pages` remains `skipped_empty_source` when the JSON source is empty. The exporter still never overwrites `server/data`, never writes MySQL, never modifies uploads, and does not implement rollback.
+
 ## Deferred Areas
 
 `media-library` is deferred because `media_files` is shared across modules and upload/delete rollback is not defined.

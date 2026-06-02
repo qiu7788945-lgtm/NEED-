@@ -26,8 +26,8 @@ export function buildSkeletonExportPayload(input: {
     implemented: false,
     exportedData: null,
     note: input.exportStatus === 'skipped_empty_source'
-      ? 'This module is treated as empty-source/skipped in the 22-6-4 dry-run export.'
-      : 'MySQL-to-JSON export is not implemented for this module in the 22-6-4 dry-run export.',
+      ? 'This module is treated as empty-source/skipped in the 22-6-5 dry-run export.'
+      : 'MySQL-to-JSON export is not implemented for this module in the 22-6-5 dry-run export.',
   };
 }
 
