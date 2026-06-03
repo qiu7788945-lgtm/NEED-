@@ -2,9 +2,11 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
+import { writeContactInfoToMysqlPrimary } from '../services/data-source/contact-info-primary-write.js';
 import { readContactInfoWithMysqlFallback } from '../services/data-source/low-risk-content-source.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { success } from '../utils/api-response.js';
+import { logger } from '../utils/logger.js';
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -49,6 +51,17 @@ function createValidationError(message: string) {
     statusCode: 400,
     code: 'INVALID_CONTACT_INFO',
   });
+}
+
+function createJsonShadowWriteError(error: unknown) {
+  return Object.assign(
+    new Error('Contact-info MySQL primary write succeeded, but JSON shadow write-back failed.'),
+    {
+      statusCode: 500,
+      code: 'CONTACT_INFO_JSON_SHADOW_WRITE_FAILED',
+      cause: error,
+    },
+  );
 }
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -175,8 +188,21 @@ async function readContactInfo() {
 async function writeContactInfo(value: unknown) {
   const contactInfo = normalizeContactInfo(value);
 
-  await fs.mkdir(dataDir, { recursive: true });
-  await fs.writeFile(contactInfoPath, `${JSON.stringify(contactInfo, null, 2)}\n`, 'utf8');
+  await writeContactInfoToMysqlPrimary(contactInfo);
+
+  try {
+    // Round 22-7-5G pilot: contact-info keeps JSON as fallback/backup after MySQL primary write.
+    await fs.mkdir(dataDir, { recursive: true });
+    await fs.writeFile(contactInfoPath, `${JSON.stringify(contactInfo, null, 2)}\n`, 'utf8');
+  } catch (error) {
+    logger.error('Contact-info JSON shadow write-back failed after MySQL primary write succeeded.', {
+      moduleName: 'contact-info',
+      jsonPath: contactInfoPath,
+      message: error instanceof Error ? error.message : String(error),
+    });
+
+    throw createJsonShadowWriteError(error);
+  }
 
   return contactInfo;
 }
