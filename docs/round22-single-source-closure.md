@@ -41,6 +41,8 @@ Route manifest, prerender, sitemap, and robots dependencies must be confirmed se
 
 Real backup and rollback rehearsal are prerequisites before closing fallback or allowing write-mode overwrites.
 
+The concrete Round 22 backup and rollback rehearsal scope is defined in [Round 22 Backup / Rollback Rehearsal Scope](./round22-backup-rollback-rehearsal.md). The first rehearsal phase is temp-only and must not overwrite `server/data`, restore MySQL, restore uploads, or restore publish logs.
+
 Real API write tests are prerequisites before any module becomes MySQL primary write.
 
 Round 23 permissions must not be pulled into Round 22 closure work.
@@ -201,6 +203,7 @@ Global blockers before fallback closure or real MySQL primary write:
 
 - 22-7-3: warning cleanup and acceptance criteria boundary confirmation.
 - 22-7-4: real backup design and rollback rehearsal boundary confirmation.
+- 22-7-4B: backup / rollback scope documentation landing.
 - 22-7-5: low-risk module MySQL primary write design boundary confirmation.
 - 22-7-6: media-library/uploads single-source exception strategy.
 - 22-7-7: JSON freeze condition judgment.

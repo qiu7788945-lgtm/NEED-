@@ -161,6 +161,38 @@ The rollback skeleton defines the future minimum scope as restoring `server/data
 
 The optional `--plan-backup` flag marks the backup plan as requested but still does not create a backup. The optional `--rollback <manifest>` placeholder is parsed but safely rejected in 22-6-8.
 
+## 22-7-4B Backup / Rollback Scope Decision
+
+Round 22-7-4B lands the documentation-only scope decision for future real backup and rollback rehearsal. The full boundary is recorded in [Round 22 Backup / Rollback Rehearsal Scope](./round22-backup-rollback-rehearsal.md).
+
+The first real backup phase must cover these rollback-eligible JSON files:
+
+- `server/data/contact-info.json`
+- `server/data/company-assets.json`
+- `server/data/home-video.json`
+- `server/data/home-interactive-images.json`
+- `server/data/articles.json`
+- `server/data/cases.json`
+- `server/data/solutions.json`
+- `server/data/pages.json`
+- `server/data/scenario-detail-pages.json`
+
+`pages.json` and `scenario-detail-pages.json` must be backed up even when empty, so a future write can return to the exact pre-write file state.
+
+`server/data/media-library.json` may be backed up as metadata and a safety anchor, but it is not first-phase content rollback input and must not be overwritten by the first rehearsal phase.
+
+`server/data/publish-logs/**` may be retained or archived as publish audit history, but it is not content rollback input.
+
+The first rollback rehearsal phase must restore only to:
+
+```text
+server/data-restore-rehearsals/mysql-json-export/<timestamp>/
+```
+
+It must not overwrite `server/data`, restore MySQL, restore uploads, restore publish logs, restore tombstone rows, restore `migration_logs`, or restore media-library physical files.
+
+Future export `--write` must create and verify a real backup before writing. If backup creation or verification fails, write must stop. Bypassing backup for `--write` is not allowed.
+
 ## Deferred Areas
 
 `media-library` is deferred because `media_files` is shared across modules and upload/delete rollback is not defined.
