@@ -240,6 +240,38 @@ When `--create-backup` succeeds, export reports include:
 
 `--plan-backup` remains report-only. `--write` and `--rollback` remain safely rejected after real backup creation is available.
 
+## 22-7-5D-2 Rollback Rehearsal Temp-Only Boundary
+
+Round 22-7-5D-2 lands only documentation and `.gitignore` boundaries for future temp-only rollback rehearsal. It does not implement rehearsal, execute rollback, open `--rollback`, open `--write`, overwrite `server/data`, write MySQL, or restore uploads, publish logs, or `media-library.json`.
+
+Future rehearsal output should use:
+
+```text
+server/data-restore-rehearsals/mysql-json-export/<YYYYMMDD-HHmmss>/
+```
+
+The output directory must be unique, must fail if it already exists, and must be ignored by Git.
+
+The recommended future CLI flag is:
+
+```text
+--rehearse-rollback <backup-manifest-path>
+```
+
+Optional override:
+
+```text
+--restore-dir <path>
+```
+
+`--rehearse-rollback` is temp-only. `--rollback` remains formal rollback and remains disabled. `--rollback` must not be used to disguise a rehearsal command.
+
+The only trusted input is `backup-manifest.json`. Rehearsal may restore only `rollbackEligible=true` files from the manifest, limited to the nine first-phase JSON files: `contact-info.json`, `company-assets.json`, `home-video.json`, `home-interactive-images.json`, `articles.json`, `cases.json`, `solutions.json`, `pages.json`, and `scenario-detail-pages.json`.
+
+The rehearsal must skip `rollbackEligible=false` entries, `media-library.json`, `server/data/publish-logs/**`, `server/uploads/**`, MySQL rows, tombstones, `migration_logs`, `dist-prerender`, export outputs, and the backup directory itself.
+
+The future restore manifest and failure report schema are defined in [Round 22 Backup / Rollback Rehearsal Scope](./round22-backup-rollback-rehearsal.md). Current `--write` remains disabled; a real backup alone is not enough to open write mode.
+
 ## Deferred Areas
 
 `media-library` is deferred because `media_files` is shared across modules and upload/delete rollback is not defined.

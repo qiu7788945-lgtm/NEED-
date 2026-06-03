@@ -36,4 +36,5 @@ dist-static/
 dist-prerender/
 server/data/publish-logs/
 server/data-backups/
+server/data-restore-rehearsals/
 server/data-exports/

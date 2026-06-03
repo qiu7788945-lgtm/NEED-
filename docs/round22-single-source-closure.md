@@ -211,6 +211,7 @@ Global blockers before fallback closure or real MySQL primary write:
 - 22-7-5C-2: real backup implementation documentation and code-boundary landing.
 - 22-7-5C-3: real MySQL-to-JSON backup creation implementation; `--write` and rollback remain disabled.
 - 22-7-5D: rollback rehearsal temp-only implementation boundary confirmation.
+- 22-7-5D-2: rollback rehearsal temp-only documentation and `.gitignore` boundary landing; no rehearsal implementation, no rollback, no `--write`, and no primary-write code.
 - 22-7-6: media-library/uploads single-source exception strategy.
 - 22-7-7: JSON freeze condition judgment.
 - 22-7-8: Round 22-7 total acceptance and decision on whether to enter Round 22-8.

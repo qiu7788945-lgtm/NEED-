@@ -384,7 +384,224 @@ The first-phase required rollback-eligible files are copied with `rollbackEligib
 
 `--write` and `--rollback` remain safely rejected after this implementation. A real backup alone does not make rollback available; `canRollback` remains `false` until temp-only rollback rehearsal is implemented and accepted.
 
-## 12. Forbidden Interpretations
+## 12. Round 22-7-5D-2 Rollback Rehearsal Temp-Only Boundary
+
+Round 22-7-5D-2 is a documentation and `.gitignore` boundary landing step only.
+
+It does not implement rollback rehearsal, does not execute rollback, does not overwrite `server/data`, does not write MySQL, does not restore uploads, does not restore publish logs, and does not restore `media-library.json`.
+
+`--rollback` and `--write` remain safely rejected. This step does not allow low-risk module primary-write code implementation.
+
+### Current Stage Conclusion
+
+Current conclusions:
+
+- Rollback rehearsal is not implemented yet.
+- Real rollback has not been executed.
+- `--rollback` remains the formal rollback command surface and remains disabled.
+- `--write` remains disabled.
+- `server/data` is not covered by any temp-only restore write.
+- MySQL is not written.
+- Uploads, publish logs, and media-library restore are not covered.
+- The project cannot enter low-risk module primary-write code implementation from this step.
+
+### Output Directory
+
+Future temp-only rollback rehearsal should restore into:
+
+```text
+server/data-restore-rehearsals/mysql-json-export/<YYYYMMDD-HHmmss>/
+```
+
+Rules:
+
+- Each rehearsal must use a unique timestamp directory.
+- If the target directory already exists, rehearsal must fail and must not overwrite it.
+- Restore artifacts must not enter Git.
+- `server/data-restore-rehearsals/` must be ignored by `.gitignore`.
+- The default `restoreRoot` must not be `server/data`.
+- The default `restoreRoot` must not be inside `server/uploads`.
+- Optional `--restore-dir <path>` must use the same path protections.
+
+### Trusted Input
+
+The only trusted rehearsal input is:
+
+```text
+backup-manifest.json
+```
+
+The future implementation must validate:
+
+- the manifest file exists
+- `schemaVersion` is supported
+- `backupId` exists
+- `backupRoot` exists
+- `files[]` exists
+- each selected `files[].backupPath` exists
+- only `rollbackEligible=true` files are processed
+- `rollbackEligible=false` files are skipped
+- `media-library.json` is skipped
+- `server/data/publish-logs/**` is skipped
+- `server/uploads/**` is skipped
+
+Manifest self-hashing can be a future enhancement. The temp-only implementation may first compute the manifest file SHA-256 and record it as `sourceBackupManifestSha256` in the restore manifest.
+
+### Restore Scope
+
+The first temp-only restore phase may restore only these nine rollback-eligible JSON files:
+
+- `contact-info.json`
+- `company-assets.json`
+- `home-video.json`
+- `home-interactive-images.json`
+- `articles.json`
+- `cases.json`
+- `solutions.json`
+- `pages.json`
+- `scenario-detail-pages.json`
+
+The first temp-only restore phase must exclude:
+
+- `media-library.json`
+- `server/data/publish-logs/**`
+- `server/uploads/**`
+- MySQL
+- tombstone rows
+- `migration_logs`
+- `dist-prerender`
+- export outputs
+- the backup directory itself
+
+### Restore Manifest Schema
+
+The restore manifest must include at least:
+
+- `schemaVersion`
+- `rehearsalId`
+- `createdAt`
+- `sourceBackupId`
+- `sourceBackupManifestPath`
+- `sourceBackupManifestSha256`
+- `sourceBackupRoot`
+- `restoreRoot`
+- `mode: "temp-only"`
+- `overwroteServerData: false`
+- `wroteMysql: false`
+- `restoredFiles[]`
+- `skippedFiles[]`
+- `excludedItems[]`
+- `validationStatus`
+- `risks[]`
+- `failureReportPath`
+
+Each `restoredFiles[]` item must include at least:
+
+- `relativePath`
+- `backupPath`
+- `restorePath`
+- `rollbackEligible`
+- `backupSha256`
+- `restoredSha256`
+- `hashMatched`
+- `sizeBytes`
+- `recordCount`
+- `shapeSummary`
+- `warnings`
+
+### Restore Validation
+
+After temp-only restore, validation must confirm:
+
+- only `rollbackEligible=true` files were restored
+- restored file count is exactly 9
+- each restored file hash matches the backup file hash
+- restored JSON files are readable
+- `recordCount` and `shapeSummary` can be generated
+- `restoreRoot` is not `server/data`
+- `restoreRoot` is not inside `server/uploads`
+- `server/data` was not modified
+- uploads were not modified
+- MySQL was not written
+- the backup directory was not modified
+- `git status` has no tracked pollution from rehearsal output
+
+### Failure Report
+
+Rollback rehearsal failure must produce a failure report with at least:
+
+- `failedAt`
+- `rehearsalId`
+- `sourceBackupId`
+- `failedStep`
+- `failedFile`
+- `errorMessage`
+- `partialFilesRestored`
+- `cleanupStatus`
+- `serverDataTouched: false`
+- `mysqlTouched: false`
+- `uploadsTouched: false`
+- `manualActionRequired`
+- `risks`
+
+Failure policy:
+
+- Any required rollback-eligible file restore failure fails the rehearsal.
+- Hash mismatch fails the rehearsal.
+- Missing manifest fails the rehearsal.
+- Missing backup file fails the rehearsal.
+- Unreadable JSON fails the rehearsal.
+- `restoreRoot` pointing to `server/data` must be rejected.
+- `restoreRoot` pointing inside `server/uploads` must be rejected.
+- Partial success must not be marked as passed.
+
+### CLI Boundary
+
+The recommended future temp-only command is:
+
+```text
+--rehearse-rollback <backup-manifest-path>
+```
+
+Optional restore override:
+
+```text
+--restore-dir <path>
+```
+
+Rules:
+
+- `--rehearse-rollback` performs only temp-only rehearsal.
+- `--rollback` remains formal rollback and remains disabled.
+- `--rollback` must not be used to disguise temp-only rehearsal.
+- `--rehearse-rollback` must not overwrite `server/data`.
+- `--rehearse-rollback` must not write MySQL.
+- `--rehearse-rollback` must not restore uploads.
+- `--restore-dir` must reject `server/data` and `server/uploads`.
+- Without `--restore-dir`, the default restore rehearsal directory must be used.
+
+### Relationship To Write Mode
+
+Only real backup plus accepted temp-only rollback rehearsal can allow discussion of opening `export --write`.
+
+Backup alone is not enough. Rehearsal alone is not enough. `export --write` must depend on backup, and formal post-write rollback still needs a separate future design.
+
+Current `--write` remains disabled.
+
+### Relationship To Primary Write Code
+
+This step does not allow low-risk module primary-write code implementation.
+
+Remaining blockers include:
+
+- temp-only rollback rehearsal implementation and acceptance
+- primary-write code pre-implementation acceptance
+- API write test plan
+- final failure and partial-sync strategy confirmation
+- JSON fallback retention
+- no early Round 23 permissions work
+
+## 13. Forbidden Interpretations
 
 This document is not an export `--write` enablement instruction.
 
