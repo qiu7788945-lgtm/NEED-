@@ -24,6 +24,7 @@ export type ExportDiffStatus =
   | 'skipped_empty_source';
 export type ExportFieldDiffSeverity = 'info' | 'warning' | 'error';
 export type ExportMetrics = Record<string, string | number | boolean | null>;
+export type BackupValidationStatus = 'not_requested' | 'passed' | 'failed';
 
 export type ExportModuleDefinition = {
   moduleName: ExportModuleName;
@@ -41,6 +42,7 @@ export type ExportCliOptions = {
   dryRun: true;
   writeRequested: boolean;
   planBackupRequested: boolean;
+  createBackupRequested: boolean;
   rollbackManifestPath?: string;
 };
 
@@ -139,18 +141,26 @@ export type BackupPlanFile = {
   exists: boolean;
   sourceHash: string | null;
   recordCount: number;
+  shapeSummary?: unknown;
 };
 
 export type BackupManifestPlan = {
   schemaVersion: '22-6-8-backup-plan';
-  status: 'planned_only';
+  status: 'planned_only' | 'created' | 'failed';
   requested: boolean;
-  backupCreated: false;
-  writesBackupDirectory: false;
+  createRequested: boolean;
+  backupCreated: boolean;
+  writesBackupDirectory: boolean;
   writesServerData: false;
   writesMysql: false;
   defaultBackupRoot: string;
   plannedBackupDir: string;
+  actualBackupDir: string | null;
+  backupManifestPath: string | null;
+  backupSummaryPath: string | null;
+  backupRisksPath: string | null;
+  failureReportPath: string | null;
+  validationStatus: BackupValidationStatus;
   directoryNamingRule: string;
   moduleNames: ExportModuleName[];
   files: BackupPlanFile[];
@@ -198,7 +208,10 @@ export type ExportManifest = {
   wroteMysql: false;
   canRollback: false;
   writeModeEnabled: false;
-  backupCreated: false;
+  backupCreated: boolean;
+  backupRoot: string | null;
+  backupManifestPath: string | null;
+  backupValidationStatus: BackupValidationStatus;
   rollbackAvailable: false;
   rollbackModeEnabled: false;
   backupRequiredBeforeWrite: true;
@@ -239,7 +252,10 @@ export type ExportSummary = {
   wroteMysql: false;
   canRollback: false;
   writeModeEnabled: false;
-  backupCreated: false;
+  backupCreated: boolean;
+  backupRoot: string | null;
+  backupManifestPath: string | null;
+  backupValidationStatus: BackupValidationStatus;
   rollbackAvailable: false;
   rollbackModeEnabled: false;
   backupRequiredBeforeWrite: true;

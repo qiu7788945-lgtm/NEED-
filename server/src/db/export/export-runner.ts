@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { buildModuleDiffReport } from './diff-reporter.js';
+import { createMysqlJsonBackup, type BackupCreationResult } from './backup-creator.js';
 import {
   buildModuleResult,
   buildSkeletonExportPayload,
@@ -130,21 +131,31 @@ function buildBackupPlan(input: {
   projectRoot: string;
   generatedAt: Date;
   requested: boolean;
+  createRequested: boolean;
+  backupResult: BackupCreationResult | null;
   moduleResults: ExportManifest['moduleResults'];
 }): ExportManifest['backupPlan'] {
   const timestamp = formatTimestamp(input.generatedAt);
   const backupRoot = defaultBackupRoot(input.projectRoot);
+  const backupCreated = Boolean(input.backupResult?.backupCreated);
 
   return {
     schemaVersion: '22-6-8-backup-plan',
-    status: 'planned_only',
+    status: backupCreated ? 'created' : 'planned_only',
     requested: input.requested,
-    backupCreated: false,
-    writesBackupDirectory: false,
+    createRequested: input.createRequested,
+    backupCreated,
+    writesBackupDirectory: backupCreated,
     writesServerData: false,
     writesMysql: false,
     defaultBackupRoot: backupRoot,
     plannedBackupDir: path.join(backupRoot, timestamp),
+    actualBackupDir: input.backupResult?.backupDir ?? null,
+    backupManifestPath: input.backupResult?.manifestPath ?? null,
+    backupSummaryPath: input.backupResult?.summaryPath ?? null,
+    backupRisksPath: input.backupResult?.risksPath ?? null,
+    failureReportPath: input.backupResult?.failureReportPath ?? null,
+    validationStatus: input.backupResult?.validationStatus ?? 'not_requested',
     directoryNamingRule: 'server/data-backups/mysql-json-export/<YYYYMMDD-HHmmss>/',
     moduleNames: input.moduleResults.map((result) => result.moduleName),
     files: input.moduleResults.map((result) => ({
@@ -156,9 +167,11 @@ function buildBackupPlan(input: {
       recordCount: result.sourceJson.recordCount,
     })),
     notes: [
-      'This is a dry-run backup plan only; no server/data-backups directory is created in 22-6-8.',
-      'Future write mode must create this backup before any server/data JSON overwrite.',
-      'The backup scope is server/data JSON only; MySQL, uploads, publish logs, and tombstones are excluded.',
+      backupCreated
+        ? 'A real JSON backup was created because --create-backup was requested.'
+        : 'This is a dry-run backup plan only; no server/data-backups directory is created unless --create-backup is requested.',
+      'Future write mode must create and verify backup before any server/data JSON overwrite.',
+      'The backup scope is JSON only; MySQL, uploads, publish logs, and tombstones are excluded.',
     ],
   };
 }
@@ -194,8 +207,10 @@ function buildRollbackPlan(input: {
   };
 }
 
-function buildRisks(): ExportRunResult['risks'] {
-  return [
+function buildRisks(input: {
+  backupResult: BackupCreationResult | null;
+}): ExportRunResult['risks'] {
+  const risks: ExportRunResult['risks'] = [
     {
       code: 'media_library_deferred',
       level: 'warning',
@@ -226,16 +241,24 @@ function buildRisks(): ExportRunResult['risks'] {
       level: 'blocker',
       message: 'Rollback is not implemented in 22-6-8; rollbackAvailable=false and rollbackModeEnabled=false.',
     },
-    {
-      code: 'backup_not_created',
-      level: 'blocker',
-      message: 'No real backup is created in 22-6-8; backupCreated=false and backup plans are report-only.',
-    },
-    {
-      code: 'backup_required_before_future_write',
-      level: 'blocker',
-      message: 'Future write mode must create a server/data JSON backup and rollback manifest before overwriting any JSON.',
-    },
+    ...(input.backupResult?.backupCreated
+      ? [{
+          code: 'backup_created',
+          level: 'info' as const,
+          message: `A real JSON backup was created at ${input.backupResult.backupDir}.`,
+        }]
+      : [
+          {
+            code: 'backup_not_created',
+            level: 'blocker' as const,
+            message: 'No real backup was created; pass --create-backup to create one.',
+          },
+          {
+            code: 'backup_required_before_future_write',
+            level: 'blocker' as const,
+            message: 'Future write mode must create a JSON backup and rollback manifest before overwriting any JSON.',
+          },
+        ]),
     {
       code: 'server_data_not_modified',
       level: 'info',
@@ -287,6 +310,11 @@ function buildRisks(): ExportRunResult['risks'] {
       message: 'MySQL primary-write mode is not enabled in 22-6-8.',
     },
   ];
+
+  return [
+    ...risks,
+    ...(input.backupResult?.risks ?? []),
+  ];
 }
 
 export async function runExportDryRun(options: ExportCliOptions): Promise<ExportRunResult> {
@@ -300,6 +328,8 @@ export async function runExportDryRun(options: ExportCliOptions): Promise<Export
 
   const projectRoot = process.cwd();
   const generatedAt = new Date();
+  const gitHead = readGitValue(['rev-parse', 'HEAD'], 'unknown');
+  const branch = readGitValue(['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown');
   const outputDir = await prepareOutputDir(projectRoot, options.outputDir);
   const selectedDefinitions = selectDefinitions(options);
   const moduleResults: ExportManifest['moduleResults'] = [];
@@ -342,10 +372,21 @@ export async function runExportDryRun(options: ExportCliOptions): Promise<Export
 
   const rollbackScope = buildRollbackScope();
   const rollbackDeferredItems = buildRollbackDeferredItems();
+  const backupResult = options.createBackupRequested
+    ? await createMysqlJsonBackup({
+        projectRoot,
+        generatedAt,
+        gitHead,
+        branch,
+        command: process.argv.join(' '),
+      })
+    : null;
   const backupPlan = buildBackupPlan({
     projectRoot,
     generatedAt,
     requested: options.planBackupRequested,
+    createRequested: options.createBackupRequested,
+    backupResult,
     moduleResults,
   });
   const rollbackPlan = buildRollbackPlan({
@@ -356,8 +397,8 @@ export async function runExportDryRun(options: ExportCliOptions): Promise<Export
   const manifest: ExportManifest = {
     exportVersion: '22-6-8',
     generatedAt: generatedAt.toISOString(),
-    gitHead: readGitValue(['rev-parse', 'HEAD'], 'unknown'),
-    branch: readGitValue(['rev-parse', '--abbrev-ref', 'HEAD'], 'unknown'),
+    gitHead,
+    branch,
     mode: 'dry-run',
     outputDir,
     selectedModules: options.moduleName,
@@ -366,7 +407,10 @@ export async function runExportDryRun(options: ExportCliOptions): Promise<Export
     wroteMysql: false,
     canRollback: false,
     writeModeEnabled: false,
-    backupCreated: false,
+    backupCreated: Boolean(backupResult?.backupCreated),
+    backupRoot: backupResult?.backupDir ?? null,
+    backupManifestPath: backupResult?.manifestPath ?? null,
+    backupValidationStatus: backupResult?.validationStatus ?? 'not_requested',
     rollbackAvailable: false,
     rollbackModeEnabled: false,
     backupRequiredBeforeWrite: true,
@@ -377,12 +421,14 @@ export async function runExportDryRun(options: ExportCliOptions): Promise<Export
     warnings: [
       '22-6-8 is still dry-run only; implemented module exports are report artifacts, not official server/data writes.',
       'Diff reports compare current source JSON with MySQL-exported JSON and must not overwrite source files.',
-      'Backup and rollback are skeleton plans only; no real backup or restore is executed.',
+      backupResult?.backupCreated
+        ? 'A real JSON backup was created under server/data-backups; rollback is still not implemented.'
+        : 'Backup is plan-only unless --create-backup is requested; rollback is still not implemented.',
     ],
     blockers: [
       '--write is disabled.',
       'Rollback is not implemented.',
-      'A real backup must be created before any future write mode can be enabled.',
+      ...(backupResult?.backupCreated ? [] : ['A real backup must be created before any future write mode can be enabled.']),
     ],
   };
   const summary = buildSummary(manifest);
@@ -393,7 +439,7 @@ export async function runExportDryRun(options: ExportCliOptions): Promise<Export
       generatedAt: manifest.generatedAt,
       moduleResults: moduleResults.map((moduleResult) => moduleResult.diff),
     },
-    risks: buildRisks(),
+    risks: buildRisks({ backupResult }),
   };
 
   await writeRootReports(result);

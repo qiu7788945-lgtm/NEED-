@@ -338,7 +338,53 @@ Rollback rehearsal should output a restore manifest and a failure report when ap
 
 Backup and rollback rehearsal must be accepted as a pair. Backup alone does not prove the rollback path is usable.
 
-## 11. Forbidden Interpretations
+## 11. Round 22-7-5C-3 Real Backup Implementation
+
+Round 22-7-5C-3 adds the real JSON backup creation path for the export tool.
+
+The CLI flag is:
+
+```text
+--create-backup
+```
+
+This flag creates a real backup under:
+
+```text
+server/data-backups/mysql-json-export/<YYYYMMDD-HHmmss>/
+```
+
+It still does not enable export `--write`, does not execute rollback, does not write MySQL, does not modify `server/data`, and does not copy uploads.
+
+The backup directory contains:
+
+- `backup-manifest.json`
+- `backup-summary.json`
+- `risks.json`
+- `failure-report.json` only when backup fails
+- `files/<json-file-name>.json`
+
+The first-phase required rollback-eligible files are copied with `rollbackEligible=true`:
+
+- `server/data/contact-info.json`
+- `server/data/company-assets.json`
+- `server/data/home-video.json`
+- `server/data/home-interactive-images.json`
+- `server/data/articles.json`
+- `server/data/cases.json`
+- `server/data/solutions.json`
+- `server/data/pages.json`
+- `server/data/scenario-detail-pages.json`
+
+`server/data/media-library.json` is copied when present as `specialHandling=metadata_safety_anchor` and `rollbackEligible=false`.
+
+`server/uploads/**` and `server/data/publish-logs/**` remain excluded. The generated `risks.json` must record uploads, publish logs, MySQL rows, tombstone rows, and media-library metadata-only limitations.
+
+`--plan-backup` remains report-only and does not create a backup directory. `--create-backup` is the explicit real-backup opt-in.
+
+`--write` and `--rollback` remain safely rejected after this implementation. A real backup alone does not make rollback available; `canRollback` remains `false` until temp-only rollback rehearsal is implemented and accepted.
+
+## 12. Forbidden Interpretations
 
 This document is not an export `--write` enablement instruction.
 

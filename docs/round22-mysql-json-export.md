@@ -18,6 +18,7 @@ Supported options:
 - `--output-dir <path>`: optional output directory outside `server/data` and `server/uploads`.
 - `--format json`: JSON output only.
 - `--write`: intentionally rejected in 22-6-2.
+- `--create-backup`: create a real JSON backup under `server/data-backups/mysql-json-export/<YYYYMMDD-HHmmss>/` without writing `server/data`.
 
 Default output path:
 
@@ -192,6 +193,52 @@ server/data-restore-rehearsals/mysql-json-export/<timestamp>/
 It must not overwrite `server/data`, restore MySQL, restore uploads, restore publish logs, restore tombstone rows, restore `migration_logs`, or restore media-library physical files.
 
 Future export `--write` must create and verify a real backup before writing. If backup creation or verification fails, write must stop. Bypassing backup for `--write` is not allowed.
+
+## 22-7-5C-3 Real Backup Creation
+
+Round 22-7-5C-3 adds the explicit real-backup CLI flag:
+
+```bash
+npm.cmd run export:content:dry-run -- --create-backup
+```
+
+The flag creates a real JSON backup at:
+
+```text
+server/data-backups/mysql-json-export/<YYYYMMDD-HHmmss>/
+```
+
+The backup directory contains `backup-manifest.json`, `backup-summary.json`, `risks.json`, optional `failure-report.json`, and copied JSON files under `files/`.
+
+The required rollback-eligible files are:
+
+- `server/data/contact-info.json`
+- `server/data/company-assets.json`
+- `server/data/home-video.json`
+- `server/data/home-interactive-images.json`
+- `server/data/articles.json`
+- `server/data/cases.json`
+- `server/data/solutions.json`
+- `server/data/pages.json`
+- `server/data/scenario-detail-pages.json`
+
+`server/data/media-library.json` is backed up when present as `specialHandling=metadata_safety_anchor` and `rollbackEligible=false`.
+
+`server/uploads/**`, `server/data/publish-logs/**`, MySQL rows, tombstone rows, generated export outputs, and abnormal media-library backup/corrupt copies remain excluded.
+
+When `--create-backup` succeeds, export reports include:
+
+- `backupCreated=true`
+- `backupRoot`
+- `backupManifestPath`
+- `backupValidationStatus`
+- `wroteServerData=false`
+- `wroteMysql=false`
+- `canRollback=false`
+- `rollbackAvailable=false`
+- `writeModeEnabled=false`
+
+`--plan-backup` remains report-only. `--write` and `--rollback` remain safely rejected after real backup creation is available.
 
 ## Deferred Areas
 

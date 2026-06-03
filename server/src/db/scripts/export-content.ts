@@ -10,6 +10,7 @@ function printUsage(): void {
   npm.cmd run export:content -- --module contact-info
   npm.cmd run export:content -- --module all --output-dir server/data-exports/mysql-json-export/manual
   npm.cmd run export:content -- --plan-backup
+  npm.cmd run export:content -- --create-backup
   npm.cmd run export:content -- --write
   npm.cmd run export:content -- --rollback server/data-backups/mysql-json-export/<timestamp>/rollback-manifest.json
 
@@ -20,6 +21,7 @@ Options:
   --output-dir <path>  Optional output directory. Must not be inside server/data or server/uploads.
   --format json        JSON output only.
   --plan-backup        Add a backup plan to the dry-run report only; no backup directory is created.
+  --create-backup      Create a real JSON backup under server/data-backups without writing server/data.
   --rollback <path>    Rejected in 22-6-8; rollback restore is not implemented.
   --write              Rejected in 22-6-8; server/data is never overwritten.`);
 }
@@ -35,6 +37,7 @@ function parseCliOptions(args: string[]): ExportCliOptions {
     dryRun: true,
     writeRequested: false,
     planBackupRequested: false,
+    createBackupRequested: false,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -88,6 +91,11 @@ function parseCliOptions(args: string[]): ExportCliOptions {
 
     if (arg === '--plan-backup') {
       options.planBackupRequested = true;
+      continue;
+    }
+
+    if (arg === '--create-backup') {
+      options.createBackupRequested = true;
       continue;
     }
 
@@ -147,6 +155,9 @@ async function main(): Promise<void> {
       canRollback: result.summary.canRollback,
       writeModeEnabled: result.summary.writeModeEnabled,
       backupCreated: result.summary.backupCreated,
+      backupRoot: result.summary.backupRoot,
+      backupManifestPath: result.summary.backupManifestPath,
+      backupValidationStatus: result.summary.backupValidationStatus,
       rollbackAvailable: result.summary.rollbackAvailable,
       rollbackModeEnabled: result.summary.rollbackModeEnabled,
       backupRequiredBeforeWrite: result.summary.backupRequiredBeforeWrite,
