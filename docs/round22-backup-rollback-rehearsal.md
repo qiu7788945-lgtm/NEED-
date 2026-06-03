@@ -601,7 +601,140 @@ Remaining blockers include:
 - JSON fallback retention
 - no early Round 23 permissions work
 
-## 13. Forbidden Interpretations
+## 13. Round 22-7-5D-3 Rollback Rehearsal Temp Restore Implementation
+
+Round 22-7-5D-3 adds the temp-only rollback rehearsal implementation for the export tool.
+
+This is not formal rollback. It does not open `--rollback`, does not open `--write`, does not overwrite `server/data`, does not write MySQL, does not restore uploads, does not restore publish logs, and does not restore `media-library.json`.
+
+The new CLI flag is:
+
+```text
+--rehearse-rollback <backup-manifest-path>
+```
+
+Optional temp-only restore override:
+
+```text
+--restore-dir <path>
+```
+
+`--rollback` remains formal rollback and remains safely rejected. `--rehearse-rollback` must not be used as a formal rollback substitute.
+
+### Implemented Output Directory
+
+Without `--restore-dir`, rehearsal writes to:
+
+```text
+server/data-restore-rehearsals/mysql-json-export/<YYYYMMDD-HHmmss>/
+```
+
+The restore directory must be unique. If it already exists, rehearsal fails and does not overwrite it.
+
+The output directory contains:
+
+- `restore-manifest.json`
+- `restore-summary.json`
+- `risks.json`
+- `failure-report.json` only when rehearsal fails after the restore root is created
+- `files/contact-info.json`
+- `files/company-assets.json`
+- `files/home-video.json`
+- `files/home-interactive-images.json`
+- `files/articles.json`
+- `files/cases.json`
+- `files/solutions.json`
+- `files/pages.json`
+- `files/scenario-detail-pages.json`
+
+### Implemented Input Validation
+
+The trusted input is `backup-manifest.json`.
+
+The implementation validates:
+
+- manifest file existence
+- readable manifest JSON
+- supported `schemaVersion`
+- `backupId`
+- `backupRoot`
+- `files[]`
+- selected `files[].backupPath` existence
+- selected `files[].sha256`
+- backup manifest SHA-256, recorded as `sourceBackupManifestSha256`
+- selected backup files are inside `backupRoot`
+- restore root does not point to `server/data`, `server/uploads`, or `server/data-backups`
+- restore root does not point to or contain the source backup directory
+
+### Implemented Restore Scope
+
+The implementation restores only the nine first-phase files where `rollbackEligible=true`:
+
+- `server/data/contact-info.json`
+- `server/data/company-assets.json`
+- `server/data/home-video.json`
+- `server/data/home-interactive-images.json`
+- `server/data/articles.json`
+- `server/data/cases.json`
+- `server/data/solutions.json`
+- `server/data/pages.json`
+- `server/data/scenario-detail-pages.json`
+
+It skips `rollbackEligible=false` files and excludes `media-library.json`, `server/data/publish-logs/**`, `server/uploads/**`, MySQL, tombstone rows, `migration_logs`, `dist-prerender`, export outputs, and the backup directory itself.
+
+### Implemented Restore Reports
+
+`restore-manifest.json` records:
+
+- `schemaVersion`
+- `rehearsalId`
+- `createdAt`
+- `sourceBackupId`
+- `sourceBackupManifestPath`
+- `sourceBackupManifestSha256`
+- `sourceBackupRoot`
+- `restoreRoot`
+- `mode: "temp-only"`
+- `overwroteServerData: false`
+- `wroteMysql: false`
+- `restoredFiles[]`
+- `skippedFiles[]`
+- `excludedItems[]`
+- `validationStatus`
+- `risks[]`
+- `failureReportPath`
+
+Each restored file records `relativePath`, `backupPath`, `restorePath`, `rollbackEligible`, `backupSha256`, `restoredSha256`, `hashMatched`, `sizeBytes`, `recordCount`, `shapeSummary`, and `warnings`.
+
+`restore-summary.json` records rehearsal status, source backup id, restore root, required count, restored count, skipped count, excluded count, warning count, blocker count, `overwroteServerData=false`, and `wroteMysql=false`.
+
+`risks.json` records the temp-only nature of rehearsal, the exclusions, disabled formal rollback, disabled write mode, and the continuing JSON fallback requirement.
+
+Failure reports record `failedAt`, `rehearsalId`, `sourceBackupId`, `failedStep`, `failedFile`, `errorMessage`, `partialFilesRestored`, `cleanupStatus`, `serverDataTouched=false`, `mysqlTouched=false`, `uploadsTouched=false`, `manualActionRequired`, and risks.
+
+### Implemented Validation
+
+After restore, rehearsal validates:
+
+- only `rollbackEligible=true` first-phase files were restored
+- restored file count is exactly 9
+- backup file hashes match manifest hashes
+- restored file hashes match backup file hashes
+- restored JSON files are readable
+- `recordCount` and `shapeSummary` are generated
+- `server/data` required JSON hashes did not change
+- backup input files and manifest did not change
+- `git status --short -uall` has no tracked pollution from rehearsal output
+
+The rehearsal does not depend on MySQL. It can run when `MYSQL_*` variables are unset, and every report records `wroteMysql=false`.
+
+### Relationship To Write And Primary Writes
+
+`--write` remains safely rejected after Round 22-7-5D-3. A real backup plus accepted temp-only rehearsal can only allow discussion of future `export --write`; it does not open write mode by itself.
+
+Low-risk module MySQL primary-write code remains blocked until the temp-only rehearsal acceptance, primary-write pre-implementation acceptance, API write test plan, final failure or partial-sync strategy, and JSON fallback policy are all accepted.
+
+## 14. Forbidden Interpretations
 
 This document is not an export `--write` enablement instruction.
 

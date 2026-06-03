@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { closeDbPool } from '../client.js';
 import { runExportDryRun } from '../export/export-runner.js';
+import { runRollbackRehearsal } from '../export/rollback-rehearsal.js';
 import { exportModuleNames, type ExportCliOptions, type ExportModuleName } from '../export/types.js';
 
 function printUsage(): void {
@@ -11,6 +12,7 @@ function printUsage(): void {
   npm.cmd run export:content -- --module all --output-dir server/data-exports/mysql-json-export/manual
   npm.cmd run export:content -- --plan-backup
   npm.cmd run export:content -- --create-backup
+  npm.cmd run export:content -- --rehearse-rollback server/data-backups/mysql-json-export/<timestamp>/backup-manifest.json
   npm.cmd run export:content -- --write
   npm.cmd run export:content -- --rollback server/data-backups/mysql-json-export/<timestamp>/rollback-manifest.json
 
@@ -22,8 +24,11 @@ Options:
   --format json        JSON output only.
   --plan-backup        Add a backup plan to the dry-run report only; no backup directory is created.
   --create-backup      Create a real JSON backup under server/data-backups without writing server/data.
-  --rollback <path>    Rejected in 22-6-8; rollback restore is not implemented.
-  --write              Rejected in 22-6-8; server/data is never overwritten.`);
+  --rehearse-rollback <path>
+                       Restore rollbackEligible JSON from backup-manifest.json to a temp-only rehearsal directory.
+  --restore-dir <path> Optional temp-only rehearsal directory. Must not be server/data, server/uploads, or backup output.
+  --rollback <path>    Formal rollback remains rejected; rollback restore is not implemented.
+  --write              Rejected; server/data is never overwritten.`);
 }
 
 function isExportModuleName(value: string): value is ExportModuleName {
@@ -99,6 +104,28 @@ function parseCliOptions(args: string[]): ExportCliOptions {
       continue;
     }
 
+    if (arg === '--rehearse-rollback') {
+      const backupManifestPath = args[index + 1];
+      if (!backupManifestPath) {
+        throw new Error('--rehearse-rollback requires a backup-manifest.json path.');
+      }
+
+      options.rehearseRollbackManifestPath = backupManifestPath;
+      index += 1;
+      continue;
+    }
+
+    if (arg === '--restore-dir') {
+      const restoreDir = args[index + 1];
+      if (!restoreDir) {
+        throw new Error('--restore-dir requires a path.');
+      }
+
+      options.restoreDir = restoreDir;
+      index += 1;
+      continue;
+    }
+
     if (arg === '--rollback') {
       const rollbackManifestPath = args[index + 1];
       if (!rollbackManifestPath) {
@@ -134,6 +161,32 @@ async function main(): Promise<void> {
   }
 
   try {
+    if (options.rollbackManifestPath) {
+      throw new Error('--rollback is not supported in 22-7-5D-3. Formal rollback remains disabled and never restores files.');
+    }
+
+    if (options.writeRequested) {
+      throw new Error('--write is not supported in 22-7-5D-3. This tool never overwrites server/data or writes MySQL.');
+    }
+
+    if (options.restoreDir && !options.rehearseRollbackManifestPath) {
+      throw new Error('--restore-dir can only be used with --rehearse-rollback.');
+    }
+
+    if (options.rehearseRollbackManifestPath) {
+      if (options.createBackupRequested || options.planBackupRequested || options.outputDir || options.moduleName !== 'all') {
+        throw new Error('--rehearse-rollback cannot be combined with --module, --create-backup, --plan-backup, or --output-dir. Use --restore-dir for rehearsal output.');
+      }
+
+      const result = await runRollbackRehearsal({
+        projectRoot: process.cwd(),
+        backupManifestPath: options.rehearseRollbackManifestPath,
+        restoreDir: options.restoreDir,
+      });
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+
     const result = await runExportDryRun(options);
     console.log(JSON.stringify({
       mode: result.summary.mode,
@@ -164,7 +217,7 @@ async function main(): Promise<void> {
     }, null, 2));
   } catch (error) {
     console.error(JSON.stringify({
-      mode: 'dry-run',
+      mode: options.rehearseRollbackManifestPath ? 'rollback-rehearsal-temp-only' : 'dry-run',
       status: 'failed',
       error: error instanceof Error ? error.message : 'Content export dry-run failed.',
       wroteServerData: false,

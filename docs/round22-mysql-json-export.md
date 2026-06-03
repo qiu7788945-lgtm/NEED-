@@ -272,6 +272,34 @@ The rehearsal must skip `rollbackEligible=false` entries, `media-library.json`, 
 
 The future restore manifest and failure report schema are defined in [Round 22 Backup / Rollback Rehearsal Scope](./round22-backup-rollback-rehearsal.md). Current `--write` remains disabled; a real backup alone is not enough to open write mode.
 
+## 22-7-5D-3 Rollback Rehearsal Temp Restore
+
+Round 22-7-5D-3 adds the temp-only rehearsal CLI:
+
+```bash
+npm.cmd run export:content -- --rehearse-rollback server/data-backups/mysql-json-export/<timestamp>/backup-manifest.json
+```
+
+Optional restore override:
+
+```text
+--restore-dir <path>
+```
+
+Without `--restore-dir`, rehearsal writes to:
+
+```text
+server/data-restore-rehearsals/mysql-json-export/<YYYYMMDD-HHmmss>/
+```
+
+The command reads `backup-manifest.json`, restores only the nine `rollbackEligible=true` first-phase JSON files into `files/`, and writes `restore-manifest.json`, `restore-summary.json`, and `risks.json`. `failure-report.json` is written when a rehearsal failure occurs after the restore root is created.
+
+The command skips `rollbackEligible=false` entries, including `media-library.json`, and excludes publish logs, uploads, MySQL rows, tombstones, `migration_logs`, generated outputs, and the backup directory itself.
+
+Rehearsal validates manifest shape, backup file existence, SHA-256 hashes, readable JSON, record counts, shape summaries, unchanged `server/data` hashes, unchanged backup inputs, and no tracked Git pollution from rehearsal output.
+
+`--rollback` remains formal rollback and remains safely rejected. `--write` remains safely rejected. Temp-only rehearsal does not write MySQL and does not require MySQL configuration.
+
 ## Deferred Areas
 
 `media-library` is deferred because `media_files` is shared across modules and upload/delete rollback is not defined.

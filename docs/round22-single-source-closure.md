@@ -180,8 +180,8 @@ They are related to scenario detail and PageEditor direction, but they do not bl
 
 Global blockers before fallback closure or real MySQL primary write:
 
-- Real backup is not implemented.
-- Real rollback has not been rehearsed.
+- Real backup exists for first-phase JSON, but backup plus rollback rehearsal acceptance must remain paired.
+- Temp-only rollback rehearsal exists, but formal rollback is not implemented.
 - Export `--write` is not open.
 - MySQL primary write is not open.
 - JSON fallback cannot be closed.
@@ -212,6 +212,7 @@ Global blockers before fallback closure or real MySQL primary write:
 - 22-7-5C-3: real MySQL-to-JSON backup creation implementation; `--write` and rollback remain disabled.
 - 22-7-5D: rollback rehearsal temp-only implementation boundary confirmation.
 - 22-7-5D-2: rollback rehearsal temp-only documentation and `.gitignore` boundary landing; no rehearsal implementation, no rollback, no `--write`, and no primary-write code.
+- 22-7-5D-3: rollback rehearsal temp-only implementation; restores only 9 rollbackEligible JSON files to ignored rehearsal output, while `--rollback` and `--write` remain disabled.
 - 22-7-6: media-library/uploads single-source exception strategy.
 - 22-7-7: JSON freeze condition judgment.
 - 22-7-8: Round 22-7 total acceptance and decision on whether to enter Round 22-8.

@@ -44,6 +44,8 @@ export type ExportCliOptions = {
   planBackupRequested: boolean;
   createBackupRequested: boolean;
   rollbackManifestPath?: string;
+  rehearseRollbackManifestPath?: string;
+  restoreDir?: string;
 };
 
 export type SourceJsonSnapshot = {
