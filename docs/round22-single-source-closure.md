@@ -31,6 +31,8 @@ Current hard conclusions:
 
 MySQL primary write design must be decided module by module. The project must not switch every service at once.
 
+The low-risk module primary-write design boundary is defined in [Round 22 Low-Risk Primary Write Design Boundary](./round22-low-risk-primary-write-design.md). It permits design discussion for `contact-info`, `company-assets`, `home-video`, and `home-interactive-images`, but it does not permit primary-write code implementation.
+
 JSON must not be deleted. Its future role is downgrade only: backup, export result, rollback source, archive, or emergency fallback.
 
 `media-library` and uploads are the largest global blockers for single-source closure. MySQL can store metadata and public paths, but upload files remain physical or object-storage assets outside MySQL.
@@ -205,6 +207,7 @@ Global blockers before fallback closure or real MySQL primary write:
 - 22-7-4: real backup design and rollback rehearsal boundary confirmation.
 - 22-7-4B: backup / rollback scope documentation landing.
 - 22-7-5: low-risk module MySQL primary write design boundary confirmation.
+- 22-7-5B: low-risk module MySQL primary write design documentation landing.
 - 22-7-6: media-library/uploads single-source exception strategy.
 - 22-7-7: JSON freeze condition judgment.
 - 22-7-8: Round 22-7 total acceptance and decision on whether to enter Round 22-8.
