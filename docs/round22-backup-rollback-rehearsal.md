@@ -177,7 +177,168 @@ Real backup and rollback rehearsal must be implemented before export `--write` i
 
 Media-library and uploads still require a dedicated Round 22-7-6 single-source exception strategy.
 
-## 10. Forbidden Interpretations
+## 10. Round 22-7-5C-2 Real Backup Implementation Boundary
+
+Round 22-7-5C-2 is the documentation and code-boundary landing step for future real backup implementation.
+
+It is not the real backup execution step. It does not enable export `--write`, does not execute rollback, and does not switch MySQL primary writes.
+
+Round 22-7-5D is reserved for rollback rehearsal temp-only implementation boundary confirmation. Low-risk module primary-write code must not start before real backup is implemented and before temp-only rollback rehearsal is separately accepted.
+
+### Output Directory
+
+Future real backup output should use this directory shape:
+
+```text
+server/data-backups/mysql-json-export/<YYYYMMDD-HHmmss>/
+```
+
+Each backup must use a unique timestamp. A backup implementation must refuse to overwrite an existing backup directory.
+
+Backup artifacts must never be committed to Git. This includes backup files, `backup-manifest.json`, `backup-summary.json`, `risks.json`, and `failure-report.json`.
+
+The backup directory should contain:
+
+- `backup-manifest.json`
+- `backup-summary.json`
+- `risks.json`
+- `failure-report.json` only when backup fails
+- `files/<relative-path>.json`
+
+### Git Ignore Boundary
+
+Real backup implementation is forbidden unless backup artifacts are ignored by Git.
+
+The preferred ignore rule is:
+
+```text
+server/data-backups/
+```
+
+At minimum, the implementation-specific directory must be ignored:
+
+```text
+server/data-backups/mysql-json-export/
+```
+
+If `.gitignore` does not cover the real backup output directory, real backup implementation must not proceed. Backup output must not pollute `git status`.
+
+### Manifest Schema
+
+The real backup manifest must include at least:
+
+- `schemaVersion`
+- `backupId`
+- `createdAt`
+- `gitHead`
+- `branch`
+- `command`
+- `mode`
+- `sourceRoot`
+- `backupRoot`
+- `files[]`
+- `excludedItems[]`
+- `deferredItems[]`
+- `risks[]`
+- `canRollback`
+- `rollbackManifestPlanned`
+- `validationStatus`
+
+Each `files[]` item must include:
+
+- `relativePath`
+- `sourcePath`
+- `backupPath`
+- `exists`
+- `sha256`
+- `sizeBytes`
+- `recordCount`
+- `shapeSummary`
+- `rollbackEligible`
+- `specialHandling`
+- `warnings`
+
+### First-Phase Backup Scope
+
+The first-phase required rollback-eligible files are:
+
+- `server/data/contact-info.json`
+- `server/data/company-assets.json`
+- `server/data/home-video.json`
+- `server/data/home-interactive-images.json`
+- `server/data/articles.json`
+- `server/data/cases.json`
+- `server/data/solutions.json`
+- `server/data/pages.json`
+- `server/data/scenario-detail-pages.json`
+
+If any required rollback-eligible file is missing or cannot be backed up, backup fails.
+
+`server/data/pages.json` and `server/data/scenario-detail-pages.json` must still be hashed, copied, and shape-recorded when they contain empty arrays.
+
+Every required file must record its relative path, byte size, SHA-256 hash, record count, and shape summary.
+
+The implementation must not automatically back up unknown abnormal `server/data` copies such as `server/data/media-library.corrupt-*` or `server/data/media-library.broken-backup.json`.
+
+If `server/data/media-library.json` is backed up, it must use `specialHandling=metadata_safety_anchor` and `rollbackEligible=false`.
+
+`server/data/publish-logs/**` is excluded from first-phase content backup.
+
+`server/uploads/**` is excluded from first-phase backup.
+
+### Backup Validation
+
+After backup creation, validation must confirm:
+
+- all required files exist
+- copied backup file hashes match source file hashes
+- JSON files are readable
+- record count and shape summary can be generated
+- manifest fields are complete
+- summary has no blocker
+- backup directory is unique
+- `server/data` was not modified
+- uploads were not copied
+- MySQL was not written
+- `git status` has no tracked pollution from backup output
+
+### Failure Report
+
+Backup failure must output a failure report. The failure report must include at least:
+
+- `failedAt`
+- `backupId`
+- `failedStep`
+- `failedFile`
+- `errorMessage`
+- `partialFilesCopied`
+- `cleanupStatus`
+- `writeBlocked=true`
+- `manualActionRequired`
+- `risks`
+
+Failure policy:
+
+- Any required rollback-eligible JSON backup failure fails the whole backup.
+- Backup failure must block future export `--write`.
+- Backup failure may still allow dry-run export to continue, but it must not allow write mode.
+- Partial success is not enough to enter write mode.
+- `media-library.json` special backup failure may be a warning for low-risk content write, but it blocks any claim that complete rollback coverage exists.
+- Excluding uploads is not a backup failure, but it must be recorded as a full rollback blocker.
+
+### Relationship To Rollback Rehearsal
+
+Real backup implementation should precede rollback rehearsal temp-only implementation.
+
+Rollback rehearsal must read the backup manifest, verify the backup manifest hash, and restore only files where `rollbackEligible=true`.
+
+Rollback rehearsal must not overwrite `server/data`.
+
+Rollback rehearsal should output a restore manifest and a failure report when applicable.
+
+Backup and rollback rehearsal must be accepted as a pair. Backup alone does not prove the rollback path is usable.
+
+## 11. Forbidden Interpretations
 
 This document is not an export `--write` enablement instruction.
 
