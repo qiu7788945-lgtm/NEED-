@@ -73,6 +73,8 @@ Round 22-7-6-3 lands the media-library / uploads exception strategy in [Round 22
 
 Round 22-7-6-5 lands the ownership report design in [Round 22 Media Files Ownership Report Design](./round22-media-files-ownership-report.md). The design confirms that the report is a prerequisite input for uploads backup / restore and delete recovery, while implementation and generated report outputs remain deferred.
 
+Round 22-7-6-7 lands the uploads backup / restore temp-only design in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). The design defines the future uploads backup scope, manifest, temp-only restore manifest, consistency report, `.gitignore` requirement, and deferred risk acceptance. It does not implement backup or restore.
+
 ## 4. uploads Boundary
 
 `server/uploads/**` does not enter the first-phase JSON backup.
@@ -84,6 +86,8 @@ Uploads are a blocker for complete rollback because MySQL cannot restore physica
 Uploads need a separate backup and restore strategy. The uploads strategy must be revisited before the Round 24 deployment backup strategy is accepted.
 
 The first uploads restore design should be temp-only. Formal restore over real uploads, automatic overwrites, delete recovery, tombstone replay, and physical file replacement remain deferred until a dedicated media follow-up accepts those risks.
+
+The dedicated uploads backup / restore temp-only design is documented in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). That design keeps `server/uploads/images` and `server/uploads/videos` as the first minimum backup scope and requires formal restore to remain deferred.
 
 ## 5. publish-logs Boundary
 

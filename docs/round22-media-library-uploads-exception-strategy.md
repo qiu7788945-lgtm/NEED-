@@ -130,6 +130,8 @@ The backup manifest should record at least:
 
 Public assets are not the same as uploads. If public assets are referenced by content, they need a reference inventory, not silent inclusion in the uploads backup scope.
 
+Round 22-7-6-7 lands the uploads backup / restore temp-only design in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). That document is design-only: implementation, real copy backup, temp-only restore execution, formal restore, media-library export, delete double-write, JSON freeze / delete, and Round 23 treatment remain deferred.
+
 ## 7. Uploads restore boundary
 
 The first uploads restore phase should be temp-only.
@@ -241,7 +243,7 @@ Before Round 23 can use this media exception, Round 22-8 total acceptance must c
 - media-library primary write remains deferred with explicit reason
 - delete double-write remains deferred with explicit reason
 - ownership report follow-up is numbered
-- uploads backup / restore follow-up is numbered
+- uploads backup / restore design is landed or the follow-up is numbered
 - delete recovery / tombstone follow-up is numbered
 - `export --write` remains disabled
 - fallback remains enabled
@@ -258,6 +260,11 @@ These follow-up numbers are route markers only. They are not implemented by this
 - Round 22-7-6-5B: media_files ownership report read-only implementation
 - Round 22-7-6-5C: ownership report result acceptance and blocker matrix judgment
 - Round 22-7-6-6: uploads backup / restore temp-only strategy design
-- Round 22-7-6-7: delete recovery / tombstone / quarantine strategy design
+- Round 22-7-6-7: uploads backup / restore temp-only documentation landing
+- Round 22-7-6-7A: uploads backup / restore implementation boundary confirmation
+- Round 22-7-6-7B: uploads backup dry-run report implementation
+- Round 22-7-6-7C: uploads real copy backup implementation
+- Round 22-7-6-7D: uploads temp-only restore rehearsal implementation
+- Round 22-7-6-8: delete recovery / tombstone / quarantine strategy design
 - Round 22-7-7: JSON freeze condition decision
 - Round 22-8: Round 22 total acceptance

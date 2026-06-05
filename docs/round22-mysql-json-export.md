@@ -314,7 +314,9 @@ Round 22-7-6-3 lands the asset-layer exception strategy in [Round 22 Media Libra
 
 Round 22-7-6-5 lands the ownership report design in [Round 22 Media Files Ownership Report Design](./round22-media-files-ownership-report.md). The design keeps ownership report implementation deferred and records that `unknown`, `sharedButReferenced`, `businessOwned`, `missingPhysicalFile`, and `conflict` cases block media-library export and delete ownership claims.
 
-The exception and ownership report design do not enable `export --write`. They require explicit follow-ups for ownership report implementation boundary confirmation, read-only ownership report implementation, uploads backup / restore temp-only design, delete recovery / tombstone / quarantine design, and a later media-library export re-entry decision.
+Round 22-7-6-7 lands the uploads backup / restore temp-only design in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). The design keeps uploads backup / restore implementation deferred and records that physical-file backup, temp-only restore validation, consistency reporting, and quarantine or recovery policy are required before media-library delete double-write or media-library write closure.
+
+The exception, ownership report design, and uploads backup / restore design do not enable `export --write`. They require explicit follow-ups for ownership report implementation boundary confirmation, read-only ownership report implementation, uploads backup dry-run, real copy backup, temp-only restore rehearsal, delete recovery / tombstone / quarantine design, and a later media-library export re-entry decision.
 
 `publish-logs` do not block 22-6. JSON publish logs remain the formal publish record chain, and MySQL `publish_logs` remains a shadow index.
 

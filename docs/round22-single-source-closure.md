@@ -41,6 +41,8 @@ Round 22-7-6-3 records the current media-library / uploads exception strategy in
 
 Round 22-7-6-5 records the media_files ownership report design in [Round 22 Media Files Ownership Report Design](./round22-media-files-ownership-report.md). The report remains deferred, and unclear ownership continues to block media-library export, delete double-write, JSON freeze / delete coverage, global `export --write` inclusion, and any Round 23 treatment that would treat media-library as an ordinary migrated module.
 
+Round 22-7-6-7 records the uploads backup / restore temp-only design in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). The design remains implementation-deferred, and missing physical backup / quarantine continues to block media-library delete double-write, JSON freeze / delete coverage, global `export --write`, and Round 23 media treatment.
+
 JSON publish logs remain the official publish record chain. MySQL `publish_logs` is only a shadow/index table at this stage.
 
 Route manifest, prerender, sitemap, and robots dependencies must be confirmed separately before any fallback closure.
@@ -164,6 +166,8 @@ This area has a dedicated media-library/uploads exception strategy in [Round 22 
 
 The ownership report design is landed separately in [Round 22 Media Files Ownership Report Design](./round22-media-files-ownership-report.md). Implementation is still deferred; `unknown`, `sharedButReferenced`, `businessOwned`, `missingPhysicalFile`, and `conflict` cases remain blockers for media-library export or delete ownership claims as defined there.
 
+The uploads backup / restore temp-only design is landed separately in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). Implementation is still deferred; without physical backup or quarantine, media-library delete double-write remains forbidden and media-library cannot be included in JSON freeze / delete, global `export --write`, or Round 23 closure treatment.
+
 ### publish-logs
 
 JSON publish logs are the official publish record chain.
@@ -227,7 +231,8 @@ Global blockers before fallback closure or real MySQL primary write:
 - 22-7-6-3: media-library/uploads exception strategy documentation landing; keeps media-library export, primary write, delete double-write, JSON freeze/delete, global `export --write`, and Round 23 entry blocked until later acceptance.
 - 22-7-6-5: media_files ownership report documentation landing; keeps implementation deferred and records the blocker matrix required before media-library export, delete double-write, JSON freeze/delete, global `export --write`, or Round 23 media treatment.
 - 22-7-6-6: uploads backup / restore temp-only strategy design.
-- 22-7-6-7: delete recovery / tombstone / quarantine strategy design.
+- 22-7-6-7: uploads backup / restore temp-only documentation landing; keeps implementation deferred and records the physical backup / restore manifest boundary required before media-library delete double-write, JSON freeze/delete, global `export --write`, or Round 23 media treatment.
+- 22-7-6-8: delete recovery / tombstone / quarantine strategy design.
 - 22-7-7: JSON freeze condition judgment.
 - 22-7-8: Round 22-7 total acceptance and decision on whether to enter Round 22-8.
 

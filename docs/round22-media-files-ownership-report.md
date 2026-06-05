@@ -298,6 +298,8 @@ The report should provide:
 
 Uploads backup should use the ownership report to decide which files need manifest coverage and which files are blockers or warnings. Uploads restore should begin as temp-only and must not overwrite real upload directories until a later explicit strategy accepts that risk.
 
+Round 22-7-6-7 lands the uploads backup / restore temp-only design in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). The ownership report remains the ownership decision surface; the uploads backup manifest is the physical-file recovery surface. If ownership report implementation remains deferred, uploads backup may only run in conservative mode.
+
 ## 10. Relationship with delete recovery / tombstone / quarantine
 
 The ownership report is a prerequisite for delete recovery.
@@ -408,6 +410,11 @@ These numbers are route markers only. They are not implemented by this document.
 - Round 22-7-6-5B: media_files ownership report read-only implementation
 - Round 22-7-6-5C: ownership report result acceptance and blocker matrix judgment
 - Round 22-7-6-6: uploads backup / restore temp-only strategy design
-- Round 22-7-6-7: delete recovery / tombstone / quarantine strategy design
+- Round 22-7-6-7: uploads backup / restore temp-only documentation landing
+- Round 22-7-6-7A: uploads backup / restore implementation boundary confirmation
+- Round 22-7-6-7B: uploads backup dry-run report implementation
+- Round 22-7-6-7C: uploads real copy backup implementation
+- Round 22-7-6-7D: uploads temp-only restore rehearsal implementation
+- Round 22-7-6-8: delete recovery / tombstone / quarantine strategy design
 - Round 22-7-7: JSON freeze condition decision
 - Round 22-8: Round 22 total acceptance
