@@ -20,6 +20,7 @@
     "compare:content": "tsx server/src/db/scripts/compare-content.ts",
     "export:content": "tsx server/src/db/scripts/export-content.ts",
     "export:content:dry-run": "tsx server/src/db/scripts/export-content.ts --dry-run",
+    "backfill:home-video-raw-json": "tsx server/src/db/scripts/backfill-home-video-raw-json.ts",
     "backfill:home-video-raw-json:dry-run": "tsx server/src/db/scripts/backfill-home-video-raw-json.ts --dry-run",
     "compare:media-library-source": "tsx server/src/scripts/compare-media-library-source.ts",
     "shadow:media-write": "tsx server/src/scripts/shadow-media-write.ts",

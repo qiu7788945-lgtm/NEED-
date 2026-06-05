@@ -3,7 +3,7 @@ import { execFile } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import type { RowDataPacket } from 'mysql2/promise';
+import type { ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { closeDbPool, getDbPool, getSafeDatabaseConfig } from '../client.js';
 
 type UnknownRecord = Record<string, unknown>;
@@ -24,6 +24,10 @@ type RawJsonRow = RowDataPacket & {
   raw_json: unknown;
 };
 
+type RawJsonPresentRow = RowDataPacket & {
+  raw_json_present: unknown;
+};
+
 type ScalarComparisonStatus = 'matched' | 'warning' | 'blocker' | 'missing_row' | 'mysql_unavailable';
 
 type ScalarComparisonField = {
@@ -39,10 +43,10 @@ type ScalarComparisonField = {
 type BackfillReport = {
   moduleName: 'home-video';
   stage: 'raw_json-backfill';
-  dryRun: true;
+  dryRun: boolean;
   writeModeRequested: boolean;
-  writeModeEnabled: false;
-  wroteMysql: false;
+  writeModeEnabled: boolean;
+  wroteMysql: boolean;
   wroteServerData: false;
   sourceJsonPath: string;
   targetTable: 'home_video';
@@ -56,6 +60,7 @@ type BackfillReport = {
   mysqlConfigured: boolean;
   mysqlAvailable: boolean;
   mysqlMissing: string[];
+  rawJsonColumnExists: boolean;
   scalarComparison: {
     status: ScalarComparisonStatus;
     fields: ScalarComparisonField[];
@@ -90,12 +95,14 @@ const requiredShapeKeys = [
 
 function printUsage(): void {
   console.log(`Usage:
+  npm.cmd run backfill:home-video-raw-json
   npm.cmd run backfill:home-video-raw-json:dry-run
+  npm.cmd run backfill:home-video-raw-json -- --write
   npm.cmd run backfill:home-video-raw-json:dry-run -- --dry-run
 
 Options:
-  --dry-run      Default and only supported mode. Generates a report only.
-  --write        Rejected in Round 22-7-5K-6A; no MySQL writes are performed.
+  --dry-run      Default mode. Generates a report only.
+  --write        Restricted mode. Only updates home_video.raw_json for singleton_key='home_video'.
   --help, -h     Show this help.`);
 }
 
@@ -221,6 +228,24 @@ function validateShape(record: UnknownRecord | null, warnings: string[], blocker
   }
 }
 
+function hasCompleteRequiredShape(record: UnknownRecord | null): boolean {
+  if (!record) {
+    return false;
+  }
+
+  return requiredShapeKeys.every((key) => {
+    if (!(key in record)) {
+      return false;
+    }
+
+    if (key === 'enabled') {
+      return typeof record[key] === 'boolean';
+    }
+
+    return typeof record[key] === 'string';
+  });
+}
+
 function createUnavailableScalarComparison(status: 'mysql_unavailable' | 'missing_row'): BackfillReport['scalarComparison'] {
   return {
     status,
@@ -339,6 +364,7 @@ async function readMysqlSnapshot(source: UnknownRecord | null, warnings: string[
   let mysqlMissing: string[] = [];
   let existingRowFound = false;
   let beforeRawJsonPresent = false;
+  let rawJsonColumnExists = false;
   let scalarComparison = createUnavailableScalarComparison('mysql_unavailable');
 
   let safeConfig: ReturnType<typeof getSafeDatabaseConfig>;
@@ -352,6 +378,7 @@ async function readMysqlSnapshot(source: UnknownRecord | null, warnings: string[
       mysqlMissing,
       existingRowFound,
       beforeRawJsonPresent,
+      rawJsonColumnExists,
       scalarComparison,
     };
   }
@@ -367,6 +394,7 @@ async function readMysqlSnapshot(source: UnknownRecord | null, warnings: string[
       mysqlMissing,
       existingRowFound,
       beforeRawJsonPresent,
+      rawJsonColumnExists,
       scalarComparison,
     };
   }
@@ -395,6 +423,7 @@ async function readMysqlSnapshot(source: UnknownRecord | null, warnings: string[
         mysqlMissing,
         existingRowFound,
         beforeRawJsonPresent,
+        rawJsonColumnExists,
         scalarComparison,
       };
     }
@@ -417,7 +446,7 @@ async function readMysqlSnapshot(source: UnknownRecord | null, warnings: string[
          AND TABLE_NAME = 'home_video'
          AND COLUMN_NAME = 'raw_json'`,
     );
-    const rawJsonColumnExists = Number(columnRows[0]?.column_count ?? 0) > 0;
+    rawJsonColumnExists = Number(columnRows[0]?.column_count ?? 0) > 0;
 
     if (rawJsonColumnExists) {
       const [rawRows] = await pool.query<RawJsonRow[]>(
@@ -443,8 +472,70 @@ async function readMysqlSnapshot(source: UnknownRecord | null, warnings: string[
     mysqlMissing,
     existingRowFound,
     beforeRawJsonPresent,
+    rawJsonColumnExists,
     scalarComparison,
   };
+}
+
+function addWritePreconditionBlockers(input: {
+  blockers: string[];
+  warnings: string[];
+  mysqlSnapshot: Awaited<ReturnType<typeof readMysqlSnapshot>>;
+  plannedRawJson: UnknownRecord | null;
+}): void {
+  if (!input.mysqlSnapshot.mysqlConfigured) {
+    input.blockers.push('Write blocked: MySQL must be configured.');
+  }
+  if (!input.mysqlSnapshot.mysqlAvailable) {
+    input.blockers.push('Write blocked: MySQL must be available.');
+  }
+  if (!input.mysqlSnapshot.existingRowFound) {
+    input.blockers.push('Write blocked: active home_video singleton row was not found.');
+  }
+  if (!input.mysqlSnapshot.rawJsonColumnExists) {
+    input.blockers.push('Write blocked: home_video.raw_json column does not exist.');
+  }
+  if (input.mysqlSnapshot.beforeRawJsonPresent) {
+    input.blockers.push('Write blocked: home_video.raw_json already has a value; this script will not overwrite it.');
+  }
+  if (input.mysqlSnapshot.scalarComparison.status !== 'matched') {
+    input.blockers.push(`Write blocked: scalarComparison.status is ${input.mysqlSnapshot.scalarComparison.status}.`);
+  }
+  if (!hasCompleteRequiredShape(input.plannedRawJson)) {
+    input.blockers.push('Write blocked: plannedRawJson is incomplete.');
+  }
+  if (input.warnings.length > 0) {
+    input.blockers.push('Write blocked: warnings must be resolved before write mode.');
+  }
+}
+
+async function readRawJsonPresent(): Promise<boolean> {
+  const pool = getDbPool();
+  const [rows] = await pool.query<RawJsonPresentRow[]>(
+    `SELECT raw_json IS NOT NULL AS raw_json_present
+     FROM home_video
+     WHERE singleton_key = ? AND deleted_at IS NULL
+     ORDER BY id ASC
+     LIMIT 1`,
+    ['home_video'],
+  );
+
+  return asMysqlBoolean(rows[0]?.raw_json_present) === true;
+}
+
+async function writeHomeVideoRawJson(plannedRawJson: UnknownRecord): Promise<void> {
+  const pool = getDbPool();
+  const [result] = await pool.execute<ResultSetHeader>(
+    `UPDATE home_video
+     SET raw_json = ?
+     WHERE singleton_key = ?
+       AND deleted_at IS NULL`,
+    [JSON.stringify(plannedRawJson), 'home_video'],
+  );
+
+  if (result.affectedRows !== 1) {
+    throw new Error(`Expected to update exactly 1 home_video.raw_json row, but affected ${result.affectedRows}.`);
+  }
 }
 
 async function writeReport(report: BackfillReport): Promise<void> {
@@ -468,24 +559,56 @@ async function main(): Promise<void> {
   const warnings: string[] = [];
   const blockers: string[] = [];
 
-  if (args.writeRequested) {
-    blockers.push('--write is rejected in Round 22-7-5K-6A. This tool only supports dry-run and never writes MySQL or server/data.');
-  }
-
   const source = await readHomeVideoJson(sourceJsonPath, blockers);
   validateShape(source, warnings, blockers);
 
   const mysqlSnapshot = await readMysqlSnapshot(source, warnings, blockers);
   const gitHead = await readGitHead(projectRoot);
   const plannedRawJson = source ? { ...source } : null;
+  let writeModeEnabled = false;
+  let wroteMysql = false;
+  let afterRawJsonPresent = mysqlSnapshot.beforeRawJsonPresent;
+
+  if (args.writeRequested) {
+    const preWriteBlockerCount = blockers.length;
+    addWritePreconditionBlockers({
+      blockers,
+      warnings,
+      mysqlSnapshot,
+      plannedRawJson,
+    });
+
+    if (preWriteBlockerCount === 0 && blockers.length === 0 && plannedRawJson) {
+      writeModeEnabled = true;
+      try {
+        await writeHomeVideoRawJson(plannedRawJson);
+        wroteMysql = true;
+        try {
+          afterRawJsonPresent = await readRawJsonPresent();
+        } catch (error) {
+          blockers.push(`Write verification failed: ${error instanceof Error ? error.message : String(error)}`);
+        }
+
+        if (!afterRawJsonPresent) {
+          blockers.push('Write failed verification: home_video.raw_json is still empty after write.');
+        }
+      } catch (error) {
+        if (!wroteMysql) {
+          writeModeEnabled = false;
+        }
+        afterRawJsonPresent = await readRawJsonPresent().catch(() => mysqlSnapshot.beforeRawJsonPresent);
+        blockers.push(`Write failed: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
 
   const report: BackfillReport = {
     moduleName: 'home-video',
     stage: 'raw_json-backfill',
-    dryRun: true,
+    dryRun: !args.writeRequested,
     writeModeRequested: args.writeRequested,
-    writeModeEnabled: false,
-    wroteMysql: false,
+    writeModeEnabled,
+    wroteMysql,
     wroteServerData: false,
     sourceJsonPath: path.relative(projectRoot, sourceJsonPath).replace(/\\/g, '/'),
     targetTable: 'home_video',
@@ -499,10 +622,11 @@ async function main(): Promise<void> {
     mysqlConfigured: mysqlSnapshot.mysqlConfigured,
     mysqlAvailable: mysqlSnapshot.mysqlAvailable,
     mysqlMissing: mysqlSnapshot.mysqlMissing,
+    rawJsonColumnExists: mysqlSnapshot.rawJsonColumnExists,
     scalarComparison: mysqlSnapshot.scalarComparison,
     plannedRawJson,
     beforeRawJsonPresent: mysqlSnapshot.beforeRawJsonPresent,
-    afterRawJsonPresent: mysqlSnapshot.beforeRawJsonPresent,
+    afterRawJsonPresent,
     warnings,
     blockers,
     createdAt,
@@ -510,18 +634,24 @@ async function main(): Promise<void> {
     command: process.argv.join(' '),
     outputDir: path.relative(projectRoot, outputDir).replace(/\\/g, '/'),
     reportPath: path.relative(projectRoot, reportPath).replace(/\\/g, '/'),
-    nextSteps: [
-      'Review this dry-run report.',
-      'Do not run write mode in Round 22-7-5K-6A.',
-      'If accepted, enter a separate backfill write boundary confirmation step.',
-      'Keep exporter raw_json priority adjustment and home-video primary write in later steps.',
-    ],
+    nextSteps: args.writeRequested
+      ? [
+          'Review this write report.',
+          'Run read-only MySQL verification for home_video.raw_json.',
+          'Keep exporter raw_json priority adjustment as the next separate step.',
+          'Keep home-video primary write in a later step.',
+        ]
+      : [
+          'Review this dry-run report.',
+          'Use --write only after boundary confirmation.',
+          'Keep exporter raw_json priority adjustment and home-video primary write in later steps.',
+        ],
   };
 
   await writeReport(report);
 
   console.log(JSON.stringify({
-    mode: 'home-video-raw-json-backfill-dry-run',
+    mode: args.writeRequested ? 'home-video-raw-json-backfill-write' : 'home-video-raw-json-backfill-dry-run',
     status: report.blockers.length > 0 ? 'blocked' : 'completed',
     dryRun: report.dryRun,
     writeModeRequested: report.writeModeRequested,
