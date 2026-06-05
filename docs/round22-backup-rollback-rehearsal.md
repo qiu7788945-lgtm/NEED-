@@ -69,6 +69,8 @@ In the first phase, it is not ordinary content rollback input. A first-phase con
 
 Media-library rollback requires a dedicated design that covers uploads, `media_files`, delete guards, owners, shared references, and unknown ownership. `media-library.json` cannot be treated as a simple content JSON file because the visible media library depends on both metadata and physical or object-storage assets.
 
+Round 22-7-6-3 lands the media-library / uploads exception strategy in [Round 22 Media Library / Uploads Exception Strategy](./round22-media-library-uploads-exception-strategy.md). The strategy keeps `media-library.json` as a metadata safety anchor, keeps uploads as the physical file source, treats `media_files` only as metadata / index / reference aid, and defers media-library export, media-library primary write, delete double-write, ownership report, uploads backup / restore, and delete recovery / tombstone work.
+
 ## 4. uploads Boundary
 
 `server/uploads/**` does not enter the first-phase JSON backup.
@@ -78,6 +80,8 @@ Media-library rollback requires a dedicated design that covers uploads, `media_f
 Uploads are a blocker for complete rollback because MySQL cannot restore physical files by itself and JSON metadata cannot recreate missing uploaded assets.
 
 Uploads need a separate backup and restore strategy. The uploads strategy must be revisited before the Round 24 deployment backup strategy is accepted.
+
+The first uploads restore design should be temp-only. Formal restore over real uploads, automatic overwrites, delete recovery, tombstone replay, and physical file replacement remain deferred until a dedicated media follow-up accepts those risks.
 
 ## 5. publish-logs Boundary
 
@@ -176,6 +180,8 @@ Round 22-7-5 may only confirm low-risk module MySQL primary-write design boundar
 Real backup and rollback rehearsal must be implemented before export `--write` is opened or any real overwrite is allowed.
 
 Media-library and uploads still require a dedicated Round 22-7-6 single-source exception strategy.
+
+Round 22-7-6-3 lands that exception strategy as documentation. It is not rollback coverage and does not open `--write`, `--rollback`, JSON freeze/delete, or Round 23 permissions.
 
 ## 10. Round 22-7-5C-2 Real Backup Implementation Boundary
 

@@ -37,6 +37,8 @@ JSON must not be deleted. Its future role is downgrade only: backup, export resu
 
 `media-library` and uploads are the largest global blockers for single-source closure. MySQL can store metadata and public paths, but upload files remain physical or object-storage assets outside MySQL.
 
+Round 22-7-6-3 records the current media-library / uploads exception strategy in [Round 22 Media Library / Uploads Exception Strategy](./round22-media-library-uploads-exception-strategy.md). The exception is an asset-layer risk acceptance, not single-source completion.
+
 JSON publish logs remain the official publish record chain. MySQL `publish_logs` is only a shadow/index table at this stage.
 
 Route manifest, prerender, sitemap, and robots dependencies must be confirmed separately before any fallback closure.
@@ -154,7 +156,9 @@ Uploads cannot be recovered from MySQL alone. Physical file backup or object-sto
 
 Permanent delete remains sensitive and not fully closed. `media-library.json` must remain a safety anchor.
 
-This area should have a dedicated media-library/uploads source of truth strategy.
+Round 22 treats media-library / uploads as an asset-layer exception. `media-library.json` and uploads must remain. `media_files` can support metadata, index, and reference checks, but it is not the unique media-library source. Unknown ownership blocks media-library export, and `sharedButReferenced` rows must not be directly folded into media-library ownership.
+
+This area has a dedicated media-library/uploads exception strategy in [Round 22 Media Library / Uploads Exception Strategy](./round22-media-library-uploads-exception-strategy.md). The deferred follow-ups are ownership report design, uploads backup / restore temp-only strategy, delete recovery / tombstone / quarantine strategy, and a later re-entry decision for media-library export.
 
 ### publish-logs
 
@@ -216,6 +220,7 @@ Global blockers before fallback closure or real MySQL primary write:
 - 22-7-5D-2: rollback rehearsal temp-only documentation and `.gitignore` boundary landing; no rehearsal implementation, no rollback, no `--write`, and no primary-write code.
 - 22-7-5D-3: rollback rehearsal temp-only implementation; restores only 9 rollbackEligible JSON files to ignored rehearsal output, while `--rollback` and `--write` remain disabled.
 - 22-7-6: media-library/uploads single-source exception strategy.
+- 22-7-6-3: media-library/uploads exception strategy documentation landing; keeps media-library export, primary write, delete double-write, JSON freeze/delete, global `export --write`, and Round 23 entry blocked until later acceptance.
 - 22-7-7: JSON freeze condition judgment.
 - 22-7-8: Round 22-7 total acceptance and decision on whether to enter Round 22-8.
 

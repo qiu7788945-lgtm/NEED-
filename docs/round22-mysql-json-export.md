@@ -310,6 +310,10 @@ Rehearsal validates manifest shape, backup file existence, SHA-256 hashes, reada
 
 `media-library` is deferred because `media_files` is shared across modules and upload/delete rollback is not defined.
 
+Round 22-7-6-3 lands the asset-layer exception strategy in [Round 22 Media Library / Uploads Exception Strategy](./round22-media-library-uploads-exception-strategy.md). `media-library` remains deferred because `media_files` is not the unique media-library source, unknown ownership blocks export, `sharedButReferenced` rows cannot be directly exported as media-library-owned records, uploads are not backed up or restorable by the current JSON rollback path, and delete recovery / tombstone behavior is not closed.
+
+The exception does not enable `export --write`. It requires explicit follow-ups for ownership report design, uploads backup / restore temp-only design, delete recovery / tombstone / quarantine design, and a later media-library export re-entry decision.
+
 `publish-logs` do not block 22-6. JSON publish logs remain the formal publish record chain, and MySQL `publish_logs` remains a shadow index.
 
 `scenario-detail-pages`, `solution_pages`, and `solution_page_blocks` are deferred because the current source is empty and PageEditor/scenario detail ownership is outside this step.
