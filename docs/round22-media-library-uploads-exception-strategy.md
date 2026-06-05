@@ -87,6 +87,8 @@ A dedicated ownership report must come before:
 - global `export --write`
 - any Round 23 entry decision based on media closure
 
+Round 22-7-6-5 lands the ownership report design in [Round 22 Media Files Ownership Report Design](./round22-media-files-ownership-report.md). That document is design-only: implementation, report output, media-library export, delete double-write, JSON freeze / delete, and Round 23 treatment remain deferred.
+
 ## 5. Business references and shared physical files
 
 `media_files` and upload URLs can be referenced by many modules:
@@ -251,9 +253,11 @@ Before Round 23 can use this media exception, Round 22-8 total acceptance must c
 These follow-up numbers are route markers only. They are not implemented by this document.
 
 - Round 22-7-6-4: media_files ownership report design
-- Round 22-7-6-5: uploads backup / restore temp-only strategy design
-- Round 22-7-6-6: delete recovery / tombstone / quarantine strategy design
-- Round 22-7-6-7: media-library export implementation re-entry decision
+- Round 22-7-6-5: media_files ownership report documentation landing
+- Round 22-7-6-5A: media_files ownership report implementation boundary confirmation
+- Round 22-7-6-5B: media_files ownership report read-only implementation
+- Round 22-7-6-5C: ownership report result acceptance and blocker matrix judgment
+- Round 22-7-6-6: uploads backup / restore temp-only strategy design
+- Round 22-7-6-7: delete recovery / tombstone / quarantine strategy design
 - Round 22-7-7: JSON freeze condition decision
 - Round 22-8: Round 22 total acceptance
-

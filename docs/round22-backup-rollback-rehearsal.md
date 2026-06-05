@@ -71,6 +71,8 @@ Media-library rollback requires a dedicated design that covers uploads, `media_f
 
 Round 22-7-6-3 lands the media-library / uploads exception strategy in [Round 22 Media Library / Uploads Exception Strategy](./round22-media-library-uploads-exception-strategy.md). The strategy keeps `media-library.json` as a metadata safety anchor, keeps uploads as the physical file source, treats `media_files` only as metadata / index / reference aid, and defers media-library export, media-library primary write, delete double-write, ownership report, uploads backup / restore, and delete recovery / tombstone work.
 
+Round 22-7-6-5 lands the ownership report design in [Round 22 Media Files Ownership Report Design](./round22-media-files-ownership-report.md). The design confirms that the report is a prerequisite input for uploads backup / restore and delete recovery, while implementation and generated report outputs remain deferred.
+
 ## 4. uploads Boundary
 
 `server/uploads/**` does not enter the first-phase JSON backup.
