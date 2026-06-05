@@ -64,7 +64,7 @@ After a future MySQL primary write, JSON shadow write-back should remain enabled
 
 ### C. home-video
 
-`home-video` can enter design discussion, but it should not be the first module to receive primary-write code.
+`home-video` can enter design discussion, but it should not be the first module to receive primary-write code. The detailed Round 22-7-5K-2 strategy boundary is recorded in [Round 22 Home Video Primary Write Strategy](./round22-home-video-primary-write-strategy.md).
 
 Current state:
 
@@ -74,9 +74,9 @@ Current state:
 - MySQL-to-JSON export is implemented.
 - Export can carry an `updatedAt` warning.
 
-The timestamp warning does not block design discussion, but it blocks primary-write code acceptance. Before implementation, the project must define whether the module preserves the historical JSON `updatedAt`, uses MySQL `updated_at`, or normalizes timestamps at write time.
+The timestamp warning does not block design discussion, but it blocks primary-write code acceptance. Before implementation, the project must define whether the module preserves the historical JSON `updatedAt`, uses MySQL `updated_at`, or normalizes timestamps at write time. As of Round 22-7-5K-2, `home-video` is a medium-risk candidate and must not enter primary-write code until timestamp and media-field strategy are accepted.
 
-This module also includes video URL, poster URL, and media fields. Primary-write design must not rely on incomplete `media_files` rows. The future write path must preserve video URL, video file name, video display name, poster URL, poster file name, poster display name, title, description, enabled state, and accepted timestamp behavior.
+This module also includes video URL, poster URL, and media fields. Primary-write design must not rely on incomplete `media_files` rows. The future write path must preserve video URL, video file name, video display name, poster URL, poster file name, poster display name, title, description, enabled state, and accepted timestamp behavior. It must not write `media_files`, uploads, or `media-library.json`.
 
 ### D. home-interactive-images
 
@@ -214,6 +214,7 @@ Rationale:
 - `home-interactive-images` has a hard 12-slot invariant, but its export is expected matched and the invariant can be tested directly.
 - `company-assets` is viable, but its media fields require a careful field preservation strategy.
 - `home-video` has an `updatedAt` warning and should define timestamp policy before code acceptance.
+- `home-video` is temporarily classified as a medium-risk candidate in Round 22-7-5K-2 because timestamp behavior, video/poster media preservation, and export warning acceptance are not closed.
 
 ## 9. Relationship to Later Round 22-7 Steps
 

@@ -31,7 +31,7 @@ Current hard conclusions:
 
 MySQL primary write design must be decided module by module. The project must not switch every service at once.
 
-The low-risk module primary-write design boundary is defined in [Round 22 Low-Risk Primary Write Design Boundary](./round22-low-risk-primary-write-design.md). It permits design discussion for `contact-info`, `company-assets`, `home-video`, and `home-interactive-images`, but it does not permit primary-write code implementation.
+The low-risk module primary-write design boundary is defined in [Round 22 Low-Risk Primary Write Design Boundary](./round22-low-risk-primary-write-design.md). It permits design discussion for `contact-info`, `company-assets`, `home-video`, and `home-interactive-images`, but it does not permit primary-write code implementation. `home-video` now has a dedicated medium-risk strategy boundary in [Round 22 Home Video Primary Write Strategy](./round22-home-video-primary-write-strategy.md).
 
 JSON must not be deleted. Its future role is downgrade only: backup, export result, rollback source, archive, or emergency fallback.
 
@@ -55,7 +55,7 @@ Round 23 permissions must not be pulled into Round 22 closure work.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `contact-info` | MySQL-first with JSON fallback | JSON primary | Present from migration/shadow path | Implemented; expected matched | Yes | Yes, low risk design only | Real backup, rollback rehearsal, controlled write API test, export matched acceptance | None currently blocking | Backup, rollback source, emergency fallback, archive |
 | `company-assets` | MySQL-first with JSON fallback | JSON primary | Present from migration/shadow path | Implemented; expected matched | Yes | Yes, low risk design only | Real backup, rollback rehearsal, controlled write API test, media URL/image field acceptance | Media references must be confirmed without making `media_files` the only source | Backup, rollback source, emergency fallback, archive |
-| `home-video` | MySQL-first with JSON fallback | JSON primary | Present from migration/shadow path | Implemented; warning on timestamp possible | Yes | Yes, after timestamp policy | Real backup, rollback rehearsal, controlled write API test, timestamp acceptance | `updatedAt` warning | Backup, rollback source, emergency fallback, archive |
+| `home-video` | MySQL-first with JSON fallback | JSON primary | Present from migration/shadow path | Implemented; warning on timestamp possible | Yes | Yes, medium-risk candidate after timestamp/media strategy | Real backup, rollback rehearsal, controlled write API test, timestamp acceptance, media field preservation, export warning acceptance | `updatedAt` warning; video/poster media fields; no `raw_json` in `home_video` | Backup, rollback source, emergency fallback, archive |
 | `home-interactive-images` | MySQL-first with JSON fallback | JSON primary | Present from migration/shadow path | Implemented; expected matched | Yes | Yes, after 12-slot guard validation | Real backup, rollback rehearsal, controlled write API test, stable 12-slot export/compare/rollback | 12-slot invariant must remain hard | Backup, rollback source, emergency fallback, archive |
 | `articles` | MySQL-first with JSON fallback | JSON primary | Shadow database exists; write side is not primary | Implemented; warning | Yes | Yes, discussion only | Raw shape strategy, SEO/FAQ write strategy, timestamp policy, real backup, rollback rehearsal, controlled write API tests | No `raw_json` column in current export context; created/updated timestamp differences | Backup, rollback source, emergency fallback, archive |
 | `cases` | MySQL-first with JSON fallback | JSON primary plus MySQL shadow for selected paths | Present and relatively broad | Implemented; warning | Yes | Yes, discussion only | Word import, `case_images`, delete tombstone, media references, timestamp policy, rollback rehearsal, real API write tests | Timestamp warning; media and Word-import risks | Backup, rollback source, emergency fallback, archive |
@@ -91,6 +91,8 @@ Future JSON role: backup, emergency fallback, export result, and rollback source
 `home-video` may enter MySQL primary write design discussion.
 
 The current export can carry an `updatedAt` warning because MySQL row timestamps may differ from the historical JSON timestamp. This does not block Round 22-7 discussion, but it does block exact write overwrite acceptance until a timestamp policy is defined.
+
+Round 22-7-5K-2 classifies `home-video` as a medium-risk candidate, not an ordinary low-risk module. It must not enter primary-write code implementation until timestamp policy, video/poster media-field preservation, JSON shape fidelity, and export warning acceptance are closed. The write path must not depend on or write `media_files`, uploads, or `media-library.json`.
 
 Future JSON role: backup, emergency fallback, export result, and rollback source.
 
@@ -195,7 +197,7 @@ Global blockers before fallback closure or real MySQL primary write:
 
 | Warning | Blocks Round 22-7 Discussion? | Blocks MySQL Primary Write? | Blocks Export `--write`? | Needs Cleanup Step? | Suggested Handling |
 | --- | --- | --- | --- | --- | --- |
-| `home-video` `updatedAt` warning | No | Yes, until timestamp policy is accepted | Yes, for exact overwrite | Yes | Define whether MySQL timestamp or preserved JSON timestamp wins. |
+| `home-video` `updatedAt` warning | No | Yes, until timestamp policy is accepted | Yes, for exact overwrite | Yes | Preserve JSON-shape `updatedAt` unless explicitly authorized; MySQL `updated_at` must not silently overwrite it. |
 | `articles` raw_json absence / `createdAt` / `updatedAt` warning | No | Yes | Yes | Yes | Define reconstructed shape acceptance, SEO/FAQ strategy, and timestamp policy. |
 | `cases` timestamp warning | No | Yes, until accepted | Yes, for exact overwrite | Yes | Define timestamp normalization and case export overwrite criteria. |
 | Prerender `expected 17 manifest routes, but loaded 24` | No | Not directly | Not directly, but should be explained before final closure | Yes | Explain or update acceptance criteria in a dedicated route/prerender review step. |
