@@ -42,6 +42,7 @@ type CompanyAssetRow = RowDataPacket & {
 };
 
 type HomeVideoRow = RowDataPacket & {
+  raw_json?: unknown;
   video_media_id: unknown;
   poster_media_id: unknown;
   video_url: unknown;
@@ -54,6 +55,19 @@ type HomeVideoRow = RowDataPacket & {
   video_original_name: unknown;
   poster_file_name: unknown;
   poster_original_name: unknown;
+};
+
+type HomeVideoRawJson = Record<string, unknown> & {
+  videoUrl: string;
+  videoFileName: string;
+  videoDisplayName: string;
+  posterUrl: string;
+  posterFileName: string;
+  posterDisplayName: string;
+  title: string;
+  description: string;
+  enabled: boolean;
+  updatedAt: string;
 };
 
 type HomeInteractiveImageRow = RowDataPacket & {
@@ -219,6 +233,17 @@ const allowedCaseStatuses = new Set<CaseStatus>([
   'published',
   'offline',
 ]);
+const homeVideoRawJsonStringKeys = [
+  'videoUrl',
+  'videoFileName',
+  'videoDisplayName',
+  'posterUrl',
+  'posterFileName',
+  'posterDisplayName',
+  'title',
+  'description',
+  'updatedAt',
+] as const;
 const solutionSceneSlugs: SolutionSceneSlug[] = [
   'family-day',
   'client-appreciation',
@@ -263,6 +288,28 @@ function asMysqlBoolean(value: unknown, fallback = true): boolean {
   }
 
   return fallback;
+}
+
+function asMysqlBooleanOrNull(value: unknown): boolean | null {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (['1', 'true', 'yes', 'enabled', 'published'].includes(normalized)) {
+      return true;
+    }
+    if (['0', 'false', 'no', 'disabled', 'draft', 'archived'].includes(normalized)) {
+      return false;
+    }
+  }
+
+  return null;
 }
 
 function parseJsonColumn(value: unknown): unknown {
@@ -1336,9 +1383,133 @@ async function readCompanyAssetsExport(definition: ExportModuleDefinition): Prom
   };
 }
 
+function formatHomeVideoConflictValue(value: unknown): string {
+  const jsonValue = JSON.stringify(value);
+  return jsonValue === undefined ? String(value) : jsonValue;
+}
+
+function readHomeVideoRawJson(value: unknown, blockers: string[]): HomeVideoRawJson | null {
+  const isMissing = value === null
+    || value === undefined
+    || (typeof value === 'string' && !value.trim())
+    || (Buffer.isBuffer(value) && !value.toString('utf8').trim());
+
+  if (isMissing) {
+    return null;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = parseJsonColumn(value);
+  } catch (error) {
+    blockers.push(
+      `home_video.raw_json could not be parsed: ${error instanceof Error ? error.message : 'invalid JSON'}.`,
+    );
+    return null;
+  }
+
+  if (!isRecord(parsed)) {
+    blockers.push('home_video.raw_json must be a JSON object.');
+    return null;
+  }
+
+  const shapeBlockers: string[] = [];
+  for (const key of homeVideoRawJsonStringKeys) {
+    if (!Object.prototype.hasOwnProperty.call(parsed, key)) {
+      shapeBlockers.push(`missing ${key}`);
+      continue;
+    }
+
+    if (typeof parsed[key] !== 'string') {
+      shapeBlockers.push(`${key} must be a string`);
+    }
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(parsed, 'enabled')) {
+    shapeBlockers.push('missing enabled');
+  } else if (typeof parsed.enabled !== 'boolean') {
+    shapeBlockers.push('enabled must be boolean');
+  }
+
+  if (parsed.enabled === true && asString(parsed.videoUrl) === '') {
+    shapeBlockers.push('enabled=true requires a non-empty videoUrl');
+  }
+
+  if (shapeBlockers.length > 0) {
+    blockers.push(`home_video.raw_json has invalid shape: ${shapeBlockers.join('; ')}.`);
+    return null;
+  }
+
+  return parsed as HomeVideoRawJson;
+}
+
+function warnHomeVideoStringConflict(input: {
+  warnings: string[];
+  rawJson: HomeVideoRawJson;
+  rawField: keyof HomeVideoRawJson;
+  mysqlField: string;
+  mysqlValue: unknown;
+}): void {
+  const rawValue = asString(input.rawJson[input.rawField]);
+  const mysqlValue = asString(input.mysqlValue);
+
+  if (rawValue === mysqlValue) {
+    return;
+  }
+
+  input.warnings.push(
+    `home_video.${input.mysqlField} differs from raw_json.${String(input.rawField)}; `
+      + `exported raw_json value ${formatHomeVideoConflictValue(rawValue)} and left scalar value `
+      + `${formatHomeVideoConflictValue(mysqlValue)} unchanged.`,
+  );
+}
+
+function warnHomeVideoScalarConflicts(row: HomeVideoRow, rawJson: HomeVideoRawJson, warnings: string[]): void {
+  warnHomeVideoStringConflict({
+    warnings,
+    rawJson,
+    rawField: 'videoUrl',
+    mysqlField: 'video_url',
+    mysqlValue: row.video_url,
+  });
+  warnHomeVideoStringConflict({
+    warnings,
+    rawJson,
+    rawField: 'posterUrl',
+    mysqlField: 'poster_url',
+    mysqlValue: row.poster_url,
+  });
+  warnHomeVideoStringConflict({
+    warnings,
+    rawJson,
+    rawField: 'title',
+    mysqlField: 'title',
+    mysqlValue: row.title,
+  });
+  warnHomeVideoStringConflict({
+    warnings,
+    rawJson,
+    rawField: 'description',
+    mysqlField: 'description',
+    mysqlValue: row.description,
+  });
+
+  const mysqlEnabled = asMysqlBooleanOrNull(row.is_enabled);
+  if (mysqlEnabled !== null && rawJson.enabled !== mysqlEnabled) {
+    warnings.push(
+      `home_video.is_enabled differs from raw_json.enabled; exported raw_json value `
+        + `${formatHomeVideoConflictValue(rawJson.enabled)} and left scalar value `
+        + `${formatHomeVideoConflictValue(mysqlEnabled)} unchanged.`,
+    );
+  }
+}
+
 async function readHomeVideoExport(definition: ExportModuleDefinition): Promise<MysqlExportReadResult> {
+  const hasRawJsonColumn = await tableColumnExists('home_video', 'raw_json');
+  const rawJsonSelect = hasRawJsonColumn ? 'hv.raw_json' : 'NULL AS raw_json';
   const [rows] = await getDbPool().query<HomeVideoRow[]>(
     `SELECT
+       ${rawJsonSelect},
        hv.video_media_id,
        hv.poster_media_id,
        hv.video_url,
@@ -1371,6 +1542,46 @@ async function readHomeVideoExport(definition: ExportModuleDefinition): Promise<
   }
 
   const warnings: string[] = [];
+  const blockers: string[] = [];
+  if (!hasRawJsonColumn) {
+    warnings.push('home_video.raw_json column is absent; scalar and media_files fallback was used.');
+  }
+
+  const rawJson = readHomeVideoRawJson(row.raw_json, blockers);
+  if (blockers.length > 0) {
+    return {
+      moduleName: definition.moduleName,
+      implemented: true,
+      status: 'shape_risk',
+      data: null,
+      recordCount: 0,
+      warnings,
+      blockers,
+    };
+  }
+
+  if (rawJson) {
+    warnHomeVideoScalarConflicts(row, rawJson, warnings);
+
+    return {
+      moduleName: definition.moduleName,
+      implemented: true,
+      status: 'exported',
+      data: { ...rawJson },
+      recordCount: 1,
+      warnings,
+      blockers: [],
+      metrics: {
+        usesRawJson: true,
+        usesMediaFiles: false,
+        wroteServerData: false,
+        wroteMysql: false,
+        canRollback: false,
+      },
+    };
+  }
+
+  warnings.push('home_video.raw_json is missing; scalar fields and optional media_files fallback were used.');
   const videoUrl = asString(row.video_url);
   const posterUrl = asString(row.poster_url);
   const videoFileName = asString(row.video_file_name) || fileNameFromUrl(videoUrl);
@@ -1403,6 +1614,13 @@ async function readHomeVideoExport(definition: ExportModuleDefinition): Promise<
     recordCount: 1,
     warnings,
     blockers: [],
+    metrics: {
+      usesRawJson: false,
+      usesMediaFiles: Boolean(row.video_media_id || row.poster_media_id),
+      wroteServerData: false,
+      wroteMysql: false,
+      canRollback: false,
+    },
   };
 }
 

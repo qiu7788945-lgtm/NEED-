@@ -59,7 +59,7 @@ All real MySQL-to-JSON transforms remain future work. The skeleton reads the cur
 
 - `contact-info`: reads `contact_info.content_json` from the active singleton row and restores the current `contact-info.json` object shape.
 - `company-assets`: reads active `company_assets` rows, uses `raw_json` for core display fields, and uses primary table fields for media URL, alt text, description, ordering, and enabled state.
-- `home-video`: reads the active `home_video` singleton row and optional `media_files` metadata for file names; missing media metadata is reported as a warning, not a hard failure.
+- `home-video`: reads the active `home_video` singleton row. As of Round 22-7-5K-6G, valid `home_video.raw_json` is the preferred JSON-shape base; scalar columns are used only for consistency warnings, and optional `media_files` metadata is used only when `raw_json` is missing.
 - `home-interactive-images`: reads active `home_interactive_images` rows, preserves a stable 12-slot array, and reports a warning if the active row count is not exactly 12.
 
 These modules now report `exportStatus=implemented`. `articles`, `cases`, and `solutions` remain `skeleton_only`; `pages` remains `skipped_empty_source` when the JSON source is empty.
@@ -72,6 +72,12 @@ For implemented modules, `modules/<module-name>/exported.json` contains the rest
 - module warnings and blockers
 
 The exporter must not hide differences. If MySQL is unavailable, implemented modules report `mysql_unavailable` and do not pretend to match. If the core JSON shape cannot be restored, the module reports `error` / `shape_risk`. Non-core media metadata gaps are warnings only.
+
+### Round 22-7-5K-6G home-video raw_json priority
+
+`home-video` preserves its current JSON shape from `home_video.raw_json` when that value is present and valid. The exporter keeps `updatedAt`, `videoFileName`, `videoDisplayName`, `posterFileName`, and `posterDisplayName` from `raw_json`; MySQL `updated_at`, scalar columns, and `media_files` do not override those fields.
+
+If `raw_json` is missing, the exporter falls back to the previous scalar plus optional `media_files` reconstruction and records a warning. If `raw_json` is present but cannot restore the required shape, the module reports `shape_risk` rather than pretending to match. This remains dry-run export only and does not enable `export --write`.
 
 ## 22-6-4 Articles Implemented Dry-Run Export
 

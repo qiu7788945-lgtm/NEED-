@@ -10,11 +10,11 @@ It is a documentation-only step. It does not change application code, routes, se
 
 `home-video` is temporarily classified as a medium-risk primary-write candidate because:
 
-- it has an existing `updatedAt` export warning risk;
-- the timestamp policy is not closed;
+- it had an `updatedAt` export warning risk until the raw_json priority export step;
+- the timestamp policy for future primary writes is still not closed;
 - it carries both video and poster media fields;
-- the current `home_video` table cannot fully represent the existing JSON shape;
-- the current `home_video` table has no `raw_json` column;
+- the scalar `home_video` columns cannot fully represent the existing JSON shape without `raw_json`;
+- `home_video.raw_json` is now the accepted shape-preservation source for export, not a primary-write switch;
 - `media_files` cannot be a hard dependency;
 - the current home route required checks do not directly verify `videoUrl` or `posterUrl`.
 
@@ -81,15 +81,14 @@ The current MySQL `home_video` table has:
 - `deleted_at`
 - `singleton_key`
 
-The current MySQL `home_video` table does not have:
+The scalar MySQL `home_video` columns do not have:
 
 - `videoFileName`
 - `videoDisplayName`
 - `posterFileName`
 - `posterDisplayName`
-- `raw_json`
 
-Therefore, `home_video` alone cannot fully restore the existing JSON shape.
+Therefore, scalar `home_video` columns alone cannot fully restore the existing JSON shape. The `raw_json` column is the accepted export-preservation source after Round 22-7-5K-6E/K-6G, but it does not make `home-video` MySQL-primary.
 
 ## 4. updatedAt / Timestamp Strategy
 
@@ -109,7 +108,7 @@ Future primary-write behavior must follow these rules:
 
 Automatically refreshing JSON `updatedAt` would create tracked diffs and make export diff and baseline acceptance unstable.
 
-The current exporter outputs JSON `updatedAt` from MySQL `updated_at`. That is the source of the current warning risk.
+The raw_json priority exporter must output JSON `updatedAt` from `home_video.raw_json.updatedAt`. MySQL `updated_at` remains an internal database timestamp and must not overwrite the JSON shape timestamp.
 
 Until this timestamp strategy is implemented or otherwise explicitly accepted, `home-video` must not enter primary-write code implementation.
 
@@ -171,18 +170,18 @@ Validation failure must stop before MySQL and JSON writes.
 
 `home-video` export is implemented.
 
-The current warning risk comes from exporting JSON `updatedAt` from MySQL `updated_at`.
+The previous warning risk came from exporting JSON `updatedAt` from MySQL `updated_at`.
 
 This warning does not break current runtime behavior, but it blocks stable future export matched acceptance.
 
 After a same-value PUT, MySQL `updated_at` will likely change. If the exporter keeps using MySQL `updated_at`, the write-after export diff may not match.
 
-Before `home-video` primary-write implementation, the project must define the accepted export diff behavior:
+Before `home-video` primary-write implementation, the project must keep the accepted export diff behavior:
 
-- whether export should preserve historical JSON `updatedAt`;
-- whether schema or export code needs an equivalent JSON timestamp source;
-- whether a known `updatedAt` warning can be accepted for a limited step;
-- what condition counts as a stable matched result.
+- export should preserve historical JSON `updatedAt` from `raw_json`;
+- `raw_json` remains the JSON-shape source for file/display names;
+- a known `updatedAt` warning should not be accepted once raw_json priority is available;
+- a stable matched result means the single-module dry-run export matches `server/data/home-video.json`.
 
 The project must not enter API write testing while the warning meaning is undefined.
 
