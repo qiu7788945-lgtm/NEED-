@@ -75,6 +75,8 @@ Round 22-7-6-5 lands the ownership report design in [Round 22 Media Files Owners
 
 Round 22-7-6-7 lands the uploads backup / restore temp-only design in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). The design defines the future uploads backup scope, manifest, temp-only restore manifest, consistency report, `.gitignore` requirement, and deferred risk acceptance. It does not implement backup or restore.
 
+Round 22-7-6-9 lands the delete recovery / tombstone / quarantine strategy in [Round 22 Delete Recovery / Tombstone / Quarantine Strategy](./round22-delete-recovery-tombstone-quarantine.md). The strategy defines delete dry-run, tombstone, quarantine, soft-delete window, and recovery boundaries. It does not implement delete recovery, tombstones, quarantine, permanent delete, or delete double-write.
+
 ## 4. uploads Boundary
 
 `server/uploads/**` does not enter the first-phase JSON backup.
@@ -88,6 +90,8 @@ Uploads need a separate backup and restore strategy. The uploads strategy must b
 The first uploads restore design should be temp-only. Formal restore over real uploads, automatic overwrites, delete recovery, tombstone replay, and physical file replacement remain deferred until a dedicated media follow-up accepts those risks.
 
 The dedicated uploads backup / restore temp-only design is documented in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). That design keeps `server/uploads/images` and `server/uploads/videos` as the first minimum backup scope and requires formal restore to remain deferred.
+
+The dedicated delete recovery / tombstone / quarantine strategy is documented in [Round 22 Delete Recovery / Tombstone / Quarantine Strategy](./round22-delete-recovery-tombstone-quarantine.md). That strategy requires a physical backup, traceable manifest, matching physical hash, quarantine or soft-delete window, tombstone, and temp-only recovery rehearsal before delete can be considered recoverable.
 
 ## 5. publish-logs Boundary
 

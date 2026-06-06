@@ -300,6 +300,8 @@ Uploads backup should use the ownership report to decide which files need manife
 
 Round 22-7-6-7 lands the uploads backup / restore temp-only design in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). The ownership report remains the ownership decision surface; the uploads backup manifest is the physical-file recovery surface. If ownership report implementation remains deferred, uploads backup may only run in conservative mode.
 
+Round 22-7-6-9 lands the delete recovery / tombstone / quarantine strategy in [Round 22 Delete Recovery / Tombstone / Quarantine Strategy](./round22-delete-recovery-tombstone-quarantine.md). The ownership report remains a prerequisite for delete dry-run and delete recovery, while delete recovery, tombstone, quarantine, and permanent delete implementation remain deferred.
+
 ## 10. Relationship with delete recovery / tombstone / quarantine
 
 The ownership report is a prerequisite for delete recovery.
@@ -316,6 +318,8 @@ A delete candidate must be:
 - protected by quarantine or a soft-delete window
 
 Without these facts, delete double-write remains forbidden.
+
+The delete recovery / tombstone / quarantine strategy is landed separately in [Round 22 Delete Recovery / Tombstone / Quarantine Strategy](./round22-delete-recovery-tombstone-quarantine.md). It confirms that `canDelete` defaults to `false`, `unknown`, `sharedButReferenced`, and `conflict` are blockers, `businessOwned` cannot be deleted by media-library delete, and `orphanCandidate` needs backup plus quarantine before it can become a delete candidate.
 
 ## 11. Relationship with JSON freeze / delete
 
@@ -416,5 +420,10 @@ These numbers are route markers only. They are not implemented by this document.
 - Round 22-7-6-7C: uploads real copy backup implementation
 - Round 22-7-6-7D: uploads temp-only restore rehearsal implementation
 - Round 22-7-6-8: delete recovery / tombstone / quarantine strategy design
+- Round 22-7-6-9: delete recovery / tombstone / quarantine documentation landing
+- Round 22-7-6-9A: delete dry-run / impact report implementation boundary confirmation
+- Round 22-7-6-9B: tombstone schema / storage implementation boundary confirmation
+- Round 22-7-6-9C: quarantine / soft-delete window implementation boundary confirmation
+- Round 22-7-6-9D: delete recovery temp-only restore design
 - Round 22-7-7: JSON freeze condition decision
 - Round 22-8: Round 22 total acceptance

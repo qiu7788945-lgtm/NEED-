@@ -132,6 +132,8 @@ Public assets are not the same as uploads. If public assets are referenced by co
 
 Round 22-7-6-7 lands the uploads backup / restore temp-only design in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). That document is design-only: implementation, real copy backup, temp-only restore execution, formal restore, media-library export, delete double-write, JSON freeze / delete, and Round 23 treatment remain deferred.
 
+Round 22-7-6-9 lands the delete recovery / tombstone / quarantine strategy in [Round 22 Delete Recovery / Tombstone / Quarantine Strategy](./round22-delete-recovery-tombstone-quarantine.md). That document is design-only: delete dry-run, tombstone writing, quarantine, soft-delete window, recovery restore, permanent delete, delete double-write, JSON freeze / delete, and Round 23 treatment remain deferred.
+
 ## 7. Uploads restore boundary
 
 The first uploads restore phase should be temp-only.
@@ -176,13 +178,15 @@ Before delete can move toward single-source closure, the project needs:
 - restore and recovery policy
 - manual repair path for mismatches
 
+The dedicated delete recovery / tombstone / quarantine strategy is documented in [Round 22 Delete Recovery / Tombstone / Quarantine Strategy](./round22-delete-recovery-tombstone-quarantine.md). That strategy keeps `canDelete=false` as the default, requires delete dry-run before any real delete, prefers quarantine over direct `fs.unlink`, and keeps permanent delete forbidden until ownership, backup, tombstone, quarantine, and recovery paths are implemented and accepted.
+
 ## 9. Deferred items
 
 The following items are deferred:
 
 - media_files ownership report
 - uploads backup / restore temp-only strategy
-- delete recovery / tombstone / quarantine strategy
+- delete recovery / tombstone / quarantine implementation
 - media-library export implementation
 - media-library MySQL primary write
 - delete double-write
@@ -266,5 +270,10 @@ These follow-up numbers are route markers only. They are not implemented by this
 - Round 22-7-6-7C: uploads real copy backup implementation
 - Round 22-7-6-7D: uploads temp-only restore rehearsal implementation
 - Round 22-7-6-8: delete recovery / tombstone / quarantine strategy design
+- Round 22-7-6-9: delete recovery / tombstone / quarantine documentation landing
+- Round 22-7-6-9A: delete dry-run / impact report implementation boundary confirmation
+- Round 22-7-6-9B: tombstone schema / storage implementation boundary confirmation
+- Round 22-7-6-9C: quarantine / soft-delete window implementation boundary confirmation
+- Round 22-7-6-9D: delete recovery temp-only restore design
 - Round 22-7-7: JSON freeze condition decision
 - Round 22-8: Round 22 total acceptance

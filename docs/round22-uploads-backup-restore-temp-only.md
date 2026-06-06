@@ -331,6 +331,8 @@ Current direct physical deletion risk must be replaced or guarded by a later del
 
 Without backup or quarantine, delete double-write remains forbidden.
 
+Round 22-7-6-9 lands that strategy in [Round 22 Delete Recovery / Tombstone / Quarantine Strategy](./round22-delete-recovery-tombstone-quarantine.md). It confirms that delete dry-run must precede any real delete, `canDelete` defaults to `false`, quarantine or a soft-delete window must exist before permanent delete, and delete recovery must support restore from quarantine or uploads backup with hash, ownership, and reference validation.
+
 ## 13. Relationship with JSON freeze / delete
 
 Uploads backup / restore not being implemented blocks JSON freeze / delete coverage for media-library.
@@ -429,5 +431,10 @@ These numbers are route markers only. They are not implemented by this document.
 - Round 22-7-6-7C: uploads real copy backup implementation
 - Round 22-7-6-7D: uploads temp-only restore rehearsal implementation
 - Round 22-7-6-8: delete recovery / tombstone / quarantine strategy design
+- Round 22-7-6-9: delete recovery / tombstone / quarantine documentation landing
+- Round 22-7-6-9A: delete dry-run / impact report implementation boundary confirmation
+- Round 22-7-6-9B: tombstone schema / storage implementation boundary confirmation
+- Round 22-7-6-9C: quarantine / soft-delete window implementation boundary confirmation
+- Round 22-7-6-9D: delete recovery temp-only restore design
 - Round 22-7-7: JSON freeze condition decision
 - Round 22-8: Round 22 total acceptance

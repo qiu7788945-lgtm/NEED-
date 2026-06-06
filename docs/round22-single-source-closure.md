@@ -43,6 +43,8 @@ Round 22-7-6-5 records the media_files ownership report design in [Round 22 Medi
 
 Round 22-7-6-7 records the uploads backup / restore temp-only design in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). The design remains implementation-deferred, and missing physical backup / quarantine continues to block media-library delete double-write, JSON freeze / delete coverage, global `export --write`, and Round 23 media treatment.
 
+Round 22-7-6-9 records the delete recovery / tombstone / quarantine strategy in [Round 22 Delete Recovery / Tombstone / Quarantine Strategy](./round22-delete-recovery-tombstone-quarantine.md). The strategy remains implementation-deferred, and missing delete dry-run, tombstone, quarantine or soft-delete window, and recovery path continue to block media-library delete double-write, permanent delete, JSON freeze / delete coverage, global `export --write`, and Round 23 media treatment.
+
 JSON publish logs remain the official publish record chain. MySQL `publish_logs` is only a shadow/index table at this stage.
 
 Route manifest, prerender, sitemap, and robots dependencies must be confirmed separately before any fallback closure.
@@ -168,6 +170,8 @@ The ownership report design is landed separately in [Round 22 Media Files Owners
 
 The uploads backup / restore temp-only design is landed separately in [Round 22 Uploads Backup / Restore Temp-Only Design](./round22-uploads-backup-restore-temp-only.md). Implementation is still deferred; without physical backup or quarantine, media-library delete double-write remains forbidden and media-library cannot be included in JSON freeze / delete, global `export --write`, or Round 23 closure treatment.
 
+The delete recovery / tombstone / quarantine strategy is landed separately in [Round 22 Delete Recovery / Tombstone / Quarantine Strategy](./round22-delete-recovery-tombstone-quarantine.md). Implementation is still deferred; `archived` is not proof of safe permanent delete, direct `fs.unlink` cannot be the future main delete path, and media-library delete cannot be treated as closed until delete dry-run, tombstone, quarantine or soft-delete window, and temp-only recovery rehearsal are separately implemented and accepted.
+
 ### publish-logs
 
 JSON publish logs are the official publish record chain.
@@ -233,6 +237,11 @@ Global blockers before fallback closure or real MySQL primary write:
 - 22-7-6-6: uploads backup / restore temp-only strategy design.
 - 22-7-6-7: uploads backup / restore temp-only documentation landing; keeps implementation deferred and records the physical backup / restore manifest boundary required before media-library delete double-write, JSON freeze/delete, global `export --write`, or Round 23 media treatment.
 - 22-7-6-8: delete recovery / tombstone / quarantine strategy design.
+- 22-7-6-9: delete recovery / tombstone / quarantine documentation landing; keeps implementation deferred and records the delete dry-run, tombstone, quarantine, soft-delete window, and recovery path boundaries required before media-library delete double-write, permanent delete, JSON freeze/delete, global `export --write`, or Round 23 media treatment.
+- 22-7-6-9A: delete dry-run / impact report implementation boundary confirmation.
+- 22-7-6-9B: tombstone schema / storage implementation boundary confirmation.
+- 22-7-6-9C: quarantine / soft-delete window implementation boundary confirmation.
+- 22-7-6-9D: delete recovery temp-only restore design.
 - 22-7-7: JSON freeze condition judgment.
 - 22-7-8: Round 22-7 total acceptance and decision on whether to enter Round 22-8.
 
