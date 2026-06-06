@@ -193,6 +193,8 @@ Media-library and uploads still require a dedicated Round 22-7-6 single-source e
 
 Round 22-7-6-3 lands that exception strategy as documentation. It is not rollback coverage and does not open `--write`, `--rollback`, JSON freeze/delete, or Round 23 permissions.
 
+Round 22-7-7B lands the JSON freeze condition boundary in [Round 22 JSON Freeze Conditions](./round22-json-freeze-conditions.md). The current backup and temp-only rehearsal paths do not allow JSON hard freeze, JSON deletion, fallback closure, export `--write`, formal rollback, publish-log deletion, media-library deletion, or early Round 23 entry.
+
 ## 10. Round 22-7-5C-2 Real Backup Implementation Boundary
 
 Round 22-7-5C-2 is the documentation and code-boundary landing step for future real backup implementation.

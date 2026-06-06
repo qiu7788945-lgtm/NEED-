@@ -134,6 +134,8 @@ Round 22-7-6-7 lands the uploads backup / restore temp-only design in [Round 22 
 
 Round 22-7-6-9 lands the delete recovery / tombstone / quarantine strategy in [Round 22 Delete Recovery / Tombstone / Quarantine Strategy](./round22-delete-recovery-tombstone-quarantine.md). That document is design-only: delete dry-run, tombstone writing, quarantine, soft-delete window, recovery restore, permanent delete, delete double-write, JSON freeze / delete, and Round 23 treatment remain deferred.
 
+Round 22-7-7B lands the JSON freeze condition boundary in [Round 22 JSON Freeze Conditions](./round22-json-freeze-conditions.md). It confirms that `media-library.json` remains a metadata safety anchor, uploads remain physical file sources, JSON hard freeze / delete remain forbidden, and future soft freeze is only a policy candidate.
+
 ## 7. Uploads restore boundary
 
 The first uploads restore phase should be temp-only.

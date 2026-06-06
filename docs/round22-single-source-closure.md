@@ -45,6 +45,8 @@ Round 22-7-6-7 records the uploads backup / restore temp-only design in [Round 2
 
 Round 22-7-6-9 records the delete recovery / tombstone / quarantine strategy in [Round 22 Delete Recovery / Tombstone / Quarantine Strategy](./round22-delete-recovery-tombstone-quarantine.md). The strategy remains implementation-deferred, and missing delete dry-run, tombstone, quarantine or soft-delete window, and recovery path continue to block media-library delete double-write, permanent delete, JSON freeze / delete coverage, global `export --write`, and Round 23 media treatment.
 
+Round 22-7-7B records the JSON freeze condition landing in [Round 22 JSON Freeze Conditions](./round22-json-freeze-conditions.md). Current JSON hard freeze, JSON deletion, fallback closure, export `--write`, and early Round 23 entry remain forbidden. Future soft freeze is only a policy candidate and does not mean delete, hard freeze, fallback closure, JSON shadow write-back closure, export write enablement, or rollback availability.
+
 JSON publish logs remain the official publish record chain. MySQL `publish_logs` is only a shadow/index table at this stage.
 
 Route manifest, prerender, sitemap, and robots dependencies must be confirmed separately before any fallback closure.
@@ -243,7 +245,9 @@ Global blockers before fallback closure or real MySQL primary write:
 - 22-7-6-9C: quarantine / soft-delete window implementation boundary confirmation.
 - 22-7-6-9D: delete recovery temp-only restore design.
 - 22-7-7: JSON freeze condition judgment.
-- 22-7-8: Round 22-7 total acceptance and decision on whether to enter Round 22-8.
+- 22-7-7B: JSON freeze condition documentation landing; keeps hard freeze, JSON delete, fallback closure, export `--write`, and Round 23 entry blocked.
+- 22-7-7C: soft freeze policy boundary confirmation.
+- 22-8: Round 22 total acceptance and decision on whether Round 23 can start later.
 
 Round 22-7-2 itself only records the source of truth matrix and decision table.
 

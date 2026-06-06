@@ -318,6 +318,8 @@ Round 22-7-6-7 lands the uploads backup / restore temp-only design in [Round 22 
 
 Round 22-7-6-9 lands the delete recovery / tombstone / quarantine strategy in [Round 22 Delete Recovery / Tombstone / Quarantine Strategy](./round22-delete-recovery-tombstone-quarantine.md). The strategy keeps delete recovery, tombstone, quarantine, delete dry-run, permanent delete, and delete double-write implementation deferred and records that `canDelete=false` remains the default until every ownership, backup, reference, tombstone, quarantine, and recovery guard passes.
 
+Round 22-7-7B lands the JSON freeze condition boundary in [Round 22 JSON Freeze Conditions](./round22-json-freeze-conditions.md). Export `--write` remains disabled with `writeModeEnabled=false`; JSON hard freeze, JSON deletion, fallback closure, publish-log deletion, and early Round 23 entry remain forbidden. Future soft freeze is only a policy candidate and does not open write mode.
+
 The exception, ownership report design, uploads backup / restore design, and delete recovery strategy do not enable `export --write`. They require explicit follow-ups for ownership report implementation boundary confirmation, read-only ownership report implementation, uploads backup dry-run, real copy backup, temp-only restore rehearsal, delete dry-run / impact report implementation boundary confirmation, tombstone storage boundary confirmation, quarantine / soft-delete window boundary confirmation, delete recovery temp-only restore design, and a later media-library export re-entry decision.
 
 `publish-logs` do not block 22-6. JSON publish logs remain the formal publish record chain, and MySQL `publish_logs` remains a shadow index.
