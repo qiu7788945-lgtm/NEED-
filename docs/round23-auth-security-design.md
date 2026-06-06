@@ -1,6 +1,6 @@
 # Round 23 Auth / Admin Security Design
 
-This document records the Round 23-3 auth and admin security design landing.
+This document records the Round 23 auth and admin security design landing.
 
 It is a documentation-only step. It does not implement login, logout, `me`, auth middleware, migrations, admin tables, seeds, MySQL writes, admin UI changes, API write tests, JSON changes, uploads changes, export `--write`, rollback, fallback closure, JSON freeze, or JSON deletion.
 
@@ -122,7 +122,9 @@ Recommended fields:
 - `updated_at`
 - `last_login_at` optional
 
-The first seed path should be either a seed admin or a one-time initialization command. The real administrator password must never be committed to Git or written into docs, code, generated artifacts, or chat records.
+Round 23-4B later fixed the detailed data-model and initialization boundary in `docs/round23-auth-data-model-and-seed.md`.
+
+The first administrator should be created by a separate `create-admin` initialization command, not by a migration seed. The real administrator password must never be committed to Git or written into docs, code, migrations, JSON, generated artifacts, or chat records.
 
 ## 8. Password hashing requirements
 
@@ -133,8 +135,8 @@ Rules:
 - Never store plain text passwords.
 - Never log submitted passwords.
 - Never return password hashes in API responses.
-- Prefer `argon2id` when available.
-- `bcrypt` is acceptable if it better matches the project dependency and deployment constraints.
+- Prefer `bcrypt` for the Round 23 first-stage implementation because it is mature, common in Node projects, and lower risk to land.
+- Re-evaluate `argon2id` later if the deployment environment confirms compatibility.
 - Password verification must use the hash verification API from the chosen library.
 - Password hashing parameters must be documented in the implementation step.
 
@@ -393,16 +395,19 @@ Recommended small-step sequence:
 
 - 23-3: Auth / admin security design documentation landing.
 - 23-4: Auth data structure / migration / seed boundary confirmation.
-- 23-5: Auth code skeleton with `login`, `logout`, and `me`; no business API protection yet.
-- 23-6: Auth middleware and 401 / 403 response behavior.
-- 23-7: Protect highest-risk APIs first: media upload / delete / batch and publish / prerender.
-- 23-8: Protect all `POST`, `PUT`, `PATCH`, and `DELETE`.
-- 23-9: Protect admin-only GET routes.
-- 23-10: Admin frontend login page and `me` startup check.
-- 23-11: CORS whitelist and credentials.
-- 23-12: Login rate limit.
-- 23-13: Public frontend GET and prerender regression validation.
-- 23-14: Round 23 stage acceptance.
+- 23-4B: Auth data structure / migration / seed documentation landing.
+- 23-5: Auth migration implementation, table creation only, no default admin seed.
+- 23-6: `create-admin` initialization script implementation.
+- 23-7: `login`, `logout`, and `me` implementation.
+- 23-8: Auth middleware and 401 / 403 response behavior.
+- 23-9: Protect highest-risk APIs first: media upload / delete / batch and publish / prerender.
+- 23-10: Protect all `POST`, `PUT`, `PATCH`, and `DELETE`.
+- 23-11: Protect admin-only GET routes.
+- 23-12: Admin frontend login page and `me` startup check.
+- 23-13: CORS whitelist, credentials, and origin guard.
+- 23-14: Login rate limit.
+- 23-15: Public frontend GET and prerender regression validation.
+- 23-16: Round 23 stage acceptance.
 
 Each step must be small, separately reviewable, and independently verifiable. Do not combine schema, auth middleware, admin UI, and API protection in one large change.
 
@@ -452,8 +457,12 @@ Any implementation requires a separate later step.
 
 ## 21. Follow-up steps
 
-Recommended next step:
+Related data-model document:
 
-- 23-4: Auth data structure / migration / seed boundary confirmation.
+- `docs/round23-auth-data-model-and-seed.md`
 
-23-4 should still be a boundary confirmation step. It should define the future `admin_users` migration, password hash strategy, seed or initialization command, session storage strategy, and rollback considerations before any migration or code is created.
+Recommended next step after the 23-4B documentation landing:
+
+- 23-5: Auth migration implementation.
+
+23-5 should only create the auth tables. It must not seed a default administrator, write a real password, implement login code, add auth middleware, modify admin UI, or touch Round 22 data migration boundaries.
