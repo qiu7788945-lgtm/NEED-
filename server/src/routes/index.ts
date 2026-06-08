@@ -9,9 +9,11 @@ import { solutionsRouter } from './solutions.routes.js';
 import { publishRouter } from './publish.routes.js';
 import { pagesRouter } from './pages.routes.js';
 import { scenarioDetailRouter } from './scenario-detail.routes.js';
+import { authRouter } from './auth.routes.js';
 
 const apiRouter = Router();
 
+apiRouter.use('/api/auth', authRouter);
 apiRouter.use('/api/health', healthRouter);
 apiRouter.use('/api/home', homeRouter);
 apiRouter.use('/api/media', mediaRouter);
