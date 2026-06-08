@@ -8,6 +8,8 @@ export type AuthConfig = {
   cookieSecure: boolean;
   cookieSameSite: AuthCookieSameSite;
   sessionTtlSeconds: number;
+  loginRateLimitWindowMs: number;
+  loginRateLimitMax: number;
   allowedOrigins: string[];
   isProduction: boolean;
 };
@@ -19,6 +21,9 @@ export class AuthConfigError extends Error {
 
 const DEFAULT_COOKIE_NAME = 'need_admin_session';
 const DEFAULT_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
+const DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000;
+const DEFAULT_DEVELOPMENT_LOGIN_RATE_LIMIT_MAX = 20;
+const DEFAULT_PRODUCTION_LOGIN_RATE_LIMIT_MAX = 5;
 const DEVELOPMENT_SESSION_SECRET = 'need-local-development-session-secret';
 const DEFAULT_DEVELOPMENT_ORIGINS = ['http://localhost:3001', 'http://localhost:3000'];
 
@@ -135,6 +140,14 @@ export function getAuthConfig(): AuthConfig {
     cookieSecure,
     cookieSameSite,
     sessionTtlSeconds: readPositiveInteger('ADMIN_SESSION_TTL_SECONDS', DEFAULT_SESSION_TTL_SECONDS),
+    loginRateLimitWindowMs: readPositiveInteger(
+      'ADMIN_LOGIN_RATE_LIMIT_WINDOW_MS',
+      DEFAULT_LOGIN_RATE_LIMIT_WINDOW_MS,
+    ),
+    loginRateLimitMax: readPositiveInteger(
+      'ADMIN_LOGIN_RATE_LIMIT_MAX',
+      isProduction ? DEFAULT_PRODUCTION_LOGIN_RATE_LIMIT_MAX : DEFAULT_DEVELOPMENT_LOGIN_RATE_LIMIT_MAX,
+    ),
     allowedOrigins: readAllowedOrigins(isProduction),
     isProduction,
   };

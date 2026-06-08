@@ -6,6 +6,7 @@ import {
   loginAdmin,
   logoutAdmin,
 } from '../services/auth/auth.service.js';
+import { isLoginRateLimited, recordLoginSuccess } from '../services/auth/login-rate-limit.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { fail, success } from '../utils/api-response.js';
 import { clearSessionCookie, readCookie, setSessionCookie } from '../utils/cookies.js';
@@ -24,9 +25,17 @@ function sendAuthError(error: unknown, res: Response): boolean {
 
 authRouter.post('/login', asyncHandler(async (req, res) => {
   try {
+    const authConfig = getAuthConfig();
+
+    if (isLoginRateLimited(req, authConfig)) {
+      res.status(429).json(fail('Too many login attempts. Please try again later.', 'RATE_LIMITED'));
+      return;
+    }
+
     const loginResult = await loginAdmin(req.body);
 
-    setSessionCookie(res, getAuthConfig(), loginResult.sessionToken);
+    recordLoginSuccess(req);
+    setSessionCookie(res, authConfig, loginResult.sessionToken);
     res.json(success({ user: loginResult.user }));
   } catch (error) {
     if (!sendAuthError(error, res)) {
