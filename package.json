@@ -17,6 +17,7 @@
     "typecheck:server": "tsc -p server/tsconfig.json --noEmit",
     "db:health": "tsx server/src/db/health.ts",
     "db:migrate": "tsx server/src/db/migrate.ts",
+    "admin:create": "tsx server/src/db/scripts/create-admin.ts",
     "compare:content": "tsx server/src/db/scripts/compare-content.ts",
     "export:content": "tsx server/src/db/scripts/export-content.ts",
     "export:content:dry-run": "tsx server/src/db/scripts/export-content.ts --dry-run",
@@ -34,6 +35,7 @@
     "@types/cors": "^2.8.19",
     "@types/multer": "^2.1.0",
     "@vitejs/plugin-react": "^5.0.4",
+    "bcrypt": "^6.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
@@ -50,6 +52,7 @@
     "vite": "^6.2.0"
   },
   "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "autoprefixer": "^10.4.21",
