@@ -9,6 +9,15 @@ export type AuthUser = {
   status: string;
 };
 
+export type AdminSessionUser = AuthUser & {
+  id: number;
+};
+
+export type AdminSessionValidationResult =
+  | { status: 'authenticated'; user: AdminSessionUser }
+  | { status: 'unauthorized' }
+  | { status: 'forbidden' };
+
 type LoginInput = {
   username: string;
   password: string;
@@ -22,6 +31,7 @@ type AdminUserRow = RowDataPacket & {
 };
 
 type SessionUserRow = RowDataPacket & {
+  id: number;
   username: string;
   status: string;
 };
@@ -62,6 +72,14 @@ function normalizeLoginInput(value: unknown): LoginInput {
 
 function toAuthUser(row: { username: string; status: string }): AuthUser {
   return {
+    username: row.username,
+    status: row.status,
+  };
+}
+
+function toAdminSessionUser(row: { id: number; username: string; status: string }): AdminSessionUser {
+  return {
+    id: row.id,
     username: row.username,
     status: row.status,
   };
@@ -154,15 +172,17 @@ export async function logoutAdmin(sessionToken: string | undefined): Promise<voi
   );
 }
 
-export async function getCurrentAdmin(sessionToken: string | undefined): Promise<AuthUser> {
+export async function validateAdminSessionToken(
+  sessionToken: string | undefined,
+): Promise<AdminSessionValidationResult> {
   if (!sessionToken) {
-    throw new AuthServiceError(401, 'UNAUTHORIZED', 'Authentication required.');
+    return { status: 'unauthorized' };
   }
 
   const sessionHash = createSessionHash(sessionToken);
   const pool = getDbPool();
   const [rows] = await pool.execute<SessionUserRow[]>(
-    `SELECT admin_users.username, admin_users.status
+    `SELECT admin_users.id, admin_users.username, admin_users.status
      FROM admin_sessions
      INNER JOIN admin_users ON admin_users.id = admin_sessions.admin_user_id
      WHERE admin_sessions.session_hash = ?
@@ -174,12 +194,29 @@ export async function getCurrentAdmin(sessionToken: string | undefined): Promise
   const adminUser = rows[0];
 
   if (!adminUser) {
-    throw new AuthServiceError(401, 'UNAUTHORIZED', 'Authentication required.');
+    return { status: 'unauthorized' };
   }
 
   if (adminUser.status !== 'active') {
+    return { status: 'forbidden' };
+  }
+
+  return {
+    status: 'authenticated',
+    user: toAdminSessionUser(adminUser),
+  };
+}
+
+export async function getCurrentAdmin(sessionToken: string | undefined): Promise<AuthUser> {
+  const validationResult = await validateAdminSessionToken(sessionToken);
+
+  if (validationResult.status === 'unauthorized') {
+    throw new AuthServiceError(401, 'UNAUTHORIZED', 'Authentication required.');
+  }
+
+  if (validationResult.status === 'forbidden') {
     throw new AuthServiceError(403, 'FORBIDDEN', 'Forbidden.');
   }
 
-  return toAuthUser(adminUser);
+  return toAuthUser(validationResult.user);
 }
