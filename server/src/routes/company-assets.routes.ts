@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
+import { requireAdminAuth } from '../middlewares/auth.middleware.js';
 import { writeCompanyAssetsToMysqlPrimary } from '../services/data-source/company-assets-primary-write.js';
 import { readCompanyAssetsWithMysqlFallback } from '../services/data-source/low-risk-content-source.js';
 import { asyncHandler } from '../utils/async-handler.js';
@@ -175,7 +176,7 @@ companyAssetsRouter.get('/', asyncHandler(async (_req, res) => {
   res.json(success(companyAssets));
 }));
 
-companyAssetsRouter.put('/', asyncHandler(async (req, res) => {
+companyAssetsRouter.put('/', requireAdminAuth, asyncHandler(async (req, res) => {
   const companyAssets = await writeCompanyAssets(req.body);
 
   res.json(success(companyAssets));

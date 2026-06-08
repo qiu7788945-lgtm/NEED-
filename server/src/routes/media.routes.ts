@@ -10,19 +10,20 @@ import {
   updateMedia,
   uploadMedia,
 } from '../controllers/media.controller.js';
+import { requireAdminAuth } from '../middlewares/auth.middleware.js';
 import { mediaUpload } from '../middlewares/upload.middleware.js';
 import { asyncHandler } from '../utils/async-handler.js';
 
 const mediaRouter = Router();
 
-mediaRouter.post('/upload', mediaUpload.single('file'), asyncHandler(uploadMedia));
+mediaRouter.post('/upload', requireAdminAuth, mediaUpload.single('file'), asyncHandler(uploadMedia));
 mediaRouter.get('/list', asyncHandler(listMedia));
-mediaRouter.patch('/batch/archive', asyncHandler(batchArchiveMedia));
-mediaRouter.patch('/batch/restore', asyncHandler(batchRestoreMedia));
-mediaRouter.delete('/batch', asyncHandler(batchDeleteMedia));
-mediaRouter.patch('/:fileName', asyncHandler(updateMedia));
-mediaRouter.patch('/:fileName/archive', asyncHandler(archiveMedia));
-mediaRouter.patch('/:fileName/restore', asyncHandler(restoreMedia));
-mediaRouter.delete('/:fileName', asyncHandler(deleteMedia));
+mediaRouter.patch('/batch/archive', requireAdminAuth, asyncHandler(batchArchiveMedia));
+mediaRouter.patch('/batch/restore', requireAdminAuth, asyncHandler(batchRestoreMedia));
+mediaRouter.delete('/batch', requireAdminAuth, asyncHandler(batchDeleteMedia));
+mediaRouter.patch('/:fileName', requireAdminAuth, asyncHandler(updateMedia));
+mediaRouter.patch('/:fileName/archive', requireAdminAuth, asyncHandler(archiveMedia));
+mediaRouter.patch('/:fileName/restore', requireAdminAuth, asyncHandler(restoreMedia));
+mediaRouter.delete('/:fileName', requireAdminAuth, asyncHandler(deleteMedia));
 
 export { mediaRouter };

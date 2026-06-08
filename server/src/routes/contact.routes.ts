@@ -2,6 +2,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
+import { requireAdminAuth } from '../middlewares/auth.middleware.js';
 import { writeContactInfoToMysqlPrimary } from '../services/data-source/contact-info-primary-write.js';
 import { readContactInfoWithMysqlFallback } from '../services/data-source/low-risk-content-source.js';
 import { asyncHandler } from '../utils/async-handler.js';
@@ -215,7 +216,7 @@ contactInfoRouter.get('/', asyncHandler(async (_req, res) => {
   res.json(success(contactInfo));
 }));
 
-contactInfoRouter.put('/', asyncHandler(async (req, res) => {
+contactInfoRouter.put('/', requireAdminAuth, asyncHandler(async (req, res) => {
   const contactInfo = await writeContactInfo(req.body);
 
   res.json(success(contactInfo));
