@@ -43,7 +43,8 @@ export function ContactAssetsManagementPage() {
   const [contactStatus, setContactStatus] = useState('');
   const [assetStatus, setAssetStatus] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSavingContactInfo, setIsSavingContactInfo] = useState(false);
+  const [isSavingCompanyAssets, setIsSavingCompanyAssets] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -108,33 +109,39 @@ export function ContactAssetsManagementPage() {
     )));
   }
 
-  async function handleSaveAll() {
-    setIsSaving(true);
-    setStatus('正在保存联系我们与自有资产配置...');
+  async function handleSaveContactInfo() {
+    setIsSavingContactInfo(true);
+    setStatus('正在保存联系方式配置...');
     setContactStatus('');
-    setAssetStatus('');
 
     try {
       const savedContactInfo = await saveContactInfo(contactInfo);
       setContactInfo(savedContactInfo);
       setContactStatus('联系信息保存成功。');
+      setStatus('联系方式配置已保存。');
     } catch (error) {
       setContactStatus(error instanceof Error ? error.message : '联系信息保存失败。');
-      setIsSaving(false);
-      setStatus('保存过程中出现错误，请查看分组提示。');
-      return;
+      setStatus('联系方式保存失败，请查看分组提示。');
+    } finally {
+      setIsSavingContactInfo(false);
     }
+  }
+
+  async function handleSaveCompanyAssets() {
+    setIsSavingCompanyAssets(true);
+    setStatus('正在保存自有资产配置...');
+    setAssetStatus('');
 
     try {
       const savedCompanyAssets = await saveCompanyAssets(companyAssets);
       setCompanyAssets(savedCompanyAssets);
       setAssetStatus('自有资产保存成功。');
-      setStatus('联系我们与自有资产配置已保存。');
+      setStatus('自有资产配置已保存。');
     } catch (error) {
       setAssetStatus(error instanceof Error ? error.message : '自有资产保存失败。');
-      setStatus('保存过程中出现错误，请查看分组提示。');
+      setStatus('自有资产保存失败，请查看分组提示。');
     } finally {
-      setIsSaving(false);
+      setIsSavingCompanyAssets(false);
     }
   }
 
@@ -148,9 +155,6 @@ export function ContactAssetsManagementPage() {
 
       <div className="solution-group-toolbar">
         <p className="media-status">{status}</p>
-        <button type="button" disabled={isLoading || isSaving} onClick={() => void handleSaveAll()}>
-          {isSaving ? '保存中...' : '保存全部配置'}
-        </button>
       </div>
 
       <section className="solution-main">
@@ -160,6 +164,9 @@ export function ContactAssetsManagementPage() {
             <h2>基础联系信息</h2>
             <p>维护公司名称、品牌名、地址、邮箱和电话占位；电话可以保持为空并关闭启用。</p>
           </div>
+          <button type="button" disabled={isLoading || isSavingContactInfo} onClick={() => void handleSaveContactInfo()}>
+            {isSavingContactInfo ? '保存中...' : '保存联系方式'}
+          </button>
         </div>
 
         {contactStatus ? <p className="media-status">{contactStatus}</p> : null}
@@ -288,6 +295,9 @@ export function ContactAssetsManagementPage() {
             <h2>自有资产</h2>
             <p>维护四类自有交付资产的标题、参数、描述、地点、图片 URL、图片 alt、排序和启用状态。</p>
           </div>
+          <button type="button" disabled={isLoading || isSavingCompanyAssets} onClick={() => void handleSaveCompanyAssets()}>
+            {isSavingCompanyAssets ? '保存中...' : '保存自有资产'}
+          </button>
         </div>
 
         {assetStatus ? <p className="media-status">{assetStatus}</p> : null}
