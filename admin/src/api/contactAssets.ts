@@ -1,10 +1,4 @@
-const apiBaseUrl = 'http://localhost:4000';
-
-interface ApiResponse<TData> {
-  ok: boolean;
-  message: string;
-  data?: TData;
-}
+import { getJson, putJson } from './client';
 
 export interface ContactSocial {
   id: string;
@@ -50,40 +44,22 @@ export interface CompanyAsset {
   enabled: boolean;
 }
 
-async function readJson<TData>(response: Response): Promise<TData> {
-  const body = await response.json() as ApiResponse<TData>;
-
-  if (!response.ok || !body.ok || !body.data) {
-    throw new Error(body.message || 'Request failed');
-  }
-
-  return body.data;
-}
+const errorOptions = {
+  fallbackMessage: 'Request failed',
+};
 
 export async function getContactInfo() {
-  return readJson<ContactInfo>(await fetch(`${apiBaseUrl}/api/contact-info`));
+  return getJson<ContactInfo>('/api/contact-info', errorOptions);
 }
 
 export async function saveContactInfo(contactInfo: ContactInfo) {
-  return readJson<ContactInfo>(await fetch(`${apiBaseUrl}/api/contact-info`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(contactInfo),
-  }));
+  return putJson<ContactInfo>('/api/contact-info', contactInfo, errorOptions);
 }
 
 export async function getCompanyAssets() {
-  return readJson<CompanyAsset[]>(await fetch(`${apiBaseUrl}/api/company-assets`));
+  return getJson<CompanyAsset[]>('/api/company-assets', errorOptions);
 }
 
 export async function saveCompanyAssets(companyAssets: CompanyAsset[]) {
-  return readJson<CompanyAsset[]>(await fetch(`${apiBaseUrl}/api/company-assets`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(companyAssets),
-  }));
+  return putJson<CompanyAsset[]>('/api/company-assets', companyAssets, errorOptions);
 }

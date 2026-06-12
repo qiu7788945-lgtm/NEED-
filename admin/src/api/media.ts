@@ -1,4 +1,4 @@
-const apiBaseUrl = 'http://localhost:4000';
+import { apiBaseUrl, deleteJson, getJson, patchJson, postJson, requestJson } from './client';
 
 export interface AdminMediaUsage {
   type: string;
@@ -45,13 +45,6 @@ export interface AdminMediaFile {
   isLargeDimension: boolean;
 }
 
-interface ApiResponse<TData> {
-  ok: boolean;
-  message: string;
-  data?: TData;
-  code?: string;
-}
-
 const friendlyErrorMessages: Record<string, string> = {
   FILE_NAMES_REQUIRED: '请选择要操作的素材。',
   IMAGE_TOO_LARGE: '图片文件太大，默认最大 10MB。',
@@ -75,15 +68,10 @@ function toAbsoluteUrl(url: string) {
   return `${apiBaseUrl}${url}`;
 }
 
-async function readJson<TData>(response: Response): Promise<TData> {
-  const body = await response.json() as ApiResponse<TData>;
-
-  if (!response.ok || !body.ok || !body.data) {
-    throw new Error((body.code ? friendlyErrorMessages[body.code] : '') || body.message || '操作失败，请稍后再试。');
-  }
-
-  return body.data;
-}
+const errorOptions = {
+  friendlyErrorMessages,
+  fallbackMessage: '操作失败，请稍后再试。',
+};
 
 function normalizeMediaFile(data: AdminMediaFile) {
   return {
@@ -126,10 +114,7 @@ export async function uploadImage(file: File, metadata: MediaUploadMetadata = {}
 
   formData.append('file', file);
 
-  const data = await readJson<AdminMediaFile>(await fetch(`${apiBaseUrl}/api/media/upload`, {
-    method: 'POST',
-    body: formData,
-  }));
+  const data = await postJson<AdminMediaFile>('/api/media/upload', formData, errorOptions);
 
   return normalizeMediaFile(data);
 }
@@ -167,23 +152,19 @@ export async function listImages(params: MediaListParams = {}) {
   });
 
   const query = searchParams.toString();
-  const data = await readJson<AdminMediaFile[]>(await fetch(`${apiBaseUrl}/api/media/list${query ? `?${query}` : ''}`));
+  const data = await getJson<AdminMediaFile[]>(`/api/media/list${query ? `?${query}` : ''}`, errorOptions);
 
   return data.map((item) => normalizeMediaFile(item));
 }
 
 export async function archiveImage(fileName: string) {
-  const data = await readJson<AdminMediaFile>(await fetch(`${apiBaseUrl}/api/media/${encodeURIComponent(fileName)}/archive`, {
-    method: 'PATCH',
-  }));
+  const data = await patchJson<AdminMediaFile>(`/api/media/${encodeURIComponent(fileName)}/archive`, undefined, errorOptions);
 
   return normalizeMediaFile(data);
 }
 
 export async function restoreImage(fileName: string) {
-  const data = await readJson<AdminMediaFile>(await fetch(`${apiBaseUrl}/api/media/${encodeURIComponent(fileName)}/restore`, {
-    method: 'PATCH',
-  }));
+  const data = await patchJson<AdminMediaFile>(`/api/media/${encodeURIComponent(fileName)}/restore`, undefined, errorOptions);
 
   return normalizeMediaFile(data);
 }
@@ -204,13 +185,7 @@ export interface MediaUpdateMetadata {
 }
 
 export async function updateImage(fileName: string, metadata: MediaUpdateMetadata) {
-  const data = await readJson<AdminMediaFile>(await fetch(`${apiBaseUrl}/api/media/${encodeURIComponent(fileName)}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(metadata),
-  }));
+  const data = await patchJson<AdminMediaFile>(`/api/media/${encodeURIComponent(fileName)}`, metadata, errorOptions);
 
   return normalizeMediaFile(data);
 }
@@ -223,9 +198,7 @@ export interface DeleteMediaResult {
 }
 
 export async function deleteImage(fileName: string) {
-  return readJson<DeleteMediaResult>(await fetch(`${apiBaseUrl}/api/media/${encodeURIComponent(fileName)}`, {
-    method: 'DELETE',
-  }));
+  return deleteJson<DeleteMediaResult>(`/api/media/${encodeURIComponent(fileName)}`, undefined, errorOptions);
 }
 
 export interface BatchMediaResult {
@@ -241,13 +214,10 @@ export interface BatchMediaResult {
 }
 
 async function batchRequest(path: string, method: 'PATCH' | 'DELETE', fileNames: string[]) {
-  return readJson<BatchMediaResult>(await fetch(`${apiBaseUrl}${path}`, {
+  return requestJson<BatchMediaResult>(path, {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ fileNames }),
-  }));
+    body: { fileNames },
+  }, errorOptions);
 }
 
 export async function batchArchiveImages(fileNames: string[]) {

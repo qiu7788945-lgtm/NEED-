@@ -1,11 +1,8 @@
-const apiBaseUrl = 'http://localhost:4000';
+import { getJson, postJson } from './client';
 
-interface ApiResponse<TData> {
-  ok: boolean;
-  message: string;
-  data?: TData;
-  code?: string;
-}
+const errorOptions = {
+  fallbackMessage: '发布接口请求失败，请稍后再试。',
+};
 
 export interface PublishLogSummary {
   publishId: string;
@@ -75,36 +72,18 @@ export interface PublishTriggerResult {
   latestLog: PublishLog | null;
 }
 
-async function readJson<TData>(response: Response): Promise<TData> {
-  const body = await response.json() as ApiResponse<TData>;
-
-  if (!response.ok || !body.ok || !body.data) {
-    throw new Error(body.message || '发布接口请求失败，请稍后再试。');
-  }
-
-  return body.data;
-}
-
 export async function getLatestPublishLog() {
-  const data = await readJson<{ log: PublishLog | null }>(
-    await fetch(`${apiBaseUrl}/api/publish/latest`),
-  );
+  const data = await getJson<{ log: PublishLog | null }>('/api/publish/latest', errorOptions);
 
   return data.log;
 }
 
 export async function listPublishLogs() {
-  const data = await readJson<{ logs: PublishLogSummary[] }>(
-    await fetch(`${apiBaseUrl}/api/publish/logs`),
-  );
+  const data = await getJson<{ logs: PublishLogSummary[] }>('/api/publish/logs', errorOptions);
 
   return data.logs;
 }
 
 export async function triggerPrerenderPublish() {
-  return readJson<PublishTriggerResult>(
-    await fetch(`${apiBaseUrl}/api/publish/prerender`, {
-      method: 'POST',
-    }),
-  );
+  return postJson<PublishTriggerResult>('/api/publish/prerender', undefined, errorOptions);
 }

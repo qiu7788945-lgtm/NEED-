@@ -1,13 +1,5 @@
 import type { SolutionGroup, SolutionGroupInput, SolutionItem, SolutionItemInput, SolutionScene } from '../../../shared/types/solution';
-
-const apiBaseUrl = 'http://localhost:4000';
-
-interface ApiResponse<TData> {
-  ok: boolean;
-  message: string;
-  data?: TData;
-  code?: string;
-}
+import { deleteJson, getJson, patchJson, postJson } from './client';
 
 const friendlyErrorMessages: Record<string, string> = {
   SOLUTION_SCENE_NOT_FOUND: '没有找到这个场景。',
@@ -19,76 +11,43 @@ const friendlyErrorMessages: Record<string, string> = {
   INVALID_SOLUTION_REORDER: '排序数据格式不正确。',
 };
 
-async function readJson<TData>(response: Response): Promise<TData> {
-  const body = await response.json() as ApiResponse<TData>;
-
-  if (!response.ok || !body.ok || !body.data) {
-    throw new Error((body.code ? friendlyErrorMessages[body.code] : '') || body.message || '操作失败，请稍后再试。');
-  }
-
-  return body.data;
-}
+const errorOptions = {
+  friendlyErrorMessages,
+  fallbackMessage: '操作失败，请稍后再试。',
+};
 
 export async function listSolutions() {
-  return readJson<SolutionScene[]>(await fetch(`${apiBaseUrl}/api/solutions`));
+  return getJson<SolutionScene[]>('/api/solutions', errorOptions);
 }
 
 export async function createSolutionGroup(sceneSlug: string, input: SolutionGroupInput) {
-  return readJson<SolutionGroup>(await fetch(`${apiBaseUrl}/api/solutions/${encodeURIComponent(sceneSlug)}/groups`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  }));
+  return postJson<SolutionGroup>(`/api/solutions/${encodeURIComponent(sceneSlug)}/groups`, input, errorOptions);
 }
 
 export async function updateSolutionGroup(sceneSlug: string, groupId: string, input: SolutionGroupInput) {
-  return readJson<SolutionGroup>(await fetch(`${apiBaseUrl}/api/solutions/${encodeURIComponent(sceneSlug)}/groups/${encodeURIComponent(groupId)}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  }));
+  return patchJson<SolutionGroup>(`/api/solutions/${encodeURIComponent(sceneSlug)}/groups/${encodeURIComponent(groupId)}`, input, errorOptions);
 }
 
 export async function deleteSolutionGroup(sceneSlug: string, groupId: string) {
-  return readJson<{ id: string }>(await fetch(`${apiBaseUrl}/api/solutions/${encodeURIComponent(sceneSlug)}/groups/${encodeURIComponent(groupId)}`, {
-    method: 'DELETE',
-  }));
+  return deleteJson<{ id: string }>(`/api/solutions/${encodeURIComponent(sceneSlug)}/groups/${encodeURIComponent(groupId)}`, undefined, errorOptions);
 }
 
 export async function reorderSolutionGroups(sceneSlug: string, items: Array<{ id: string; sortOrder: number }>) {
-  return readJson<SolutionGroup[]>(await fetch(`${apiBaseUrl}/api/solutions/${encodeURIComponent(sceneSlug)}/groups/reorder`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items }),
-  }));
+  return patchJson<SolutionGroup[]>(`/api/solutions/${encodeURIComponent(sceneSlug)}/groups/reorder`, { items }, errorOptions);
 }
 
 export async function addSolutionItem(sceneSlug: string, groupId: string, input: SolutionItemInput) {
-  return readJson<SolutionItem>(await fetch(`${apiBaseUrl}/api/solutions/${encodeURIComponent(sceneSlug)}/groups/${encodeURIComponent(groupId)}/items`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  }));
+  return postJson<SolutionItem>(`/api/solutions/${encodeURIComponent(sceneSlug)}/groups/${encodeURIComponent(groupId)}/items`, input, errorOptions);
 }
 
 export async function updateSolutionItem(sceneSlug: string, groupId: string, itemId: string, input: SolutionItemInput) {
-  return readJson<SolutionItem>(await fetch(`${apiBaseUrl}/api/solutions/${encodeURIComponent(sceneSlug)}/groups/${encodeURIComponent(groupId)}/items/${encodeURIComponent(itemId)}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-  }));
+  return patchJson<SolutionItem>(`/api/solutions/${encodeURIComponent(sceneSlug)}/groups/${encodeURIComponent(groupId)}/items/${encodeURIComponent(itemId)}`, input, errorOptions);
 }
 
 export async function deleteSolutionItem(sceneSlug: string, groupId: string, itemId: string) {
-  return readJson<{ id: string }>(await fetch(`${apiBaseUrl}/api/solutions/${encodeURIComponent(sceneSlug)}/groups/${encodeURIComponent(groupId)}/items/${encodeURIComponent(itemId)}`, {
-    method: 'DELETE',
-  }));
+  return deleteJson<{ id: string }>(`/api/solutions/${encodeURIComponent(sceneSlug)}/groups/${encodeURIComponent(groupId)}/items/${encodeURIComponent(itemId)}`, undefined, errorOptions);
 }
 
 export async function reorderSolutionItems(sceneSlug: string, groupId: string, items: Array<{ id: string; sortOrder: number }>) {
-  return readJson<SolutionItem[]>(await fetch(`${apiBaseUrl}/api/solutions/${encodeURIComponent(sceneSlug)}/groups/${encodeURIComponent(groupId)}/items/reorder`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ items }),
-  }));
+  return patchJson<SolutionItem[]>(`/api/solutions/${encodeURIComponent(sceneSlug)}/groups/${encodeURIComponent(groupId)}/items/reorder`, { items }, errorOptions);
 }

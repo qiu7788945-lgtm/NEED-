@@ -295,6 +295,91 @@ button {
   font: inherit;
 }
 
+.admin-auth-screen {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #f4f4f5;
+}
+
+.admin-auth-loading,
+.admin-login-card {
+  width: min(420px, 100%);
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  box-shadow: 0 24px 80px rgba(15, 23, 42, 0.08);
+}
+
+.admin-auth-loading {
+  padding: 28px;
+  color: #52525b;
+  text-align: center;
+  font-weight: 900;
+}
+
+.admin-login-card {
+  display: grid;
+  gap: 18px;
+  padding: 32px;
+}
+
+.admin-login-card h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1;
+}
+
+.admin-login-card p:not(.admin-eyebrow) {
+  margin: 10px 0 0;
+  color: #52525b;
+}
+
+.admin-login-card label {
+  display: grid;
+  gap: 7px;
+}
+
+.admin-login-card label span {
+  color: #52525b;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.admin-login-card input {
+  width: 100%;
+  border: 1px solid #d4d4d8;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+  color: #111;
+}
+
+.admin-login-card button,
+.admin-session-panel button {
+  border: 0;
+  border-radius: 999px;
+  padding: 12px 18px;
+  background: #090909;
+  color: #fff;
+  font-weight: 900;
+}
+
+.admin-login-card button:disabled,
+.admin-session-panel button:disabled {
+  opacity: 0.55;
+}
+
+.admin-login-error {
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: #fee2e2;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 900;
+}
+
 .admin-shell {
   min-height: 100vh;
   display: grid;
@@ -334,6 +419,27 @@ button {
 .admin-menu {
   display: grid;
   gap: 8px;
+}
+
+.admin-session-panel {
+  margin-top: auto;
+  display: grid;
+  gap: 10px;
+  padding: 16px 8px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.admin-session-panel span {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 13px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.admin-session-panel button {
+  width: 100%;
+  background: #ccff00;
+  color: #111;
 }
 
 .admin-menu-item {

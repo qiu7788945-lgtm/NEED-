@@ -1,13 +1,5 @@
 import type { CaseInput, CaseStatus, CaseStudy } from '../../../shared/types/case';
-
-const apiBaseUrl = 'http://localhost:4000';
-
-interface ApiResponse<TData> {
-  ok: boolean;
-  message: string;
-  data?: TData;
-  code?: string;
-}
+import { deleteJson, getJson, patchJson, postJson } from './client';
 
 const friendlyErrorMessages: Record<string, string> = {
   CASE_NOT_FOUND: '没有找到这个案例，可能已经被删除。',
@@ -18,15 +10,10 @@ const friendlyErrorMessages: Record<string, string> = {
   LIMIT_FILE_SIZE: 'Word 文件太大，默认最大 30MB。',
 };
 
-async function readJson<TData>(response: Response): Promise<TData> {
-  const body = await response.json() as ApiResponse<TData>;
-
-  if (!response.ok || !body.ok || !body.data) {
-    throw new Error((body.code ? friendlyErrorMessages[body.code] : '') || body.message || '操作失败，请稍后再试。');
-  }
-
-  return body.data;
-}
+const errorOptions = {
+  friendlyErrorMessages,
+  fallbackMessage: '操作失败，请稍后再试。',
+};
 
 export interface CaseListParams {
   status?: CaseStatus | '';
@@ -43,61 +30,32 @@ export async function listCases(params: CaseListParams = {}) {
   }
 
   const query = searchParams.toString();
-  return readJson<CaseStudy[]>(await fetch(`${apiBaseUrl}/api/cases${query ? `?${query}` : ''}`));
+  return getJson<CaseStudy[]>(`/api/cases${query ? `?${query}` : ''}`, errorOptions);
 }
 
 export async function createCase(input: CaseInput) {
-  return readJson<CaseStudy>(await fetch(`${apiBaseUrl}/api/cases`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input),
-  }));
+  return postJson<CaseStudy>('/api/cases', input, errorOptions);
 }
 
 export async function updateCase(id: string, input: CaseInput) {
-  return readJson<CaseStudy>(await fetch(`${apiBaseUrl}/api/cases/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input),
-  }));
+  return patchJson<CaseStudy>(`/api/cases/${encodeURIComponent(id)}`, input, errorOptions);
 }
 
 export async function deleteCase(id: string) {
-  return readJson<{ id: string }>(await fetch(`${apiBaseUrl}/api/cases/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  }));
+  return deleteJson<{ id: string }>(`/api/cases/${encodeURIComponent(id)}`, undefined, errorOptions);
 }
 
 export async function updateCaseStatus(id: string, status: CaseStatus) {
-  return readJson<CaseStudy>(await fetch(`${apiBaseUrl}/api/cases/${encodeURIComponent(id)}/status`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ status }),
-  }));
+  return patchJson<CaseStudy>(`/api/cases/${encodeURIComponent(id)}/status`, { status }, errorOptions);
 }
 
 export async function reorderCases(items: Array<{ id: string; sortOrder: number }>) {
-  return readJson<CaseStudy[]>(await fetch(`${apiBaseUrl}/api/cases/reorder`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ items }),
-  }));
+  return patchJson<CaseStudy[]>('/api/cases/reorder', { items }, errorOptions);
 }
 
 export async function importCaseWord(file: File) {
   const formData = new FormData();
   formData.append('file', file);
 
-  return readJson<CaseStudy>(await fetch(`${apiBaseUrl}/api/cases/import-word`, {
-    method: 'POST',
-    body: formData,
-  }));
+  return postJson<CaseStudy>('/api/cases/import-word', formData, errorOptions);
 }

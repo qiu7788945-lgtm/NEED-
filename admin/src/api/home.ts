@@ -1,55 +1,22 @@
 import type { HomeInteractiveImageSlot, HomeVideoConfig } from '../../../shared/types/home';
+import { getJson, putJson } from './client';
 
-const apiBaseUrl = 'http://localhost:4000';
-
-interface ApiResponse<TData> {
-  ok: boolean;
-  message: string;
-  data?: TData;
-}
-
-async function readJson<TData>(response: Response): Promise<TData> {
-  const body = await response.json() as ApiResponse<TData>;
-
-  if (!response.ok || !body.ok || !body.data) {
-    throw new Error(body.message || 'Request failed');
-  }
-
-  return body.data;
-}
+const errorOptions = {
+  fallbackMessage: 'Request failed',
+};
 
 export async function getHomeInteractiveImages() {
-  return readJson<HomeInteractiveImageSlot[]>(
-    await fetch(`${apiBaseUrl}/api/home/interactive-images`),
-  );
+  return getJson<HomeInteractiveImageSlot[]>('/api/home/interactive-images', errorOptions);
 }
 
 export async function saveHomeInteractiveImages(slots: HomeInteractiveImageSlot[]) {
-  return readJson<HomeInteractiveImageSlot[]>(
-    await fetch(`${apiBaseUrl}/api/home/interactive-images`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(slots),
-    }),
-  );
+  return putJson<HomeInteractiveImageSlot[]>('/api/home/interactive-images', slots, errorOptions);
 }
 
 export async function getHomeVideo() {
-  return readJson<HomeVideoConfig>(
-    await fetch(`${apiBaseUrl}/api/home/video`),
-  );
+  return getJson<HomeVideoConfig>('/api/home/video', errorOptions);
 }
 
 export async function saveHomeVideo(config: HomeVideoConfig) {
-  return readJson<HomeVideoConfig>(
-    await fetch(`${apiBaseUrl}/api/home/video`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(config),
-    }),
-  );
+  return putJson<HomeVideoConfig>('/api/home/video', config, errorOptions);
 }

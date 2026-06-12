@@ -1,13 +1,5 @@
 import type { Page, PageInput, PageStatus, PageType } from '../../../shared/types/pages';
-
-const apiBaseUrl = 'http://localhost:4000';
-
-interface ApiResponse<TData> {
-  ok: boolean;
-  message: string;
-  data?: TData;
-  code?: string;
-}
+import { deleteJson, getJson, patchJson, postJson, putJson } from './client';
 
 const friendlyErrorMessages: Record<string, string> = {
   PAGE_NOT_FOUND: '没有找到这个页面，可能已经被删除。',
@@ -15,15 +7,10 @@ const friendlyErrorMessages: Record<string, string> = {
   INVALID_PAGE_REORDER: '排序数据格式不正确。',
 };
 
-async function readJson<TData>(response: Response): Promise<TData> {
-  const body = await response.json() as ApiResponse<TData>;
-
-  if (!response.ok || !body.ok || !body.data) {
-    throw new Error((body.code ? friendlyErrorMessages[body.code] : '') || body.message || '页面接口请求失败，请稍后再试。');
-  }
-
-  return body.data;
-}
+const errorOptions = {
+  friendlyErrorMessages,
+  fallbackMessage: '页面接口请求失败，请稍后再试。',
+};
 
 export interface PageListParams {
   pageType?: PageType | '';
@@ -45,61 +32,33 @@ export async function listPages(params: PageListParams = {}) {
   }
 
   const query = searchParams.toString();
-  return readJson<Page[]>(await fetch(`${apiBaseUrl}/api/pages${query ? `?${query}` : ''}`));
+  return getJson<Page[]>(`/api/pages${query ? `?${query}` : ''}`, errorOptions);
 }
 
 export async function getPage(id: string) {
-  return readJson<Page>(await fetch(`${apiBaseUrl}/api/pages/${encodeURIComponent(id)}`));
+  return getJson<Page>(`/api/pages/${encodeURIComponent(id)}`, errorOptions);
 }
 
 export async function createPage(input: PageInput) {
-  return readJson<Page>(await fetch(`${apiBaseUrl}/api/pages`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input),
-  }));
+  return postJson<Page>('/api/pages', input, errorOptions);
 }
 
 export async function updatePage(id: string, input: PageInput) {
-  return readJson<Page>(await fetch(`${apiBaseUrl}/api/pages/${encodeURIComponent(id)}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input),
-  }));
+  return putJson<Page>(`/api/pages/${encodeURIComponent(id)}`, input, errorOptions);
 }
 
 export async function updatePageStatus(id: string, status: PageStatus) {
-  return readJson<Page>(await fetch(`${apiBaseUrl}/api/pages/${encodeURIComponent(id)}/status`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ status }),
-  }));
+  return patchJson<Page>(`/api/pages/${encodeURIComponent(id)}/status`, { status }, errorOptions);
 }
 
 export async function deletePage(id: string) {
-  return readJson<{ id: string }>(await fetch(`${apiBaseUrl}/api/pages/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  }));
+  return deleteJson<{ id: string }>(`/api/pages/${encodeURIComponent(id)}`, undefined, errorOptions);
 }
 
 export async function duplicatePage(id: string) {
-  return readJson<Page>(await fetch(`${apiBaseUrl}/api/pages/${encodeURIComponent(id)}/duplicate`, {
-    method: 'POST',
-  }));
+  return postJson<Page>(`/api/pages/${encodeURIComponent(id)}/duplicate`, undefined, errorOptions);
 }
 
 export async function reorderPages(items: Array<{ id: string; sortOrder: number }>) {
-  return readJson<Page[]>(await fetch(`${apiBaseUrl}/api/pages/reorder`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ items }),
-  }));
+  return postJson<Page[]>('/api/pages/reorder', { items }, errorOptions);
 }

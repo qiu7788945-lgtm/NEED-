@@ -1,13 +1,5 @@
 import type { Article, ArticleCategory, ArticleInput, ArticleStatus } from '../../../shared/types/article';
-
-const apiBaseUrl = 'http://localhost:4000';
-
-interface ApiResponse<TData> {
-  ok: boolean;
-  message: string;
-  data?: TData;
-  code?: string;
-}
+import { deleteJson, getJson, patchJson, postJson } from './client';
 
 const friendlyErrorMessages: Record<string, string> = {
   ARTICLE_NOT_FOUND: '没有找到这篇文章，可能已经被删除。',
@@ -15,15 +7,10 @@ const friendlyErrorMessages: Record<string, string> = {
   INVALID_ARTICLE_REORDER: '排序数据格式不正确。',
 };
 
-async function readJson<TData>(response: Response): Promise<TData> {
-  const body = await response.json() as ApiResponse<TData>;
-
-  if (!response.ok || !body.ok || !body.data) {
-    throw new Error((body.code ? friendlyErrorMessages[body.code] : '') || body.message || '操作失败，请稍后再试。');
-  }
-
-  return body.data;
-}
+const errorOptions = {
+  friendlyErrorMessages,
+  fallbackMessage: '操作失败，请稍后再试。',
+};
 
 export interface ArticleListParams {
   category?: ArticleCategory | '';
@@ -45,55 +32,29 @@ export async function listArticles(params: ArticleListParams = {}) {
   }
 
   const query = searchParams.toString();
-  return readJson<Article[]>(await fetch(`${apiBaseUrl}/api/articles${query ? `?${query}` : ''}`));
+  return getJson<Article[]>(`/api/articles${query ? `?${query}` : ''}`, errorOptions);
 }
 
 export async function getArticle(id: string) {
-  return readJson<Article>(await fetch(`${apiBaseUrl}/api/articles/${encodeURIComponent(id)}`));
+  return getJson<Article>(`/api/articles/${encodeURIComponent(id)}`, errorOptions);
 }
 
 export async function createArticle(input: ArticleInput) {
-  return readJson<Article>(await fetch(`${apiBaseUrl}/api/articles`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input),
-  }));
+  return postJson<Article>('/api/articles', input, errorOptions);
 }
 
 export async function updateArticle(id: string, input: ArticleInput) {
-  return readJson<Article>(await fetch(`${apiBaseUrl}/api/articles/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(input),
-  }));
+  return patchJson<Article>(`/api/articles/${encodeURIComponent(id)}`, input, errorOptions);
 }
 
 export async function deleteArticle(id: string) {
-  return readJson<{ id: string }>(await fetch(`${apiBaseUrl}/api/articles/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  }));
+  return deleteJson<{ id: string }>(`/api/articles/${encodeURIComponent(id)}`, undefined, errorOptions);
 }
 
 export async function updateArticleStatus(id: string, status: ArticleStatus) {
-  return readJson<Article>(await fetch(`${apiBaseUrl}/api/articles/${encodeURIComponent(id)}/status`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ status }),
-  }));
+  return patchJson<Article>(`/api/articles/${encodeURIComponent(id)}/status`, { status }, errorOptions);
 }
 
 export async function reorderArticles(items: Array<{ id: string; sortOrder: number }>) {
-  return readJson<Article[]>(await fetch(`${apiBaseUrl}/api/articles/reorder`, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ items }),
-  }));
+  return patchJson<Article[]>('/api/articles/reorder', { items }, errorOptions);
 }

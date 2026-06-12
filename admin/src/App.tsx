@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { getCurrentAdmin, logoutAdmin, type AdminUser } from './api/auth';
+import { setUnauthorizedHandler } from './api/client';
 import { HomeManagementPage } from './pages/HomeManagementPage';
 import { MediaLibraryPage } from './pages/MediaLibraryPage';
 import { ArticleManagementPage } from './pages/ArticleManagementPage';
@@ -8,6 +10,7 @@ import { QualityCheckPage } from './pages/QualityCheckPage';
 import { PublishManagementPage } from './pages/PublishManagementPage';
 import { PageEditorPage } from './pages/PageEditorPage';
 import { ContactAssetsManagementPage } from './pages/ContactAssetsManagementPage';
+import { LoginPage } from './pages/LoginPage';
 
 const homeMenu = '首页管理';
 const mediaMenu = '媒体库';
@@ -38,6 +41,46 @@ export default function App() {
   const [activeMenu, setActiveMenu] = useState(() => (
     window.location.pathname === '/contact-assets' ? contactAssetsMenu : homeMenu
   ));
+  const [authStatus, setAuthStatus] = useState<'checking' | 'authenticated' | 'unauthenticated'>('checking');
+  const [adminUser, setAdminUser] = useState<AdminUser | null>(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    function clearAuth() {
+      if (!isMounted) {
+        return;
+      }
+
+      setAdminUser(null);
+      setAuthStatus('unauthenticated');
+    }
+
+    setUnauthorizedHandler(clearAuth);
+
+    async function checkAuth() {
+      try {
+        const user = await getCurrentAdmin();
+
+        if (!isMounted) {
+          return;
+        }
+
+        setAdminUser(user);
+        setAuthStatus('authenticated');
+      } catch {
+        clearAuth();
+      }
+    }
+
+    void checkAuth();
+
+    return () => {
+      isMounted = false;
+      setUnauthorizedHandler(null);
+    };
+  }, []);
 
   function activateMenu(item: string) {
     setActiveMenu(item);
@@ -50,6 +93,37 @@ export default function App() {
     if (window.location.pathname === '/contact-assets') {
       window.history.pushState(null, '', '/');
     }
+  }
+
+  function handleLoginSuccess(user: AdminUser) {
+    setAdminUser(user);
+    setAuthStatus('authenticated');
+  }
+
+  async function handleLogout() {
+    setIsLoggingOut(true);
+
+    try {
+      await logoutAdmin();
+    } catch {
+      // Logout should still return to the login page even if the request fails.
+    } finally {
+      setIsLoggingOut(false);
+      setAdminUser(null);
+      setAuthStatus('unauthenticated');
+    }
+  }
+
+  if (authStatus === 'checking') {
+    return (
+      <main className="admin-auth-screen">
+        <div className="admin-auth-loading">正在检查登录状态...</div>
+      </main>
+    );
+  }
+
+  if (authStatus !== 'authenticated') {
+    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
   }
 
   return (
@@ -71,6 +145,12 @@ export default function App() {
             </button>
           ))}
         </nav>
+        <div className="admin-session-panel">
+          <span>{adminUser?.username ?? '管理员'}</span>
+          <button type="button" onClick={() => void handleLogout()} disabled={isLoggingOut}>
+            {isLoggingOut ? '退出中...' : '退出登录'}
+          </button>
+        </div>
       </aside>
 
       <section className="admin-content">
